@@ -10,7 +10,9 @@
   "recording_protocol": "work-accounts/1",
   "instructions": "INSTRUCTIONS.md",
   "research_commission": "COMMISSION.md",
-  "source": "synthetic fixture",
+  "source": {
+    "from": "synthetic fixture"
+  },
   "meaning": "Synthetic.",
   "wording": "Kept though unnamed."
 }

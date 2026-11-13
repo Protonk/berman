@@ -2,31 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:connection-1",
   "title": "berman.connection/1",
-  "description": "A named project description (connection.json). Structure only: the identity, the single {head} placeholder, check identities and timeouts, and paths staying within the connection's folder are checked by berman.config and berman.harnesses.",
+  "description": "A named project description (connection.json). Loading needs only schema and id: documents, commission and revision are read when fieldwork is prepared, so a connection used only for development may omit them, and that preparation refuses what it cannot use. What is typed here is every list Berman iterates, because text in its place would be read character by character without complaint. Check identities, timeouts and expected output are converted and judged by berman.harnesses; the identity and the {head} placeholder by berman.config. Fields Berman only stores or prints are not constrained.",
   "type": "object",
-  "required": ["schema", "id", "documents", "commission", "revision"],
+  "required": ["schema", "id"],
   "properties": {
     "schema": {"const": "berman.connection/1"},
-    "id": {"type": "string"},
-    "name": {"type": "string"},
-    "version": {"type": ["integer", "string", "null"]},
-    "description": {"type": "string"},
     "documents": {"type": "array", "items": {"type": "string"}},
-    "commission": {"type": "string", "minLength": 1},
-    "revision": {"type": "string"},
     "readers": {"type": "array", "items": {"type": "string"}},
-    "development": {"type": "object"},
     "checks": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "argv"],
         "properties": {
-          "id": {"type": "string"},
-          "argv": {"type": "array", "minItems": 1, "items": {"type": ["string", "integer", "number"]}},
-          "timeout": {"type": "integer"},
-          "stdout_contains": {"type": "string"},
-          "meaning": {"type": "string"}
+          "argv": {
+            "description": "Arguments; each is converted to text.",
+            "type": "array"
+          }
         }
       }
     }

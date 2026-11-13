@@ -6,6 +6,13 @@
       "connection": "orchard",
       "relationship": "predates research plans",
       "basis": "synthetic"
+    },
+    {
+      "run": "run-002",
+      "connection": null,
+      "basis": {
+        "note": "Attribution undecided."
+      }
     }
   ],
   "support_collections": [

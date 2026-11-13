@@ -46,12 +46,12 @@ connection's project checks inside the fieldworker's sandbox, where the
 workspace is denied, so it must lie outside the workspace and packet root.
 `runtime_python` is the interpreter that has this package and its dependencies
 installed; generated hook commands name it and run in isolated mode. The hooks
-themselves load only the standard library and Berman's capture modules. `init` records the active package
-interpreter in both settings; configure `python` for sandbox access while keeping
-`runtime_python` pinned to the package environment. Older configurations without
-`runtime_python` fall back to `python`. A
-virtual environment inside the denied workspace is a suitable `runtime_python`:
-hooks run from the harness, outside the sandbox.
+themselves load only the standard library and Berman's capture modules. `init`
+records the active package interpreter in both settings; configure `python` for
+sandbox access while keeping `runtime_python` pinned to the package environment.
+Older configurations without `runtime_python` fall back to `python`. A virtual
+environment inside the denied workspace is a suitable `runtime_python`: hooks
+run from the harness, outside the sandbox.
 
 Before fieldwork, write the workspace's hook template with
 `berman capture definition --adapter berman-codex --write`, install it with
@@ -67,17 +67,18 @@ operator's decision. Claude uses separately qualified per-launch settings.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
 starts a prepared session. `berman status` reports outstanding work.
 
-On an interactive terminal, `status` shows each outstanding run's lifecycle
-facts with the evidence for each, or the reason a fact is unknown, and
-`cheatsheet` groups commands by whether they can be typed now or wait on the
-researcher's decision. Unknown is never shown as no. Redirected output is the
-plain text, and `--json` carries everything either rendering shows.
+With `BERMAN_OUTPUT=rich` set, on an interactive terminal, `status` shows each
+outstanding run's lifecycle facts with the evidence for each, or the reason a
+fact is unknown, and `cheatsheet` groups commands by whether they can be typed
+now or wait on the researcher's decision. Unknown is never shown as no. Without
+it, and whenever output is redirected, commands print the plain text; `--json`
+carries everything either rendering shows.
 
-A record with the wrong structure is refused with its file and the place of
-each problem, such as `connections.example.checkout must be a string`. A run
-whose operation record is refused is listed by `status` as needing attention,
-its facts are unknown, and it blocks preparation on its connection until the
-record is repaired. Reading never rewrites a record.
+A record Berman would crash on or misread is refused with its file and the
+place of each problem, such as `connections.example.checkout must be a string`.
+A run whose operation record is refused is listed by `status` as needing
+attention, its facts are unknown, and it blocks preparation on its connection
+until the record is repaired. Reading never rewrites a record.
 
 The cheatsheet uses `berman` on PATH and includes `--root` so its commands work
 from any directory. Use the study's package environment on PATH. Inside that

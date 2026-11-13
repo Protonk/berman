@@ -1,0 +1,40 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-001",
+  "phase": "ready",
+  "software": null,
+  "reserved_at_utc": "2026-11-13T00:00:00.000000Z",
+  "workspace": null,
+  "connection": null,
+  "plan": {
+    "id": "orchard-roles",
+    "path": "plans/orchard-roles/plan.json",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "step": 1
+  },
+  "step": 1,
+  "recipe": {
+    "metadata": {
+      "schema": "berman.recipe/2",
+      "id": "work-account",
+      "recording_protocol": "work-accounts/1"
+    },
+    "instructions": "Write accounts in `{{notes_directory}}`.\n",
+    "research_commission": "Keep accounts.\n"
+  },
+  "commission": "Synthetic commission.\n\nKeep accounts.\n",
+  "recording_protocol": "work-accounts/1",
+  "project": "/synthetic/orchard",
+  "documents": [
+    "README.md"
+  ],
+  "packet_root": "/synthetic/packets",
+  "packet": "/synthetic/packets/run-001",
+  "capture": null,
+  "harness": null,
+  "retained_open_runs": [],
+  "readiness": null,
+  "cancellation": null,
+  "migration_authority": null,
+  "launch_attempts": null
+}

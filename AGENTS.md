@@ -24,14 +24,17 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new
   module a layer.
-- A schema states structure. Rules about phases, identities and agreement
-  between records stay in Python, and an existing refusal keeps its wording.
-  Validation never changes the value it checks. Changing what a released schema
-  accepts needs a new schema version.
-- `berman.presentation.plain` is what scripts and redirected output receive.
-  Its bytes are pinned by tests/fixtures/presentation; change them only as a
-  deliberate change to Berman's output. `--json`, exit codes and redirected text
-  must not depend on whether a terminal is attached.
+- A schema refuses only structure the code would crash on or silently misread,
+  and requires only what loading a record reads. Rules about phases, identities
+  and agreement between records stay in Python. Validation never changes the
+  value it checks. A record that loaded before must still load; refusing more
+  needs a new schema version and the researcher's decision.
+- What a command accepts, prints, refuses and returns is the researcher's to
+  change. Propose such a change; do not make it as part of other work.
+  `berman.presentation.plain` is the default output and is pinned byte for byte
+  by tests/fixtures/presentation; the Rich rendering is opt-in
+  (`BERMAN_OUTPUT=rich`). `--json`, exit codes and plain text must not depend on
+  whether a terminal is attached.
 - Property tests are derandomized by default. Pin a failure found with
   `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
 - Workspace selection is silent. Run inside a study's repository, or with

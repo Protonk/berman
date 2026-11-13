@@ -114,21 +114,44 @@ wheel, covered by the software identity and checked by
 | `berman.software/1` | `berman version`, `software.json` | by tests |
 | `berman.verification/1` | `berman --json verify` and kept results | by tests |
 
+The rule for what a schema refuses:
+
+- Only structure Berman's code would crash on or silently misread. A field the
+  code reads as a path, iterates or indexes must have the JSON type that reading
+  needs, and a record must have the fields that loading it reads.
+- A field the code converts is accepted in every form the conversion takes: a
+  check's timeout may be text, a plan's step identities may be numbers.
+- A field Berman only stores or prints is not constrained, null is read as
+  absent, and every object stays open to fields the schema does not name.
+- A field only a later command reads is not required at load. A connection
+  without `documents`, `commission` and `revision` loads and serves
+  development; preparing fieldwork for it fails then, as before.
+
+So a workspace or record that version 0.4.1 loaded still loads, with one class
+of exception: a list given as text, which was read character by character
+without complaint. `documents`, `readers`, `checks` and a check's `argv` in a
+connection, and `connections` in a recipe, must be lists. A recipe's
+`connections` given as text used to match any connection whose name occurred
+inside that text.
+
 The division of labor:
 
-- A schema states JSON types and the fields a record cannot lack. Phases,
-  purposes, adapter names, run and session identities, agreement between
-  records and filesystem safety stay in the Python that decides them.
-- Where Python already refused a record, it still does so first and in the same
-  words. The schema then refuses structure nothing looked at before.
-- Every object stays open to fields the schema does not name. Records grow, and
-  researcher inputs carry explanatory fields.
+- Phases, purposes, adapter names, run and session identities, agreement
+  between records and filesystem safety stay in the Python that decides them.
+- For operation records, combined requests and recipes, the Python rules run
+  first and in the same words, and the schema then refuses structure nothing
+  looked at before. For `berman.json`, connections, plans and the catalogue, the
+  schema runs once the file's family is recognized, so a wrong type that used to
+  surface as a bare key name, a traceback or a later rule's consequence is
+  reported by the schema with its place.
 - Validation returns the value it was given. It fills no default and repairs
   nothing, so reading a preserved record cannot change it.
 - A record that fails is invalid data. That stays distinct from a record that
   is missing, from an incomplete operation, whose record is valid at every
   step, and from a fact nobody recorded.
 - Hooks and the archive builder read their records directly and do not validate.
+- If `jsonschema` does not import, every record is refused with that reason;
+  nothing is read unchecked.
 
 A released schema keeps accepting what it accepted. Adding an optional field is
 compatible within a version. A change that would refuse a record the released
@@ -160,10 +183,13 @@ by a retry. Its docstring lists what it holds and what it does not model.
 ## Presentation
 
 `berman.presentation` turns finished results into text and computes nothing.
-`plain` is the established text, and scripts depend on its bytes;
-`tests/fixtures/presentation/` pins it against what version 0.4.1 printed.
-`terminal` is the Rich rendering, used only when standard output is an
-interactive terminal. `--json` output never passes through either.
+`plain` is the established text and the default everywhere, and scripts depend
+on its bytes; `tests/fixtures/presentation/` pins it against what version 0.4.1
+printed. `terminal` is a Rich rendering of the same results. It is used only
+when the operator sets `BERMAN_OUTPUT=rich` and standard output is an
+interactive terminal; redirected output is plain whatever is set, and if `rich`
+does not import the plain text is printed. `--json` output never passes through
+either.
 
 A change to `plain` is a change to Berman's output and needs the deliberateness
 of a change to a command's options. A change to `terminal` must keep three
@@ -220,34 +246,41 @@ capture bytes or hook commands require closed captures and renewed
 installation-specific qualification, including actual CLI trust review where
 applicable. Never reuse another study's receipts.
 
-### Version 0.5
+### Version 0.4.2
 
-Version 0.5 requires Python 3.14 and adds two runtime dependencies, `jsonschema`
-and `rich`. Earlier versions declared Python 3.11 or later; a launcher defect
-made that untrue, and it is no longer claimed. Commands, options, exit codes,
-`--json` output and redirected text are as in 0.4.1, with these additions:
+Version 0.4.2 requires Python 3.14 and adds two runtime dependencies,
+`jsonschema` and `rich`. Earlier versions declared Python 3.11 or later; a
+launcher defect made that untrue, and it is no longer claimed.
 
-- `berman version`, `software.json` and each new operation record's `software`
-  gain `environment`: the interpreter version and the installed version of every
-  distribution the declared dependencies require. `files_sha256` now also
-  covers the packaged schema files.
-- `berman verify --software` gains the checks `dependencies` and `schemas`.
-- A record with the wrong structure is refused with its file and the place of
-  each problem. Before, some of these surfaced as a bare key name or a
-  traceback, and some were accepted and misread later.
-- On an interactive terminal, `status`, `verify`, `cheatsheet` and the result
-  of `new` are laid out with Rich.
+What a command accepts, prints and returns is as in 0.4.1. A workspace that
+worked still works, redirected and terminal output are the same text, and
+`--json` and exit codes are unchanged. The differences are these:
 
-Two defects found by the property tests are fixed. A reservation whose first
-write failed no longer leaves a folder that blocks later preparations. And
-`berman finish --run RUN`, interrupted after its packet had migrated, can be
-retried while another engagement is open.
+- **Additions to output.** `berman version`, `software.json` and each new
+  operation record's `software` gain `environment`: the interpreter version and
+  the installed version of every distribution the declared dependencies require.
+  `files_sha256` also covers the packaged schema files. `berman verify --software`
+  gains the checks `dependencies` and `schemas`, two more lines in its text and
+  two more entries in its JSON.
+- **Clearer refusals of what already failed.** A missing or mistyped field that
+  loading reads is reported with its file and place, where 0.4.1 printed a bare
+  key name or a traceback.
+- **New refusals, of what was misread.** A list given as text in a connection
+  or recipe, and an operation record whose structure no workflow wrote, are
+  refused. [Record schemas](#record-schemas) lists them.
+- **Two recovery fixes.** A reservation whose first write failed no longer
+  leaves a folder that blocks later preparations. And `berman finish --run RUN`,
+  interrupted after its packet had migrated, can be retried while another
+  engagement is open.
+- **An optional terminal rendering.** `BERMAN_OUTPUT=rich` lays out `status`,
+  `verify`, `cheatsheet` and the result of `new` with Rich on an interactive
+  terminal. It is off unless asked for.
 
 The fingerprinted capture implementation, the archive builder and the frozen
 collector are byte for byte what 0.4.1 shipped. A basis recorded for those bytes
 still names them.
 
-### What adopting 0.5 in a study needs
+### What adopting 0.4.2 in a study needs
 
 None of the development checks qualifies a native installation. A study that
 adopts this version still decides, and does, the following under its own

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:run-catalogue-1",
   "title": "berman.run-catalogue/1",
-  "description": "Explicit associations for runs that predate connection records, and support collections excluded from research numbering. Structure only: run identities and their uniqueness are checked by berman.config.",
+  "description": "Explicit associations for runs that predate connection records, and support collections excluded from research numbering. Loading reads each row's run; its connection and relationship are read when that run is attributed. Run identities and their uniqueness are judged by berman.config. Fields Berman only stores are not constrained.",
   "type": "object",
   "required": ["schema", "runs"],
   "properties": {
@@ -12,12 +12,9 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["run", "connection"],
+        "required": ["run"],
         "properties": {
-          "run": {"type": "string"},
-          "connection": {"type": "string"},
-          "relationship": {"type": "string"},
-          "basis": {"type": "string"}
+          "run": {"type": "string"}
         }
       }
     }

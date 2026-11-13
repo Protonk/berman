@@ -2,18 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:recipe-2",
   "title": "berman.recipe/2",
-  "description": "Versioned worker guidance for named connections (recipe.json). Structure only: the notes coverage, the supported recording protocols, the connection a recipe is worded for and its files staying within its folder are checked by berman.recipes.",
+  "description": "Versioned worker guidance for named connections (recipe.json), checked when a recipe is selected, after berman.recipes has judged its identity, coverage, recording protocol and the connection it is worded for. instructions and research_commission are then read as paths within the recipe's folder. connections is a list: given as text, a connection's name used to be looked for inside that text, so a recipe could match a connection it was not written for. Fields Berman only stores are not constrained.",
   "type": "object",
   "required": ["schema", "id", "connections", "coverage", "recording_protocol", "instructions", "research_commission"],
   "properties": {
     "schema": {"const": "berman.recipe/2"},
-    "id": {"type": "string"},
-    "connections": {"type": "array", "items": {"type": "string"}},
-    "coverage": {"type": "array", "items": {"type": "string"}},
-    "recording_protocol": {"type": "string"},
-    "instructions": {"type": "string", "minLength": 1},
-    "research_commission": {"type": "string", "minLength": 1},
-    "source": {"type": "string"},
-    "meaning": {"type": "string"}
+    "connections": {"type": "array"},
+    "coverage": {"type": "array"},
+    "instructions": {"type": "string"},
+    "research_commission": {"type": "string"}
   }
 }

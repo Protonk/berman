@@ -2,145 +2,569 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:operation-1",
   "title": "berman.operation/1",
-  "description": "A run's researcher-side operation record (operations/RUN/operation.json): a research engagement, or the immutable marker of a native support trial. Structure only, and every field the workflow has ever written is optional here, because a record is valid at each step of an incomplete operation and older workflows wrote fewer fields. Which phase needs which field, what counts as a declared ending, and run and session identities are decided by berman.lifecycle. Unknown fields are kept.",
+  "description": "A run's researcher-side operation record (operations/RUN/operation.json): a research engagement, or the immutable marker of a native support trial. Berman writes these, so this states the types it has written, and every field a workflow ever wrote is optional, because a record is valid at each step of an incomplete operation and older workflows wrote fewer fields. null is read as absent. Which phase needs which field, what counts as a declared ending, and run and session identities are judged first by berman.lifecycle. Unknown fields are kept.",
   "type": "object",
-  "required": ["schema", "run", "phase"],
+  "required": [
+    "schema",
+    "run",
+    "phase"
+  ],
   "properties": {
-    "schema": {"const": "berman.operation/1"},
-    "run": {"type": "string"},
-    "phase": {"type": "string"},
-    "purpose": {"type": "string"},
-    "support_trial": {"type": "string"},
-    "software": {"type": "object"},
-    "reserved_at_utc": {"type": "string"},
-    "adopted_existing_run_at_utc": {"type": "string"},
+    "schema": {
+      "const": "berman.operation/1"
+    },
+    "run": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "support_trial": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "software": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "reserved_at_utc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "adopted_existing_run_at_utc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "workspace": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "root": {"type": "string"},
-        "tag": {"type": "string"}
-      }
-    },
-    "connection": {
-      "description": "The resolved connection description retained at reservation.",
-      "type": "object",
-      "properties": {
-        "id": {"type": "string"},
-        "name": {"type": "string"},
-        "definition": {"type": "string"},
-        "documents": {"type": "array", "items": {"type": "string"}},
-        "commission": {"type": "string"},
-        "revision_template": {"type": "string"},
-        "checks": {"type": "array", "items": {"type": "object"}},
-        "readers": {"type": "array", "items": {"type": "string"}},
-        "checkout": {"type": "string"},
-        "digest": {"type": "string"},
-        "files_sha256": {"type": "object", "additionalProperties": {"type": "string"}}
-      }
-    },
-    "connection_attribution": {"type": "object"},
-    "plan": {
-      "type": ["object", "null"],
-      "properties": {
-        "id": {"type": "string"},
-        "path": {"type": ["string", "null"]},
-        "digest": {"type": "string"},
-        "step": {"type": "string"}
-      }
-    },
-    "step": {"type": "string"},
-    "recipe": {
-      "description": "The recipe retained at reservation; its metadata keeps the form of the recipe version it came from.",
-      "type": "object",
-      "properties": {
-        "metadata": {"type": "object"},
-        "instructions": {"type": "string"},
-        "research_commission": {"type": "string"},
-        "commission": {"type": "string"}
-      }
-    },
-    "commission": {"type": "string"},
-    "recording_protocol": {"type": "string"},
-    "project": {"type": "string"},
-    "documents": {"type": "array", "items": {"type": "string"}},
-    "packet_root": {"type": "string"},
-    "packet": {"type": "string"},
-    "capture": {
-      "type": "object",
-      "properties": {
-        "adapter": {"type": "string"},
-        "harness": {"type": "string"},
-        "collector": {"type": "string"},
-        "marker": {"type": "string"},
-        "layout": {"type": "string"},
-        "definition": {"type": "string"},
-        "implementation_sha256": {"type": "object", "additionalProperties": {"type": "string"}}
-      }
-    },
-    "harness": {
-      "type": "object",
-      "properties": {
-        "id": {"type": "string"},
-        "binary": {"type": "string"},
-        "home": {"type": "string"},
-        "python": {"type": "string"},
-        "runtime_python": {"type": "string"},
-        "profile": {"type": "string"},
-        "session_id": {"type": "string"},
-        "model": {"type": "string"}
-      }
-    },
-    "readiness": {"type": "string"},
-    "launch_attempts": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "requested_at_utc": {"type": "string"},
-          "pid": {"type": "integer"},
-          "context": {"type": "string"},
-          "observed_head": {"type": "string"},
-          "exec_error": {"type": "string"}
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
-    "started_session": {"type": ["string", "null"]},
-    "retained_open_runs": {"type": "array", "items": {"type": "string"}},
-    "retained_open_history": {"type": "array", "items": {"type": "object"}},
-    "ending": {
-      "description": "An operator's declaration, or an earlier inferred interpretation that berman.lifecycle does not count as one.",
-      "type": ["object", "null"],
+    "connection": {
+      "description": "The resolved connection description retained at reservation. Its name, version and revision text are copied from the connection as the researcher wrote them and are not constrained.",
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "reason": {"type": "string"},
-        "declared_at_utc": {"type": "string"},
-        "allow_incomplete": {"type": ["string", "null"]},
-        "override_recorded_at_utc": {"type": "string"},
-        "meaning": {"type": "string"},
-        "basis": {"type": "string"}
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "documents": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "commission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        },
+        "readers": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "checkout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files_sha256": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
       }
     },
-    "previous_ending_interpretations": {"type": "array", "items": {"type": "object"}},
+    "connection_attribution": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "plan": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "description": "Copied from the research plan, whose step identities are not constrained.",
+          "type": [
+            "string",
+            "integer",
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "step": {
+      "description": "Copied from the research plan, whose step identities are not constrained.",
+      "type": [
+        "string",
+        "integer",
+        "number",
+        "null"
+      ]
+    },
+    "recipe": {
+      "description": "The recipe retained at reservation; its metadata keeps the form of the recipe version it came from.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "metadata": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "research_commission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "commission": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recording_protocol": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "documents": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "packet_root": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "packet": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "capture": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "adapter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "harness": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "collector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "marker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "layout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation_sha256": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "harness": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "binary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "home": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "python": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runtime_python": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "readiness": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "launch_attempts": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "requested_at_utc": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "context": {
+            "type": "string"
+          },
+          "observed_head": {
+            "type": "string"
+          },
+          "exec_error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "started_session": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retained_open_runs": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "retained_open_history": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object"
+      }
+    },
+    "ending": {
+      "description": "An operator's declaration, or an earlier inferred interpretation that berman.lifecycle does not count as one.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "declared_at_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "allow_incomplete": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "override_recorded_at_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "meaning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "previous_ending_interpretations": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object"
+      }
+    },
     "migration_authority": {
-      "type": "object",
-      "properties": {"journal": {"type": "string"}}
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "journal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "package": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "path": {"type": "string"},
-        "sha256": {"type": "string"},
-        "bytes": {"type": "integer"},
-        "members": {"type": "integer"},
-        "namespace": {"type": "string"}
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "members": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "cancellation": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "at_utc": {"type": "string"},
-        "reason": {"type": "string"}
+        "at_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
-    "unused_inventory": {"type": "array", "items": {"type": "object"}}
+    "unused_inventory": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object"
+      }
+    }
   }
 }

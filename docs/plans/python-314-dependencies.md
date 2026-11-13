@@ -321,5 +321,76 @@ How these stand at the close is recorded in the last entries of the log.
     route.
   - *Not done, by design:* no native installation was qualified, no study's
     runtime was touched, nothing was tagged, pushed or published. The version
-    is `0.5.0.dev0`. What a study must still do to adopt it is in the
-    [development guide](../development.md#what-adopting-05-in-a-study-needs).
+    was then `0.5.0.dev0`; see the entries below. What a study must still do
+    to adopt it is in the
+    [development guide](../development.md#what-adopting-042-in-a-study-needs).
+- **13 November 2026, independent review.** A reviewer given only the runtime
+  diff ran 0.4.1 and this tree side by side on disposable workspaces. It found
+  the recovery fixes, plain and JSON output, the terminal renderer and hook
+  isolation sound, and three defects, all fixed with regression tests:
+  - *The first schemas refused what 0.4.1 worked with.* They typed fields the
+    code converts (a timeout given as text), required fields only a later
+    command reads (a development-only connection), and constrained fields
+    nothing reads. Because validation runs when a workspace loads, one such
+    value refused every command. This was a change of approach: a schema now
+    refuses only structure the code would crash on or silently misread, and
+    requires only what loading reads. Of the reviewer's 23 configuration
+    variants and 111 operation-record variants, the tree now treats all as
+    0.4.1 did except one, deliberately: a recipe whose `connections` is text,
+    which used to match by substring. The earlier log entry's "existing
+    refusals keep their wording" holds for operation records, requests and
+    recipes; for the workspace files the development guide now says exactly
+    where the schema speaks first.
+  - *A damaged environment was not reported.* With `jsonschema` or `rich`
+    unimportable, commands raised, and whether they did depended on the
+    terminal. An unimportable validator is now a refusal like any other, and
+    presentation falls back to the plain text.
+  - *A refusal could be unprintable.* A lone surrogate quoted from a record made
+    the message fail to encode and took plain `status` down. Problems are now
+    always encodable.
+- **13 November 2026, the researcher on changes to the experience.** "If you
+  need to change the experience to make things more sensible, you may bring
+  some recommendations to me. We will bump to 0.4.2 later anyway." Accordingly:
+  - The tree is labelled `0.4.2.dev0`, not 0.5.
+  - The Rich rendering is no longer the default on a terminal. It is selected
+    with `BERMAN_OUTPUT=rich`; without it a terminal receives the same bytes as
+    a pipe. Making it the default is a recommendation below, not a decision
+    taken here. This departs from the commission's acceptance criterion for
+    Rich in one respect: the improved output exists, is tested and is one
+    setting away, but is not what an operator sees unasked.
+  - What remains different from 0.4.1 for a user is listed in the development
+    guide under version 0.4.2, so that each item can be accepted or reversed.
+
+## Recommendations for the researcher
+
+Changes to what Berman accepts, prints or refuses that seem worth making and
+were not made, or were made in a reversible form, pending a decision.
+
+1. **Make the Rich rendering the default on an interactive terminal.** It shows
+   what the plain text does not: for each outstanding run, every lifecycle fact
+   with its evidence or the reason it is unknown; check statuses told apart by
+   word and mark; and commands grouped by whether they can be typed now or wait
+   on a decision. Redirected output and `--json` would stay as they are. One
+   line in `berman.presentation.show`.
+2. **Confirm the two recovery fixes.** They change behavior only after a failed
+   or interrupted command: an empty `operations/run-NNN/` folder no longer
+   blocks preparation, and a named `finish` can be retried while another
+   engagement is open. Each is one small change with its own regression test
+   and can be reverted alone.
+3. **Confirm the new refusals of misread lists.** A connection's `documents`,
+   `readers`, `checks` or a check's `argv`, or a recipe's `connections`, given
+   as text, is refused where 0.4.1 read it character by character. The recipe
+   case is the one a working setup could trip: `"connections": "stewart"`
+   happened to work.
+4. **Let `berman cancel` finish its own retirement.** After an interruption
+   once the packet has been moved aside, repeating `cancel` is refused and only
+   the next `berman new` completes it. Answering "already cancelled", or
+   resuming, would make every command retryable by repeating it.
+5. **Say what a connection lacks when fieldwork is prepared for it.** A
+   connection without `commission` loads, and `berman new` then stops with the
+   bare word `'commission'`. A sentence naming the file and the missing fields
+   would cost a few lines.
+6. **Decide the version number with the changes in view.** Requiring Python
+   3.14 and adding runtime dependencies changes how a study installs Berman
+   even though commands are unchanged. 0.4.2 is the researcher's stated
+   intention; the adoption notes are written for it.

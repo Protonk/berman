@@ -1,11 +1,17 @@
 """Structural contracts for the records Berman reads and writes, as packaged JSON Schemas.
 
 A record's `schema` value names its family and version, and that name selects one schema
-file beside this module. A schema says what kind of JSON value each field holds and which
-fields a record of that family cannot lack. It does not say whether the record describes a
-state the workflow can be in. Phases, purposes, adapter names, run and session identities,
-agreement between records and filesystem safety belong to the Python that makes those
-decisions, in wording those modules already own.
+file beside this module. A schema refuses only structure Berman's code would crash on or
+silently misread. A field the code reads as a path, iterates or indexes must have the JSON
+type that reading needs, and a record must have the fields that loading it reads. A field the
+code converts, such as a timeout or a step identity, is accepted in every form the conversion
+takes. A field Berman only stores or prints is not constrained, and null is read as absent.
+So a record that version 0.4 loaded still loads, unless it only loaded by being misread: a
+list given as text was read character by character.
+
+A schema does not say whether a record describes a state the workflow can be in. Phases,
+purposes, adapter names, run and session identities, agreement between records and filesystem
+safety belong to the Python that makes those decisions, in wording those modules already own.
 
 Validation only reads. It fills no default, coerces no type and returns the value it was
 given, so reading a preserved record cannot change it. A record that fails is invalid data,
@@ -76,10 +82,24 @@ def schema(name):
     return json.loads(path(name).read_text(encoding='utf-8'))
 
 
+class Unavailable(ValueError):
+    """Records cannot be checked in this environment, because jsonschema does not import.
+
+    A ValueError on purpose. Every reader then treats it as it treats a record it cannot trust:
+    the command line reports it, verification fails the check, and discovery leaves the run's facts
+    unknown. Nothing is passed over unchecked.
+    """
+
+
 @cache
 def validator(name):
-    from jsonschema import Draft202012Validator
-
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise Unavailable(
+            f'Records cannot be checked: jsonschema does not import ({exc}). Reinstall Berman with its '
+            'dependencies; berman verify --software reports the environment'
+        ) from exc
     Draft202012Validator.check_schema(schema(name))
     return Draft202012Validator(schema(name))
 
@@ -138,6 +158,11 @@ def describe(error):
     return [(place, text)]
 
 
+def printable(text):
+    """Text that any stream can encode: a lone surrogate read from a record is written as an escape."""
+    return text.encode('utf-8', 'backslashreplace').decode('utf-8')
+
+
 def problems(name, value):
     """Every structural problem in value, ordered by the field it names; empty when the schema is satisfied."""
     found_problems = [item for error in validator(name).iter_errors(value) for item in describe(error)]
@@ -145,7 +170,7 @@ def problems(name, value):
     found_problems.sort(
         key=lambda item: ([(0, part, '') if isinstance(part, int) else (1, 0, part) for part in item[0]], item[1])
     )
-    return list(dict.fromkeys(text for _, text in found_problems))
+    return list(dict.fromkeys(printable(text) for _, text in found_problems))
 
 
 def validate(name, value, source=None):

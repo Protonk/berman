@@ -1,0 +1,17 @@
+{
+  "schema": "berman.connection/1",
+  "id": "orchard",
+  "documents": [
+    "README.md"
+  ],
+  "commission": "COMMISSION.md",
+  "revision": "Synthetic work; preparation-time HEAD {head}",
+  "readers": "stewart-historical",
+  "checks": [
+    "cargo check",
+    {
+      "id": "slow",
+      "argv": "cargo check"
+    }
+  ]
+}

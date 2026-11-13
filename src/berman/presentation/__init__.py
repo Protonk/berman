@@ -1,9 +1,11 @@
 """What an operator sees: finished results in, text out. Nothing here computes state or a verdict.
 
 There are two renderings of the same results. `plain` is the established text, byte for byte
-what version 0.4 printed: a pipe, a file and anything that reads Berman's output receive it.
-`terminal` is for an interactive terminal and uses Rich. `show` chooses between them. `--json`
-output is printed by the command line itself and never comes through here.
+what version 0.4.1 printed, and it is the default everywhere: on a terminal, in a pipe, in a
+file. `terminal` is a Rich rendering for an interactive terminal. It is used only when the
+operator asks for it by setting BERMAN_OUTPUT=rich, and then only when standard output is an
+interactive terminal, so redirected output is the plain text whatever is set. `--json` output is
+printed by the command line itself and never comes through here.
 
 Only the command line imports this package, and this package imports no other part of Berman;
 pyproject.toml's Import Linter contracts hold both.
@@ -15,6 +17,7 @@ import sys
 from berman.presentation import plain
 
 KINDS = ('status', 'cheatsheet', 'verification', 'prepared')
+CHOICE = 'BERMAN_OUTPUT'  # Set to 'rich' to select the terminal rendering; anything else is plain.
 
 
 def interactive(stream):
@@ -26,13 +29,16 @@ def interactive(stream):
 
 
 def show(kind, result, stream=None):
-    """Print one command's result for a person; redirected output is the plain text, unchanged."""
+    """Print one command's result for a person: the plain text, unless Rich was asked for and can be shown."""
     if kind not in KINDS:
         raise ValueError(f'No presentation is defined for {kind}')
     stream = sys.stdout if stream is None else stream
-    if interactive(stream):
-        from berman.presentation import terminal
-
-        terminal.render(kind, result, terminal.console(stream))
-    else:
-        print(getattr(plain, kind)(result), file=stream)
+    if os.environ.get(CHOICE) == 'rich' and interactive(stream):
+        try:
+            from berman.presentation import terminal
+        except ImportError:
+            terminal = None  # A damaged environment still gets its report, as plain text.
+        if terminal is not None:
+            terminal.render(kind, result, terminal.console(stream))
+            return
+    print(getattr(plain, kind)(result), file=stream)

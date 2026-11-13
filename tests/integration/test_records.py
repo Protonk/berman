@@ -79,7 +79,7 @@ class OperationRecordTests(RecordTests):
         self.assertEqual(
             str(refused.exception),
             f'Invalid operation record: {path}: does not satisfy berman.operation/1: '
-            'documents must be an array, not a string ("README.md")',
+            'documents must be an array or null, not a string ("README.md")',
         )
         # Unknown: discovery reports the problem, and every fact that record held is None with a reason.
         row = self.store.discover()[0]
@@ -123,7 +123,7 @@ class OperationRecordTests(RecordTests):
         path = self.store.folder(run) / 'operation.json'
         before = state(path)
         for change, message in (
-            ({'packet': 12}, 'packet must be a string, not an integer \\(12\\)'),
+            ({'packet': 12}, 'packet must be a string or null, not an integer \\(12\\)'),
             ({'harness': 'codex'}, 'harness must be an object'),
             ({'phase': 'paused'}, "unknown phase 'paused'"),  # Lifecycle wording, unchanged.
         ):
@@ -180,6 +180,18 @@ class OperationRecordTests(RecordTests):
         self.assertNotIn('ending', self.store.record(first))
         self.assertEqual(self.workflow.finish('The first encounter ended.')['run'], first)
 
+    def test_a_record_holding_text_no_stream_can_encode_is_still_reported(self):
+        # Found in review: the refusal quoted the offending value, a lone surrogate made that message
+        # unprintable, and one such record took plain status down with exit 2 and no output.
+        run = self.workflow.new()['run']
+        path = self.store.folder(run) / 'operation.json'
+        path.write_text(json.dumps(dict(self.store.record(run), documents='\ud83d')))
+        code, out, err = self.command('status')
+        self.assertEqual((code, err), (0, ''))
+        out.encode('utf-8')
+        self.assertIn(f'{run} (stewart): starting state unknown', out)
+        self.assertIn('documents must be an array or null, not a string ("\\ud83d")', out)
+
     def test_a_combined_request_is_validated_when_read(self):
         path = self.store.operations / 'new-requests/fixture.json'
         request = {
@@ -198,7 +210,7 @@ class OperationRecordTests(RecordTests):
         self.assertEqual(
             str(refused.exception),
             f'Invalid new-run request: {path}: does not satisfy berman.new-request/1: '
-            'previous_preserved must be an object, not an array',
+            'previous_preserved must be an object or null, not an array',
         )
         self.assertEqual(state(path), before)
         self.assertEqual(self.store.discover(), [], 'a refused request allocated a run')
@@ -236,32 +248,33 @@ class ResearcherInputTests(RecordTests):
             self.assertEqual(self.command('status')[0], 2)
 
     def test_each_researcher_input_is_refused_at_its_own_file(self):
+        connection, plan = 'connections/stewart/connection.json', 'plans/stewart-fieldwork-roles/plan.json'
         cases = (
+            # A list given as text would be read character by character without complaint.
+            (connection, {'documents': 'README.md'}, 'berman.connection/1', 'documents must be an array'),
+            (connection, {'readers': 'stewart-historical'}, 'berman.connection/1', 'readers must be an array'),
             (
-                'connections/stewart/connection.json',
-                {'documents': 'README.md'},
+                connection,
+                {'checks': [{'id': 'x', 'argv': 'true'}]},
                 'berman.connection/1',
-                'documents must be an array',
+                r'checks\[0\].argv must be an array',
             ),
-            (
-                'connections/stewart/connection.json',
-                {'checks': [{'id': 'x'}]},
-                'berman.connection/1',
-                r'checks\[0\].argv is required',
-            ),
+            (connection, {'checks': {'x': ['true']}}, 'berman.connection/1', 'checks must be an array'),
+            # What loading reads and used to fail on with a bare key name or a traceback.
             (
                 'connections/catalogue.json',
-                {'runs': [{'run': 'run-001'}]},
+                {'runs': [{'connection': 'stewart'}]},
                 'berman.run-catalogue/1',
-                r'runs\[0\].connection is required',
+                r'runs\[0\].run is required',
             ),
+            (plan, {'steps': [{'recipe': 'work-accounts'}]}, 'berman.research-plan/1', r'steps\[0\].id is required'),
+            (plan, {'steps': ...}, 'berman.research-plan/1', 'steps is required'),
             (
-                'plans/stewart-fieldwork-roles/plan.json',
-                {'steps': [{'id': 'a'}]},
+                plan,
+                {'relationships': [{'relationship': 'x'}]},
                 'berman.research-plan/1',
-                r'steps\[0\].recipe is required',
+                r'relationships\[0\].plan is required',
             ),
-            ('plans/stewart-fieldwork-roles/plan.json', {'steps': ...}, 'berman.research-plan/1', 'steps is required'),
         )
         for relative, changes, name, message in cases:
             path = self.root / relative
@@ -272,6 +285,90 @@ class ResearcherInputTests(RecordTests):
                     Store(self.root)
             path.write_bytes(original)
         Store(self.root)
+
+    def test_inputs_that_version_0_4_worked_with_still_work(self):
+        # Found in review: a first set of schemas refused these. Each is a value 0.4 converted, read as
+        # absent or never read, and with each of them status and preparation ran. They still do.
+        connection, plan = 'connections/stewart/connection.json', 'plans/stewart-fieldwork-roles/plan.json'
+        checks = read(self.root / connection)['checks']
+        tolerated = {
+            'a timeout given as text': (connection, {'checks': [dict(checks[0], timeout='45'), checks[1]]}),
+            'a fractional timeout': (connection, {'checks': [dict(checks[0], timeout=45.5), checks[1]]}),
+            'expected output given as a number': (
+                connection,
+                {'checks': [checks[0], dict(checks[1], stdout_contains=3)]},
+            ),
+            'an argument given as true': (
+                connection,
+                {'checks': [checks[0], dict(checks[1], argv=[*checks[1]['argv'], True])]},
+            ),
+            'a fractional connection version': (connection, {'version': 1.5}),
+            'a description kept as a list': (connection, {'description': ['two', 'lines']}),
+            'a connection name of null': (connection, {'name': None}),
+            'no development launchers, as null': ('berman.json', 'development', None),
+            'a launcher left as null': ('berman.json', 'development', {'codex': None}),
+            'a fieldwork model that Codex ignores': ('berman.json', 'fieldwork_model', 5),
+            'numbered plan steps': (
+                plan,
+                {'steps': [{'id': 1, 'recipe': 'work-accounts'}, {'id': 2, 'recipe': 'participant-inquiry'}]},
+            ),
+            'a later step with no recipe yet': (
+                plan,
+                {'steps': [{'id': 'first', 'recipe': 'work-accounts'}, {'id': 'later'}]},
+            ),
+            'a commitment kept as an object': (plan, {'commitment': {'text': 'Disposable.'}}),
+            'a catalogue row with no connection yet': (
+                'connections/catalogue.json',
+                {'runs': [{'run': 'run-001', 'connection': None}]},
+            ),
+            'a catalogue basis kept as an object': (
+                'connections/catalogue.json',
+                {'runs': [{'run': 'run-001', 'connection': 'stewart', 'basis': {}}]},
+            ),
+            'a recipe source kept as an object': ('recipes/work-accounts/recipe.json', {'source': {'from': 'fixture'}}),
+            'an empty executable path': ('berman.json', {'codex': ''}),
+            'a numeric collection identity': ('berman.json', {'collection_id': 7}),
+            'no catalogue, as false': ('berman.json', {'catalogue': False}),
+        }
+        for name, (relative, *change) in tolerated.items():
+            path = self.root / relative
+            original = path.read_bytes()
+            if len(change) == 2:  # A field of this workspace's entry for the connection.
+                value = read(path)
+                value['connections']['stewart'][change[0]] = change[1]
+                write(path, value)
+            else:
+                self.edit(relative, **change[0])
+            with self.subTest(tolerated=name):
+                self.load()
+                code, _, err = self.command('status')
+                self.assertEqual((code, err), (0, ''))
+                run = self.workflow.new()['run']
+                self.assertEqual(self.store.record(run)['phase'], 'ready')
+                self.workflow.cancel('Fixture only.', run)
+            shutil.rmtree(self.store.folder(run))
+            path.write_bytes(original)
+
+    def test_a_connection_with_no_fieldwork_fields_serves_development(self):
+        project = self.base / 'tools'
+        git_repository(project, {'README.md': 'Tools\n'})
+        write(self.root / 'connections/tools/connection.json', {'schema': 'berman.connection/1', 'id': 'tools'})
+        launcher = self.base / 'tools-dev'
+        launcher.write_text('#!/bin/sh\n')
+        launcher.chmod(0o755)
+        value = read(self.root / 'berman.json')
+        value['connections']['tools'] = {
+            'definition': 'connections/tools/connection.json',
+            'checkout': str(project),
+            'development': {'codex': str(launcher)},
+        }
+        write(self.root / 'berman.json', value)
+        self.load()
+        self.assertEqual(self.command('status')[0], 0)
+        self.assertEqual(self.workflow.dev('codex', (), 'tools')['argv'], [str(launcher)])
+        self.assertEqual(self.workflow.new()['connection'], 'stewart')  # Fieldwork elsewhere is unaffected.
+        with self.assertRaisesRegex(Decision, 'No research plan assigns fieldwork for connection tools'):
+            self.workflow.new(connection='tools')
 
     def test_a_recipe_is_refused_when_selected_and_earlier_wording_is_kept(self):
         relative = 'recipes/work-accounts/recipe.json'

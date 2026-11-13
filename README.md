@@ -53,9 +53,10 @@ assigning a plan or qualifying an installation.
 study, use `berman --root /path/to/study verify`. Developer tests run separately;
 neither software verification nor tests establish native access or capture.
 
-On an interactive terminal, `status`, `verify` and `cheatsheet` are laid out for
-reading. Redirected to a file or a pipe they print the same plain text as
-before, and `--json` gives each command's result for programs.
+Commands print plain text, and `--json` gives each command's result for
+programs. Setting `BERMAN_OUTPUT=rich` lays out `status`, `verify` and
+`cheatsheet` for reading on an interactive terminal; redirected output stays
+plain.
 
 Both `berman` and `python -m berman` work outside the checkout. Workspace selection
 uses `--root` or the nearest `berman.json` in the current repository; it stops at

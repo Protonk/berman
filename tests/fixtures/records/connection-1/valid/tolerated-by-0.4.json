@@ -6,21 +6,25 @@
   ],
   "commission": "COMMISSION.md",
   "revision": "Synthetic work; preparation-time HEAD {head}",
+  "name": null,
+  "version": 1.5,
+  "description": [
+    "two",
+    "lines"
+  ],
   "checks": [
     {
-      "id": "no_command"
-    },
-    {
-      "id": "slow",
+      "id": "orchard_builds",
       "argv": [
-        "true"
+        "true",
+        true,
+        3
       ],
-      "timeout": "45"
+      "timeout": "45",
+      "stdout_contains": 3
     },
     {
-      "id": "empty",
-      "argv": []
-    },
-    "cargo check"
+      "id": "no_command_yet"
+    }
   ]
 }

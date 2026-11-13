@@ -2,7 +2,8 @@
   "schema": "berman.workspace/1",
   "packet_root": "/synthetic/packets",
   "codex_home": "/synthetic/codex",
-  "python": "",
+  "python": 7,
   "codex": "/synthetic/bin/codex",
-  "connections": {}
+  "connections": {},
+  "qualified_adapters": "berman-codex"
 }

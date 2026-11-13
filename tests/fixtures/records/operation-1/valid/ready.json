@@ -4,7 +4,7 @@
   "phase": "ready",
   "software": {
     "schema": "berman.software/1",
-    "version": "0.5.0",
+    "version": "0.4.2",
     "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "files_sha256": {
       "cli.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

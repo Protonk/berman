@@ -8,12 +8,12 @@
       "recipe": "work-account"
     },
     {
-      "id": "second"
+      "note": "no identity"
     }
   ],
   "relationships": [
     {
-      "plan": null
+      "relationship": "to nothing"
     }
   ]
 }

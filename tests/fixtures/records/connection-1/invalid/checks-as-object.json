@@ -1,0 +1,14 @@
+{
+  "schema": "berman.connection/1",
+  "id": "orchard",
+  "documents": [
+    "README.md"
+  ],
+  "commission": "COMMISSION.md",
+  "revision": "Synthetic work; preparation-time HEAD {head}",
+  "checks": {
+    "orchard_builds": [
+      "true"
+    ]
+  }
+}

@@ -9,10 +9,12 @@
   "workspace-1/invalid/connection-entry.json": [
     "connections.orchard.checkout must be a string, not an integer (12)",
     "connections.orchard.definition is required",
+    "connections.orchard.development must be an object or null, not an array",
     "connections.orchard.plan must be a string or null, not a boolean (false)"
   ],
-  "workspace-1/invalid/empty-interpreter.json": [
-    "python must not be empty"
+  "workspace-1/invalid/interpreter-not-a-path.json": [
+    "python must be a string, not an integer (7)",
+    "qualified_adapters must be an array, not a string (\"berman-codex\")"
   ],
   "workspace-1/invalid/not-an-object.json": [
     "the document must be an object, not an array"
@@ -20,55 +22,53 @@
   "connection-1/invalid/documents-as-text.json": [
     "documents must be an array, not a string (\"README.md\")"
   ],
-  "connection-1/invalid/checks.json": [
-    "checks[0].argv is required",
-    "checks[1].timeout must be an integer, not a string (\"45\")",
-    "checks[2].argv must not be empty",
-    "checks[3] must be an object, not a string (\"cargo check\")"
+  "connection-1/invalid/lists-as-text.json": [
+    "checks[0] must be an object, not a string (\"cargo check\")",
+    "checks[1].argv must be an array, not a string (\"cargo check\")",
+    "readers must be an array, not a string (\"stewart-historical\")"
   ],
-  "connection-1/invalid/missing-commission.json": [
-    "commission is required",
-    "revision is required"
+  "connection-1/invalid/checks-as-object.json": [
+    "checks must be an array, not an object"
   ],
   "recipe-2/invalid/connections-as-text.json": [
     "connections must be an array, not a string (\"orchard\")",
     "research_commission is required"
   ],
-  "recipe-2/invalid/empty-instructions.json": [
+  "recipe-2/invalid/files-not-paths.json": [
     "coverage must be an array, not a string (\"notes\")",
-    "instructions must not be empty"
+    "instructions must be a string, not an integer (7)"
   ],
   "research-plan-1/invalid/steps.json": [
-    "relationships[0].plan must be a string, not null",
-    "steps[1].recipe is required"
+    "relationships[0].plan is required",
+    "steps[1].id is required"
   ],
   "research-plan-1/invalid/steps-as-object.json": [
-    "commitment must be a string or null, not an integer (3)",
     "steps must be an array, not an object"
   ],
   "run-catalogue-1/invalid/rows.json": [
-    "runs[0].connection is required",
+    "runs[0].run is required",
+    "runs[1].run must be a string, not an integer (7)",
     "support_collections must be an array, not an object"
   ],
   "operation-1/invalid/documents-as-text.json": [
-    "documents must be an array, not a string (\"README.md\")"
+    "documents must be an array or null, not a string (\"README.md\")"
   ],
   "operation-1/invalid/nested-types.json": [
     "capture.implementation_sha256.capture/router.py must be a string, not null",
-    "harness must be an object, not a string (\"codex\")",
+    "harness must be an object or null, not a string (\"codex\")",
     "launch_attempts[0].pid must be an integer, not a string (\"4242\")",
-    "packet must be a string, not an integer (12)"
+    "packet must be a string or null, not an integer (12)"
   ],
   "operation-1/invalid/missing-phase.json": [
     "phase is required"
   ],
   "operation-1/invalid/package-as-path.json": [
     "package must be an object or null, not a string (\"/synthetic/study/archive/recordings/...)",
-    "retained_open_runs must be an array, not a string (\"run-000\")"
+    "retained_open_runs must be an array or null, not a string (\"run-000\")"
   ],
   "new-request-1/invalid/fields.json": [
     "finish_reason must be a string, not null",
-    "previous_preserved must be an object, not an array",
+    "previous_preserved must be an object or null, not an array",
     "step is required"
   ],
   "software-1/invalid/digests.json": [

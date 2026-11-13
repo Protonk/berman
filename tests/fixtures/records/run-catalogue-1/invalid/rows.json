@@ -2,7 +2,10 @@
   "schema": "berman.run-catalogue/1",
   "runs": [
     {
-      "run": "run-001"
+      "connection": "orchard"
+    },
+    {
+      "run": 7
     }
   ],
   "support_collections": {}
