@@ -183,13 +183,12 @@ by a retry. Its docstring lists what it holds and what it does not model.
 ## Presentation
 
 `berman.presentation` turns finished results into text and computes nothing.
-`plain` is the established text and the default everywhere, and scripts depend
-on its bytes; `tests/fixtures/presentation/` pins it against what version 0.4.1
-printed. `terminal` is a Rich rendering of the same results. It is used only
-when the operator sets `BERMAN_OUTPUT=rich` and standard output is an
-interactive terminal; redirected output is plain whatever is set, and if `rich`
-does not import the plain text is printed. `--json` output never passes through
-either.
+`plain` is the established text, and scripts depend on its bytes;
+`tests/fixtures/presentation/` pins it against what version 0.4.1 printed.
+`terminal` is a Rich rendering of the same results, used when standard output is
+an interactive terminal. Redirected output is always plain,
+`BERMAN_OUTPUT=plain` keeps the plain text on a terminal, and if `rich` does not
+import the plain text is printed. `--json` output never passes through either.
 
 A change to `plain` is a change to Berman's output and needs the deliberateness
 of a change to a command's options. A change to `terminal` must keep three
@@ -252,9 +251,9 @@ Version 0.4.2 requires Python 3.14 and adds two runtime dependencies,
 `jsonschema` and `rich`. Earlier versions declared Python 3.11 or later; a
 launcher defect made that untrue, and it is no longer claimed.
 
-What a command accepts, prints and returns is as in 0.4.1. A workspace that
-worked still works, redirected and terminal output are the same text, and
-`--json` and exit codes are unchanged. The differences are these:
+What a command accepts and returns is as in 0.4.1. A workspace that worked
+still works, and redirected output, `--json` and exit codes are unchanged. The
+differences are these:
 
 - **Additions to output.** `berman version`, `software.json` and each new
   operation record's `software` gain `environment`: the interpreter version and
@@ -272,9 +271,11 @@ worked still works, redirected and terminal output are the same text, and
   leaves a folder that blocks later preparations. And `berman finish --run RUN`,
   interrupted after its packet had migrated, can be retried while another
   engagement is open.
-- **An optional terminal rendering.** `BERMAN_OUTPUT=rich` lays out `status`,
-  `verify`, `cheatsheet` and the result of `new` with Rich on an interactive
-  terminal. It is off unless asked for.
+- **A terminal rendering.** On an interactive terminal, `status`, `verify`,
+  `cheatsheet` and the result of `new` are laid out with Rich: check statuses
+  and lifecycle facts are told apart by word and mark, `status` shows the
+  evidence for each fact or why it is unknown, and `cheatsheet` groups commands
+  by whether they can be typed now. `BERMAN_OUTPUT=plain` keeps the 0.4.1 text.
 
 The fingerprinted capture implementation, the archive builder and the frozen
 collector are byte for byte what 0.4.1 shipped. A basis recorded for those bytes

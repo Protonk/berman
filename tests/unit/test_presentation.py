@@ -1,4 +1,4 @@
-"""Presentation: plain text unchanged and the default, terminal text complete and literal, machine output untouched.
+"""Presentation: redirected text unchanged, terminal text complete and literal, machine output untouched.
 
 tests/fixtures/presentation holds synthetic command results as JSON, and beside each the text
 the 0.4.1 renderers printed for it. That text is the contract for redirected output. The
@@ -31,7 +31,7 @@ CASES = {path.stem: json.loads(path.read_text()) for path in sorted(FIXTURES.glo
 ESCAPE = '\x1b'
 COLOR = re.compile(r'\x1b\[(?:3\d|9\d|4\d|38|48)')  # A foreground or background color, as opposed to bold or dim.
 TERMINAL = {'TERM': 'xterm-256color', 'COLUMNS': '120', 'LINES': '40'}
-RICH = {'BERMAN_OUTPUT': 'rich'}  # The operator's request for the terminal rendering.
+PLAIN = {'BERMAN_OUTPUT': 'plain'}  # The operator's request for plain text on a terminal.
 
 
 def kind(name):
@@ -60,7 +60,7 @@ SESSION = ('NO_COLOR', 'FORCE_COLOR', 'TERM', 'COLUMNS', 'LINES', 'BERMAN_OUTPUT
 
 
 def environment(**changes):
-    """os.environ as an interactive terminal session has it: no NO_COLOR, no forced color, no rendering asked for."""
+    """os.environ as an interactive terminal session has it: no NO_COLOR, no forced color, no rendering chosen."""
     kept = {k: v for k, v in os.environ.items() if k not in SESSION}
     return mock.patch.dict(os.environ, {**kept, **TERMINAL, **changes}, clear=True)
 
@@ -90,37 +90,37 @@ class PlainTests(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(getattr(plain, kind(name))(result) + '\n', (FIXTURES / f'{name}.txt').read_text())
 
-    def test_the_plain_text_is_the_default_even_on_a_terminal(self):
+    def test_anything_but_an_interactive_terminal_receives_the_plain_text(self):
         for name, result in CASES.items():
             expected = (FIXTURES / f'{name}.txt').read_text()
-            for setting in ({}, {'BERMAN_OUTPUT': 'plain'}, {'BERMAN_OUTPUT': ''}, {'BERMAN_OUTPUT': 'Rich'}):
-                with self.subTest(case=name, setting=setting), environment(**setting):
-                    out = Terminal()
-                    presentation.show(kind(name), result, out)
-                    self.assertEqual(out.getvalue(), expected)
-
-    def test_asking_for_rich_changes_nothing_but_an_interactive_terminal(self):
-        for name, result in CASES.items():
-            expected = (FIXTURES / f'{name}.txt').read_text()
-            with self.subTest(case=name, stream='pipe'), environment(**RICH):
+            with self.subTest(case=name, stream='pipe'), environment():
                 out = io.StringIO()
                 presentation.show(kind(name), result, out)
                 self.assertEqual(out.getvalue(), expected)
             for term in ('dumb', 'unknown'):
-                with self.subTest(case=name, stream=term), environment(**RICH, TERM=term):
+                with self.subTest(case=name, stream=term), environment(TERM=term):
                     out = Terminal()
                     presentation.show(kind(name), result, out)
                     self.assertEqual(out.getvalue(), expected)
-            with self.subTest(case=name, stream='terminal'), environment(**RICH):
+
+    def test_an_interactive_terminal_receives_the_rich_rendering_unless_plain_is_asked_for(self):
+        for name, result in CASES.items():
+            expected = (FIXTURES / f'{name}.txt').read_text()
+            for setting in ({}, {'BERMAN_OUTPUT': ''}, {'BERMAN_OUTPUT': 'rich'}):
+                with self.subTest(case=name, setting=setting), environment(**setting):
+                    out = Terminal()
+                    presentation.show(kind(name), result, out)
+                    self.assertNotEqual(out.getvalue(), expected)
+                    self.assertIn(ESCAPE, out.getvalue())
+            with self.subTest(case=name, setting=PLAIN), environment(**PLAIN):
                 out = Terminal()
                 presentation.show(kind(name), result, out)
-                self.assertNotEqual(out.getvalue(), expected)
-                self.assertIn(ESCAPE, out.getvalue())
+                self.assertEqual(out.getvalue(), expected)
 
     def test_a_terminal_without_rich_still_gets_the_plain_text(self):
         # Found in review: with rich unimportable, a terminal got a traceback where a pipe got the report.
         expected = (FIXTURES / 'verification-failed.txt').read_text()
-        with environment(**RICH), unimportable('berman.presentation.terminal', 'rich'):
+        with environment(), unimportable('berman.presentation.terminal', 'rich'):
             out = Terminal()
             presentation.show('verification', CASES['verification-failed'], out)
         self.assertEqual(out.getvalue(), expected)
@@ -275,7 +275,7 @@ class CommandLineTests(unittest.TestCase):
 
     def test_json_output_does_not_depend_on_the_stream_or_the_setting(self):
         piped = self.run_cli('--json', 'verify', '--software')
-        for setting in ({}, RICH):
+        for setting in ({}, PLAIN):
             with self.subTest(setting=setting):
                 on_terminal = self.run_cli('--json', 'verify', '--software', stream=Terminal(), **setting)
                 self.assertEqual((piped[0], on_terminal[0]), (0, 0))
@@ -285,28 +285,29 @@ class CommandLineTests(unittest.TestCase):
                 self.assertEqual(first, second)
                 self.assertEqual(on_terminal[1], json.dumps(json.loads(on_terminal[1]), indent=2) + '\n')
 
-    def test_a_terminal_changes_nothing_unless_rich_is_asked_for(self):
+    def test_a_terminal_changes_the_presentation_and_nothing_else(self):
         piped = self.run_cli('verify', '--software')
         self.assertEqual(piped[0], 0)
         self.assertNotIn(ESCAPE, piped[1])
         self.assertTrue(
             piped[1].startswith('Berman verification: PASSED\n  passed                      installation: ')
         )
-        self.assertEqual(self.run_cli('verify', '--software', stream=Terminal()), piped)
-        self.assertEqual(self.run_cli('verify', '--software', **RICH), piped)
-        self.assertEqual(self.run_cli('verify', '--software', stream=Terminal(), **RICH, TERM='dumb'), piped)
-        styled = self.run_cli('verify', '--software', stream=Terminal(), **RICH)
+        styled = self.run_cli('verify', '--software', stream=Terminal())
         self.assertEqual(styled[0], 0)
         self.assertIn(ESCAPE, styled[1])
         self.assertIn('✔ passed', styled[1])
-        uncolored = self.run_cli('verify', '--software', stream=Terminal(), **RICH, NO_COLOR='1')
+        # Plain text when it is asked for, and wherever styled text could not be shown.
+        self.assertEqual(self.run_cli('verify', '--software', stream=Terminal(), **PLAIN), piped)
+        self.assertEqual(self.run_cli('verify', '--software', stream=Terminal(), TERM='dumb'), piped)
+        self.assertEqual(self.run_cli('verify', '--software', **PLAIN), piped)
+        uncolored = self.run_cli('verify', '--software', stream=Terminal(), NO_COLOR='1')
         self.assertIsNone(COLOR.search(uncolored[1]))
         self.assertIn('✔ passed', uncolored[1])
 
     def test_refusals_keep_their_exit_code_and_stream_on_a_terminal(self):
-        for stream, setting in ((io.StringIO(), {}), (Terminal(), {}), (Terminal(), RICH)):
-            with self.subTest(terminal=isinstance(stream, Terminal), setting=setting):
-                code, out, err = self.run_cli('--root', str(REPO / 'tests'), 'status', stream=stream, **setting)
+        for fresh, setting in ((io.StringIO, {}), (Terminal, {}), (Terminal, PLAIN)):
+            with self.subTest(stream=fresh.__name__, setting=setting):
+                code, out, err = self.run_cli('--root', str(REPO / 'tests'), 'status', stream=fresh(), **setting)
                 self.assertEqual((code, out), (2, ''))
                 self.assertTrue(err.startswith('Berman needs attention: '), err)
                 self.assertNotIn(ESCAPE, err)
@@ -317,7 +318,7 @@ class CommandLineTests(unittest.TestCase):
         from berman import schemas
 
         self.addCleanup(schemas.validator.cache_clear)
-        for fresh, setting in ((io.StringIO, {}), (Terminal, RICH)):  # A new stream for every command.
+        for fresh, setting in ((io.StringIO, {}), (Terminal, {})):  # A new stream for every command.
             with self.subTest(missing='rich', stream=fresh.__name__):
                 with unimportable('berman.presentation.terminal', 'rich'):
                     code, out, err = self.run_cli('verify', '--software', stream=fresh(), **setting)
@@ -329,7 +330,7 @@ class CommandLineTests(unittest.TestCase):
                 with unimportable('jsonschema'):
                     code, out, err = self.run_cli('verify', '--software', stream=fresh(), **setting)
                     self.assertEqual((code, err), (1, ''))
-                    # Rich itself still imports, so a terminal that asked for it gets its rendering.
+                    # Rich itself still imports, so a terminal gets its rendering.
                     self.assertIn('Packaged schema berman.workspace/1 cannot be used', out)
                     self.assertIn('jsonschema: ', out)
                     with tempfile.TemporaryDirectory() as temporary:
@@ -392,18 +393,18 @@ class PseudoTerminalTests(unittest.TestCase):
         )
         self.assertEqual(piped.returncode, 0, piped.stderr)
         self.assertNotIn(ESCAPE, piped.stdout)
-        # By default a terminal receives exactly what a pipe receives.
         code, text, err = self.run_on_terminal('verify', '--software')
-        self.assertEqual((code, text, err), (0, piped.stdout, ''))
-        code, text, err = self.run_on_terminal('verify', '--software', **RICH)
         self.assertEqual((code, err), (0, ''))
         self.assertIn(ESCAPE, text)
         self.assertIn('✔ passed', text)
         for name in ('installation', 'dependencies', 'frozen-collector', 'schemas'):
             self.assertIn(name, text)
-        code, text, err = self.run_on_terminal('verify', '--software', **RICH, TERM='dumb')
+        # Asked for plain text, or unable to show styled text, a terminal receives what a pipe receives.
+        code, text, err = self.run_on_terminal('verify', '--software', **PLAIN)
         self.assertEqual((code, text, err), (0, piped.stdout, ''))
-        code, text, err = self.run_on_terminal('--json', 'verify', '--software', **RICH)
+        code, text, err = self.run_on_terminal('verify', '--software', TERM='dumb')
+        self.assertEqual((code, text, err), (0, piped.stdout, ''))
+        code, text, err = self.run_on_terminal('--json', 'verify', '--software')
         self.assertEqual((code, err), (0, ''))
         self.assertNotIn(ESCAPE, text)
         self.assertEqual(json.loads(text)['verdict'], 'passed')

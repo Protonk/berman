@@ -31,10 +31,10 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   needs a new schema version and the researcher's decision.
 - What a command accepts, prints, refuses and returns is the researcher's to
   change. Propose such a change; do not make it as part of other work.
-  `berman.presentation.plain` is the default output and is pinned byte for byte
-  by tests/fixtures/presentation; the Rich rendering is opt-in
-  (`BERMAN_OUTPUT=rich`). `--json`, exit codes and plain text must not depend on
-  whether a terminal is attached.
+  `berman.presentation.plain` is what a pipe, a file and `BERMAN_OUTPUT=plain`
+  receive, pinned byte for byte by tests/fixtures/presentation; an interactive
+  terminal gets the Rich rendering of the same result. `--json`, exit codes and
+  redirected text must not depend on whether a terminal is attached.
 - Property tests are derandomized by default. Pin a failure found with
   `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
 - Workspace selection is silent. Run inside a study's repository, or with

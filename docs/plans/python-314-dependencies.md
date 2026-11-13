@@ -360,6 +360,10 @@ How these stand at the close is recorded in the last entries of the log.
     setting away, but is not what an operator sees unasked.
   - What remains different from 0.4.1 for a user is listed in the development
     guide under version 0.4.2, so that each item can be accepted or reversed.
+- **13 November 2026, release 0.4.2.** The researcher decided each
+  recommendation below and asked for the release. The Rich rendering became the
+  default on an interactive terminal, which restores the commission's criterion
+  for it; the other decisions changed no code. The version is `0.4.2`.
 - **13 November 2026, verification of the final tree** (`0.4.2.dev0`, Python
   3.14.9, macOS arm64). It supersedes the numbers in the entry headed "close".
   - *Locked uv environment:* `ruff check`, `ruff format --check` and
@@ -377,36 +381,26 @@ How these stand at the close is recorded in the last entries of the log.
   - Nothing was tagged, pushed or published, no study's runtime was touched,
     and no native installation was qualified.
 
-## Recommendations for the researcher
+## Recommendations, and what the researcher decided
 
-Changes to what Berman accepts, prints or refuses that seem worth making and
-were not made, or were made in a reversible form, pending a decision.
+Changes to what Berman accepts, prints or refuses that were brought to the
+researcher instead of being settled in the work. Decided 13 November 2026.
 
-1. **Make the Rich rendering the default on an interactive terminal.** It shows
-   what the plain text does not: for each outstanding run, every lifecycle fact
-   with its evidence or the reason it is unknown; check statuses told apart by
-   word and mark; and commands grouped by whether they can be typed now or wait
-   on a decision. Redirected output and `--json` would stay as they are. One
-   line in `berman.presentation.show`.
-2. **Confirm the two recovery fixes.** They change behavior only after a failed
-   or interrupted command: an empty `operations/run-NNN/` folder no longer
-   blocks preparation, and a named `finish` can be retried while another
-   engagement is open. Each is one small change with its own regression test
-   and can be reverted alone.
-3. **Confirm the new refusals of misread lists.** A connection's `documents`,
+1. **Make the Rich rendering the default on an interactive terminal.**
+   *Adopted.* Redirected output and `--json` stay as they are, and
+   `BERMAN_OUTPUT=plain` keeps the plain text on a terminal.
+2. **The two recovery fixes.** *Kept.* An empty `operations/run-NNN/` folder
+   no longer blocks preparation, and a named `finish` can be retried while
+   another engagement is open.
+3. **The refusals of lists given as text.** *Kept.* A connection's `documents`,
    `readers`, `checks` or a check's `argv`, or a recipe's `connections`, given
-   as text, is refused where 0.4.1 read it character by character. The recipe
-   case is the one a working setup could trip: `"connections": "stewart"`
-   happened to work.
-4. **Let `berman cancel` finish its own retirement.** After an interruption
-   once the packet has been moved aside, repeating `cancel` is refused and only
-   the next `berman new` completes it. Answering "already cancelled", or
-   resuming, would make every command retryable by repeating it.
-5. **Say what a connection lacks when fieldwork is prepared for it.** A
-   connection without `commission` loads, and `berman new` then stops with the
-   bare word `'commission'`. A sentence naming the file and the missing fields
-   would cost a few lines.
-6. **Decide the version number with the changes in view.** Requiring Python
-   3.14 and adding runtime dependencies changes how a study installs Berman
-   even though commands are unchanged. 0.4.2 is the researcher's stated
-   intention; the adoption notes are written for it.
+   as text, is refused where 0.4.1 read it character by character.
+4. **Let `berman cancel` finish its own retirement.** *Left as it is.* After an
+   interruption once the packet has been moved aside, repeating `cancel` is
+   refused and the next `berman new` completes it.
+5. **Say what a connection lacks when fieldwork is prepared for it.** *Left as
+   it is.* A connection without `commission` loads, and `berman new` then stops
+   with the bare word `'commission'`.
+6. **The version number.** *0.4.2.* Requiring Python 3.14 and adding runtime
+   dependencies changes how a study installs Berman, and the project is
+   experimental below 1.0.

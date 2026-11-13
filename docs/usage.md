@@ -67,12 +67,12 @@ operator's decision. Claude uses separately qualified per-launch settings.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
 starts a prepared session. `berman status` reports outstanding work.
 
-With `BERMAN_OUTPUT=rich` set, on an interactive terminal, `status` shows each
-outstanding run's lifecycle facts with the evidence for each, or the reason a
-fact is unknown, and `cheatsheet` groups commands by whether they can be typed
-now or wait on the researcher's decision. Unknown is never shown as no. Without
-it, and whenever output is redirected, commands print the plain text; `--json`
-carries everything either rendering shows.
+On an interactive terminal, `status` shows each outstanding run's lifecycle
+facts with the evidence for each, or the reason a fact is unknown, and
+`cheatsheet` groups commands by whether they can be typed now or wait on the
+researcher's decision. Unknown is never shown as no. Redirected output is the
+plain text, `BERMAN_OUTPUT=plain` keeps the plain text on a terminal, and
+`--json` carries everything either rendering shows.
 
 A record Berman would crash on or misread is refused with its file and the
 place of each problem, such as `connections.example.checkout must be a string`.
