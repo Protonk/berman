@@ -70,3 +70,5 @@ an equivalent qualified access policy.
 The [development guide](docs/development.md) covers tests, packaging and
 compatibility. [Source provenance](docs/provenance/origin.json) records where this code began;
 the original research ledger retains its history separately.
+
+Berman is released under the [MIT License](LICENSE).
