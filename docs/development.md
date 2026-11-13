@@ -35,9 +35,9 @@ pyproject.toml and is read from the installed distribution.
 | `tests/` | Unit, integration and compatibility tests with synthetic fixtures and shared helpers. |
 
 Workspace paths come from the selected Store. Installed resources come from the
-package. Generated commands name the installed interpreter and use isolated
-module execution; they do not depend on the current directory or PATH finding a
-particular Berman installation. Probes are copied into disposable sandboxes.
+package. Recorded launch commands and hooks name the installed interpreter and
+use isolated module execution. The operator's cheatsheet uses `berman` on PATH
+with an explicit workspace root. Probes are copied into disposable sandboxes.
 
 ## Compatibility and qualification
 

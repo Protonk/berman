@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -304,7 +305,8 @@ class SecondConnectionTests(Base):
         sheet = self.workflow.cheatsheet()['connections'][0]
         self.assertEqual([d['harness'] for d in sheet['development']], ['codex'])
         self.assertEqual(sheet['development'][0]['available'], True)
-        self.assertEqual(sheet['development'][0]['command'], self.workflow.command('dev', '--harness', 'codex'))
+        self.assertEqual(shlex.split(sheet['development'][0]['command']),
+                         ['berman', '--root', str(self.root), 'dev', '--harness', 'codex'])
         self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
         self.assertEqual(self.workflow.status()['connections']['stewart']['next_recipe'], 'work-accounts')
         with self.assertRaisesRegex(Decision, 'No ordinary development launcher is configured for orchard'):

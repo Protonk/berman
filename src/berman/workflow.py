@@ -458,6 +458,9 @@ class Workflow:
         Fieldwork commands follow the recorded situation: a ready packet, an open engagement, or the next
         agreed role. Development commands come from the connection's configured launchers.
         """
+        def command(*words):
+            return shlex.join(['berman', '--root', str(self.store.root), *words])
+
         rows = self.rows()
         held = self.store.occupied()
         connections = []
@@ -477,30 +480,30 @@ class Workflow:
                 next_note = None if conn.plan else 'no research plan assigns fieldwork'
             except Decision as exc:
                 next_role, next_note = None, str(exc)
+            select = [] if conn.id == self.store.default_connection else ['--connection', conn.id]
             development = []
             launchers = (conn.entry.get('development') or {}).items()
             for harness, launcher in sorted(launchers, key=lambda item: (item[0] not in ('codex', 'claude'), item[0] != 'codex', item[0])):
                 path = self.store.path(launcher)
                 development.append({'harness': harness, 'launcher': str(path), 'available': os.access(path, os.X_OK),
-                                    'command': self.command('dev', '--harness', harness, *(['--connection', conn.id]
-                                                                                           if conn.id != self.store.default_connection else []))})
-            select = [] if conn.id == self.store.default_connection else ['--connection', conn.id]
+                                    'command': command('dev', '--harness', harness, *select)})
             several = len(fieldwork['ready']) > 1
-            commands = {'status': self.command('status'),
-                        'new': self.command('new', *select),
-                        'launch': [self.command('launch', '--run', run) if several or select else self.command('launch')
+            commands = {'status': command('status'),
+                        'new': command('new', *select),
+                        'launch': [command('launch', '--run', run) if several or select else command('launch')
                                    for run in fieldwork['ready']],
-                        'finish': [self.command('finish', '--run', run, '--reason', 'why the engagement ended')
+                        'finish': [command('finish', '--run', run, '--reason', 'why the engagement ended')
                                    for run in fieldwork['open']],
-                        'finish_previous': self.command('new', '--finish-previous', 'why the engagement ended', *select),
-                        'keep_open': self.command('new', '--keep-open', *select),
-                        'supplement': [self.command('supplement', '--run', run, '--reason', 'why this activity is retained')
+                        'finish_previous': command('new', '--finish-previous', 'why the engagement ended', *select),
+                        'keep_open': command('new', '--keep-open', *select),
+                        'supplement': [command('supplement', '--run', run, '--reason', 'why this activity is retained')
                                        for run in fieldwork['open']]}
             connections.append({'id': conn.id, 'name': conn.name, 'default': conn.id == self.store.default_connection,
                                 'checkout': str(conn.checkout), 'plan': conn.plan.id if conn.plan else None,
                                 'next_recipe': next_role, 'next_note': next_note,
                                 'operation_in_progress': f'connection {conn.id}' in held,
                                 'fieldwork': fieldwork, 'commands': commands, 'development': development})
-        return {'connections': connections, 'berman': self.command().split()[0],
+        return {'connections': connections, 'berman': 'berman',
                 'workspace_problems': self.store.discovery_problems,
-                'meaning': 'Commands to start sessions now. Nothing was changed; launching still verifies the packet.'}
+                'meaning': 'Commands use berman on PATH and select this workspace explicitly. '
+                           'Nothing was changed; launching still verifies the packet.'}

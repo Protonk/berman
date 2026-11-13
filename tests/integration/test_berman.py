@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -311,25 +312,28 @@ class WorkflowTests(unittest.TestCase):
     def test_cheatsheet_follows_the_recorded_situation_without_changing_files(self):
         before = sorted(p.relative_to(self.root) for p in self.root.rglob('*'))
         sheet = self.workflow.cheatsheet()
+        self.assertEqual(sheet['berman'], 'berman')
         conn = sheet['connections'][0]
         self.assertEqual((conn['id'], conn['default'], conn['next_recipe'], conn['checkout']),
                          ('stewart', True, 'work-accounts', str(self.project)))
         self.assertEqual((conn['development'], conn['commands']['launch'], conn['commands']['finish']), ([], [], []))
-        self.assertTrue(conn['commands']['new'].endswith(f' --root {self.root} new'), conn['commands']['new'])
+        prefix = shlex.join(['berman', '--root', str(self.root)])
+        self.assertEqual(conn['commands']['new'], prefix + ' new')
         self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
         first = self.workflow.new()
         conn = self.workflow.cheatsheet()['connections'][0]
         self.assertEqual(conn['fieldwork']['ready'], [first['run']])
-        self.assertEqual(conn['commands']['launch'], [self.workflow.command('launch')])
+        self.assertEqual(conn['commands']['launch'], [prefix + ' launch'])
         self.start(first['run'])
         conn = self.workflow.cheatsheet()['connections'][0]
         self.assertEqual(conn['fieldwork'], {'ready': [], 'incomplete': [], 'open': [first['run']], 'ending': [], 'attention': []})
-        self.assertEqual(conn['commands']['finish'], [self.workflow.command('finish', '--run', first['run'], '--reason',
-                                                                            'why the engagement ended')])
+        self.assertEqual(shlex.split(conn['commands']['finish'][0]),
+                         ['berman', '--root', str(self.root), 'finish', '--run', first['run'],
+                          '--reason', 'why the engagement ended'])
         second = self.workflow.new(keep_open=True)
         conn = self.workflow.cheatsheet()['connections'][0]
         self.assertEqual((conn['fieldwork']['ready'], conn['fieldwork']['open']), ([second['run']], [first['run']]))
-        self.assertEqual(conn['commands']['launch'], [self.workflow.command('launch')])
+        self.assertEqual(conn['commands']['launch'], [prefix + ' launch'])
 
     def test_cheatsheet_command_prints_the_launch_command_for_a_ready_packet(self):
         first = self.workflow.new()
@@ -337,7 +341,7 @@ class WorkflowTests(unittest.TestCase):
         code, out, err = self.call_cli('cheatsheet', json_mode=False)
         self.assertEqual((code, err), (0, ''))
         self.assertIn(f'{first["run"]} is prepared and unstarted', out)
-        self.assertIn('      ' + self.workflow.command('launch') + '\n', out)
+        self.assertIn('      ' + shlex.join(['berman', '--root', str(self.root), 'launch']) + '\n', out)
         self.assertIn('no development launcher is configured', out)
         code, out, err = self.call_cli('cheatsheet')
         self.assertEqual(code, 0)

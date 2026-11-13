@@ -55,6 +55,9 @@ class StandaloneTests(unittest.TestCase):
         argv = shlex.split(command)
         self.assertEqual(argv[5:], ['hook', '--analysis-root', str(root), '--codex-home', str(store.home)])
         self.assertEqual(argv[1:5], ['-I', '-B', '-m', 'berman.capture.router'])
+        sheet = Workflow(store).cheatsheet()
+        self.assertEqual(shlex.split(sheet['connections'][0]['commands']['new']),
+                         ['berman', '--root', str(root), 'new'])
         with self.assertRaisesRegex(Decision, 'already exists'):
             workspaces.initialize(root, project, 'example')
         with self.assertRaisesRegex(Decision, 'disjoint'):

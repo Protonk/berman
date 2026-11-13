@@ -66,6 +66,11 @@ operator's decision. Claude uses separately qualified per-launch settings.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
 starts a prepared session. `berman status` reports outstanding work.
 
+The cheatsheet uses `berman` on PATH and includes `--root` so its commands work
+from any directory. Use the study's package environment on PATH. Inside that
+workspace you can omit `--root`. Saved launch files and hooks retain explicit
+interpreter paths.
+
 `berman finish --reason TEXT` records the researcher's actual ending decision
 and preserves the encounter. Capture finalization alone is not an ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
