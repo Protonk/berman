@@ -398,7 +398,9 @@ class VerifyTests(Fixture, Base):
         result = self.verify(native=passing)
         checks = result['checks']
         self.assertEqual(checks['workspace']['status'], 'failed')
-        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[3:7] + ['native-access']))
+        # Which adapters a broken workspace selects is unknown, so only the standard pair is listed.
+        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[5:9] + ['native-access']))
+        self.assertFalse(any('legacy-codex' in name for name in checks))
         self.assertEqual(sum('unittest' in argv for argv, _ in self.runner.calls), 0)
         self.assertEqual((result['python'], result['verdict']), (sys.executable, 'failed'))
         self.assertEqual(checks['frozen-collector']['status'], 'passed')
@@ -644,6 +646,98 @@ class UnusedAdapterTests(Fixture, unittest.TestCase):
         self.assertIn('not established (optional)', text)
         self.assertIn('Not established: native-capture:berman-codex (optional)', text)
         self.assertEqual(self.verify()['verdict'], 'incomplete')
+
+
+class MaintainedAdapterTests(Fixture, unittest.TestCase):
+    """A workspace that selects berman-codex keeps one adapter per harness and nothing named legacy."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name).resolve()
+        self.root, self.home = self.base / 'berman', self.base / 'codex'
+        self.home.mkdir()
+        (self.base / 'stewart').mkdir()
+        workspace(self.root, self.base, self.base / 'stewart')
+        self.configure(lambda c: c['connections']['stewart'].update(capture='berman-codex'))
+        self.code()
+        self.trust(captures=('berman-codex',))
+
+    def configure(self, change):
+        config = read(self.root / 'berman.json')
+        change(config)
+        write(self.root / 'berman.json', config)
+        self.store = Store(self.root)
+
+    def test_compatibility_adapter_is_neither_reported_nor_renewed(self):
+        self.assertEqual(adapters.maintained(self.store), ['berman-codex', 'berman-claude'])
+        checks = self.verify(native=passing)['checks']
+        self.assertFalse(any('legacy-codex' in name for name in checks))
+        self.assertEqual([checks[n]['required'] for n in ('hook-trust:berman-codex', 'hook-trust:berman-claude')],
+                         [True, False])
+        legacy = self.root / 'hooks/verification/routed-legacy-codex.json'
+        legacy.unlink()
+        evidence = self.base / 'hooks.terminal'
+        evidence.write_text('Fixture /hooks review record\n')
+        written = adapters.record_trust(self.store, evidence, 'fixture statement')['bases']
+        self.assertEqual(written, [str(self.root / 'hooks/verification/berman-codex.json')])
+        self.assertFalse(legacy.exists())
+        # A connection that still selects it keeps both reported and renewed.
+        self.configure(lambda c: c['connections']['stewart'].update(capture='legacy-codex'))
+        self.assertEqual(adapters.maintained(self.store), ['legacy-codex', 'berman-codex', 'berman-claude'])
+        self.assertEqual(len(adapters.record_trust(self.store, evidence, 'fixture statement')['bases']), 2)
+
+    def test_declared_adapters_are_required_while_no_connection_selects_them(self):
+        self.configure(lambda c: c.update(qualified_adapters=['berman-claude']))
+        self.basis('berman-claude', successful_capture=None)
+        result = self.verify(native=passing)
+        trust = result['checks']['hook-trust:berman-claude']
+        self.assertEqual((trust['status'], trust['required'], trust['details']['kept_qualified']),
+                         ('not-established', True, True))
+        self.assertEqual(result['verdict'], 'incomplete')
+        with self.assertRaisesRegex(ValueError, 'qualified_adapters'):
+            self.configure(lambda c: c.update(qualified_adapters=['no-such-adapter']))
+
+    def test_hooks_name_the_runtime_interpreter_and_probes_keep_the_general_one(self):
+        runtime = self.base / 'environment/bin/python'
+        runtime.parent.mkdir(parents=True)
+        runtime.symlink_to(sys.executable)
+        self.configure(lambda c: c.update(runtime_python=str(runtime)))
+        self.assertEqual((self.store.python, self.store.runtime_python), (Path(sys.executable), runtime))
+        generated = adapters.definition(self.store, 'berman-codex')
+        commands = {h['command'] for groups in generated['hooks'].values() for g in groups for h in g['hooks']}
+        self.assertEqual(len(commands), 1)
+        self.assertTrue(commands.pop().startswith(str(runtime) + ' -I -B -m berman.capture.router hook '))
+        identity = self.store.harness_identity('berman-codex', 'run-101')
+        self.assertEqual((identity['python'], identity['runtime_python']), (sys.executable, str(runtime)))
+        record = {'run': 'run-101', 'harness': identity}
+        self.store.check_installation(record)
+        self.store.check_installation({'run': 'run-101', 'harness': {k: v for k, v in identity.items()
+                                                                     if k != 'runtime_python'}})
+        self.configure(lambda c: c.pop('runtime_python'))
+        self.assertNotIn('runtime_python', self.store.harness_identity('berman-codex', 'run-101'))
+        with self.assertRaisesRegex(Decision, 'runtime_python'):
+            self.store.check_installation(record)
+
+    def test_the_workspace_template_is_generated_without_installing(self):
+        template = self.root / 'hooks/berman-capture.hooks.json'
+        installed = (self.home / 'hooks.json').read_bytes()
+        template.unlink()
+        self.assertFalse(adapters.template(self.store, 'berman-codex')['matches'])
+        self.assertFalse(template.exists())
+        result = adapters.template(self.store, 'berman-codex', True)
+        self.assertEqual((result['matches'], result['written']), (True, True))
+        self.assertEqual(read(template), adapters.definition(self.store, 'berman-codex'))
+        self.assertEqual((self.home / 'hooks.json').read_bytes(), installed)
+
+    def test_the_workspace_names_the_edition_it_maintains(self):
+        from berman import workspace as selection
+        self.assertEqual((self.store.edition, selection.edition(self.root)), ('connections', 'connections'))
+        self.configure(lambda c: c.update(edition='stewart'))
+        self.assertEqual((self.store.edition, selection.edition(self.root)), ('stewart', 'stewart'))
+        with self.assertRaisesRegex(ValueError, 'reading edition'):
+            self.configure(lambda c: c.update(edition='another'))
+        self.assertEqual(selection.edition(self.base / 'missing'), 'connections')
 
 
 if __name__ == '__main__':

@@ -218,13 +218,16 @@ def adapters(store, root, code):
     workspace both facts are reported as not run rather than as missing.
     """
     checks = {}
-    for name, adapter in capture_adapters.ADAPTERS.items():
+    for name in capture_adapters.maintained(store):
+        adapter = capture_adapters.ADAPTERS[name]
         trust, native = f'hook-trust:{name}', f'native-capture:{name}'
         if store is None:
             checks[trust], checks[native] = row('not-run', 'Depends on workspace'), row('not-run', 'Depends on workspace')
             continue
         used = sorted(c.id for c in store.connections.values() if c.capture == name)
-        details = {'basis': adapter['basis'], 'used_by': used}
+        details = {'basis': adapter['basis'], 'used_by': used, 'kept_qualified': name in store.qualified_adapters}
+        # Required for an adapter a connection selects or the installation declares it keeps qualified.
+        needed = bool(used) or name in store.qualified_adapters
         claude = name == 'berman-claude'
         trial = CLAUDE_TRIAL_NEXT if claude else TRIAL_NEXT.format(name=name, root=root)
         try:
@@ -234,9 +237,9 @@ def adapters(store, root, code):
                 changed = capture_adapters.changed_implementation(store, name)
             except PROBLEMS:
                 changed = None
-            checks[trust] = row('not-established', str(exc), bool(used), CLAUDE_TRUST_NEXT if claude else TRUST_NEXT,
+            checks[trust] = row('not-established', str(exc), needed, CLAUDE_TRUST_NEXT if claude else TRUST_NEXT,
                                 changed_implementation=changed, **details)
-            checks[native] = row('not-established', f'Depends on {trust}', bool(used), trial, **details)
+            checks[native] = row('not-established', f'Depends on {trust}', needed, trial, **details)
             continue
         warnings = list(ready.get('warnings', []))
         summary = ('Per-launch hook template, in-session bytes, helpers and settings policy match the qualified '
@@ -244,14 +247,14 @@ def adapters(store, root, code):
                    'Installed hooks match the definition reviewed in the actual CLI for these implementation bytes')
         if warnings:
             summary += '; warning: ' + ' '.join(warnings)
-        checks[trust] = row('passed', summary, bool(used), changed_implementation=[], warnings=warnings, **details)
+        checks[trust] = row('passed', summary, needed, changed_implementation=[], warnings=warnings, **details)
         evidence = capture_adapters.native_capture(store, name)
         if evidence:
             checks[native] = row('passed', f'Native {", ".join(evidence["events"])} captured by these implementation bytes '
-                                           f'({evidence["run"] or evidence["path"]})', bool(used), **details, **evidence)
+                                           f'({evidence["run"] or evidence["path"]})', needed, **details, **evidence)
         else:
             checks[native] = row('not-established', 'Trust recorded; no native capture demonstrated for these '
-                                                    'implementation bytes', bool(used), trial, **details)
+                                                    'implementation bytes', needed, trial, **details)
     return checks
 
 

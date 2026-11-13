@@ -31,6 +31,15 @@ def discover(start=None):
     return None
 
 
+def edition(root):
+    """The reading edition a workspace maintains, read without loading the workspace."""
+    try:
+        value = json.loads((Path(root) / 'berman.json').read_text()).get('edition', 'connections')
+    except (OSError, ValueError, AttributeError):
+        return 'connections'
+    return value if value in ('connections', 'stewart') else 'connections'
+
+
 def initialize(destination, project, connection, codex=None, claude=None):
     """Create an unqualified workspace; install no hooks and assign no engagement."""
     from berman.capture import adapters

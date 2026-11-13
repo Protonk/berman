@@ -116,7 +116,8 @@ class Codex:
     def preflight(self, connection):
         """Checks that do not depend on a new packet, before ending another engagement."""
         hooks = self.hooks(connection.capture)
-        if not os.access(self.python, os.X_OK) or not connection.checkout.is_dir():
+        if (not os.access(self.python, os.X_OK) or not os.access(self.store.runtime_python, os.X_OK)
+                or not connection.checkout.is_dir()):
             raise Decision(f'Configured Python or the {connection.id} checkout is unavailable')
         self.invoke([str(self.binary), '--version'], connection.checkout, check=True, timeout=20)
         return hooks

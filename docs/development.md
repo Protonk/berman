@@ -58,6 +58,16 @@ setting remains the interpreter for native harness callbacks and must have the
 chosen package installed. `berman verify --skip archive` remains available;
 the former test-suite skip options are removed.
 
+Version 0.3 adds what adopting the package in an existing study needed. An
+installation maintains one adapter per harness; `legacy-codex` is compatibility
+code, reported and renewed only where a connection still selects it. berman.json
+gains `runtime_python` (the interpreter generated hook commands name),
+`qualified_adapters` (adapters verification requires whether or not a connection
+selects them) and `edition` (the reading edition the workspace maintains).
+`berman capture definition` prints or writes the workspace hook template.
+Operation records name `runtime_python` when it differs from `python`, and a
+later change to it is refused like any other installation change.
+
 ## Preserved material
 
 Never edit preserved packets, inventories or recordings in place or run ordinary

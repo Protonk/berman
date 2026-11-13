@@ -26,7 +26,28 @@ an id and recipe. Select its relative path in the connection's berman.json entry
 only when those engagements are wanted. Instructions are retained at reservation;
 changing a recipe does not change an already prepared assignment.
 
-Before fieldwork, install and review the generated router definition with
+## Adapters and interpreters
+
+A study has one capture adapter per harness: `berman-codex` and `berman-claude`.
+A connection's `capture` entry in berman.json selects the one its next
+engagements use. List both under `qualified_adapters` to make verification
+require hook trust and native capture for each, including the one no connection
+currently selects.
+
+`legacy-codex` remains as compatibility code for workspaces that already select
+it and for the runs they recorded. A workspace that does not select it neither
+reports nor renews it.
+
+berman.json names two interpreters. `python` runs access probes and a
+connection's project checks inside the fieldworker's sandbox, where the
+workspace is denied, so it must lie outside the workspace and packet root.
+`runtime_python` is the interpreter that has this package installed; generated
+hook commands name it and run in isolated mode. It defaults to `python`. A
+virtual environment inside the denied workspace is a suitable `runtime_python`:
+hooks run from the harness, outside the sandbox.
+
+Before fieldwork, write the workspace's hook template with
+`berman capture definition --adapter berman-codex --write`, install it with
 `berman capture install --adapter berman-codex`, review /hooks in the actual CLI,
 and use `berman capture record-trust --evidence FILE --attest`. A native support
 trial demonstrates callback capture. `berman support-trial --help` describes
@@ -60,6 +81,8 @@ inventory, chosen documents and generated aids; it does not collect configuratio
 hook receipts or software merely because they share a directory.
 
 `--edition stewart` preserves the explicit historical Stewart packaging behavior.
-Its workspace must supply the legacy context documents. Never run a builder
+Its workspace must supply the legacy context documents. A workspace names the
+edition it maintains with `edition` in berman.json; `berman archive` and the
+archive check of `berman verify` then use it without the option. Never run a builder
 against a Git worktree of a preserved collection: Git does not restore recorded
 modification times.

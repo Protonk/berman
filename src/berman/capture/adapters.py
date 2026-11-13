@@ -46,6 +46,21 @@ ADAPTERS = {
 }
 
 
+# Kept so that workspaces which already select it, and the runs they recorded, keep working. An
+# installation that does not select it neither reports nor renews it: new studies use one adapter
+# per harness, berman-codex and berman-claude.
+COMPATIBILITY = ('legacy-codex',)
+
+
+def maintained(store):
+    """The adapters this installation qualifies and verifies.
+
+    A compatibility adapter is included only while a configured connection selects it.
+    """
+    used = {c.capture for c in store.connections.values()} if store is not None else set()
+    return [name for name in ADAPTERS if name not in COMPATIBILITY or name in used]
+
+
 def implementation(name):
     return {rel: files.digest((PACKAGE / rel).read_bytes()) for rel in ADAPTERS[name]['implementation']}
 
@@ -63,12 +78,24 @@ def definition(store, name):
         return claude_definition()
     # The established quoting and timeouts of the legacy definition.
     command = shlex.join(module_command('hook', '--analysis-root', store.root, '--codex-home', store.home,
-                                        python=store.python, module='berman.capture.router'))
+                                        python=store.runtime_python, module='berman.capture.router'))
     timeouts = {'UserPromptSubmit': 3, 'Stop': 10, 'Interrupt': 3, 'SessionEnd': 3}
     return {'description': 'Berman exclusive capture router. Routes Stewart-Fieldwork-Run and Berman-Fieldwork-Run '
                            'to their respective collectors; one owner per session.',
             'hooks': {event: [{'hooks': [{'type': 'command', 'command': command, 'timeout': timeouts[event]}]}]
                       for event in EVENTS}}
+
+
+def template(store, name, write_it=False):
+    """The generated definition and whether the workspace template equals it; writing installs nothing."""
+    generated = definition(store, name)
+    path = store.root / ADAPTERS[name]['definition']
+    if write_it:
+        with store.lock('installation', 'codex-hooks', wait=10):
+            write(path, generated)
+    return {'adapter': name, 'template': str(path), 'matches': path.is_file() and read(path) == generated,
+            'written': bool(write_it), 'definition': generated,
+            'meaning': 'The workspace template only. Nothing was installed in the Codex home and no trust is implied.'}
 
 
 def installed_groups(installed, template):
@@ -125,7 +152,7 @@ def installed(store, name):
             for hook in group['hooks']:
                 argv = shlex.split(hook['command'])
                 if (argv != module_command('hook', '--analysis-root', store.root, '--codex-home', store.home,
-                                           python=store.python, module='berman.capture.router')
+                                           python=store.runtime_python, module='berman.capture.router')
                         or not os.access(argv[0], os.X_OK) or not (PACKAGE / a['entry']).is_file()):
                     raise Decision(f'{event} collector or interpreter is unavailable')
     exclusive_definition(hooks, template)
@@ -273,7 +300,8 @@ def record_trust(store, evidence, statement):
                        'observed': {event: {'enabled': True, 'trust': 'Trusted', 'source': '~/.codex/hooks.json'} for event in EVENTS}}
         write(folder / 'hook-trust.json', observation)
         written = []
-        for name, a in ADAPTERS.items():
+        for name in maintained(store):
+            a = ADAPTERS[name]
             if a['harness'] != 'codex':
                 continue
             template = read(store.root / a['definition'])

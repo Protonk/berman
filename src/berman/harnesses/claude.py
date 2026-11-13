@@ -57,7 +57,7 @@ def settings_path(store, run):
 
 def settings(store, record):
     root, field, packet = str(store.root), str(store.field), record['packet']
-    command = module_command(python=store.python, module='berman.capture.claude_router')
+    command = module_command(python=store.runtime_python, module='berman.capture.claude_router')
     suffix = ['--root', root, '--run', record['run']]
     hooks = {event: [{'hooks': [{'type': 'command', 'command': shlex.join(command + ['capture'] + suffix),
                                'timeout': 20}]}] for event in EVENTS}
@@ -106,7 +106,7 @@ def configuration(store, project):
     return {'schema': CONFIGURATION,
             'policy': {'project': str(project), 'workspace': str(store.root), 'packet_root': str(store.field),
                        'config_dir_environment': os.environ.get('CLAUDE_CONFIG_DIR'),
-                       'claude_home': str(store.claude_home), 'python': str(store.python), 'template': definition(),
+                       'claude_home': str(store.claude_home), 'python': str(store.runtime_python), 'template': definition(),
                        'settings': {str(path): policy_digest(present[path]) if path in present else None
                                     for path in sources}},
             'harness': {'binary': str(binary), 'version': version,

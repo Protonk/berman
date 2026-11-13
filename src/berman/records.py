@@ -30,6 +30,11 @@ def packet_evidence(root):
             'session_material': any((root / name).exists() for name in SESSION_MATERIAL)}
 
 
+def runtime_adapters():
+    from berman.config import CAPTURE_ADAPTERS
+    return CAPTURE_ADAPTERS
+
+
 class Store:
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve()
@@ -46,6 +51,10 @@ class Store:
         self.field = self.path(workspace['packet_root'])
         self.home = self.path(workspace['codex_home'])
         self.python = self.path(workspace['python'])
+        # Hook commands run the installed package in isolated mode, so they name an interpreter that
+        # has it. Probes and project checks run inside the fieldworker's sandbox, where the
+        # workspace is denied, and keep the general interpreter above.
+        self.runtime_python = self.path(workspace.get('runtime_python', workspace['python']))
         self.codex = self.path(workspace['codex'])
         self.claude = self.path(workspace.get('claude', '~/.local/bin/claude'))
         self.claude_home = self.path(workspace.get('claude_home', '~/.claude'))
@@ -59,6 +68,14 @@ class Store:
         self.catalogue = Catalogue(self, workspace)
         self.connections = {ident: Connection(self, ident, entry) for ident, entry in workspace['connections'].items()}
         self.default_connection = workspace.get('default_connection')
+        # Adapters this installation keeps qualified even while no connection selects them.
+        self.qualified_adapters = tuple(workspace.get('qualified_adapters', ()))
+        for name in self.qualified_adapters:
+            if name not in runtime_adapters():
+                raise ValueError(f'Unknown capture adapter in qualified_adapters: {name}')
+        self.edition = workspace.get('edition', 'connections')
+        if self.edition not in ('connections', 'stewart'):
+            raise ValueError(f'Unknown reading edition: {self.edition}')
         self.legacy_connection = workspace.get('legacy_connection')
         for name in (self.default_connection, self.legacy_connection):
             if name is not None and name not in self.connections:
@@ -125,6 +142,7 @@ class Store:
         expected = (record or {}).get('harness') or {}
         claude = expected.get('id') == 'claude'
         current = {'binary': str(self.claude if claude else self.codex), 'python': str(self.python),
+                   'runtime_python': str(self.runtime_python),
                    'home': str(self.claude_home if claude else self.home)}
         current['profile'] = f'berman-{self.tag}-{record["run"]}' if record else None
         changed = [f'{key}: recorded {expected[key]}, configured {value}' for key, value in current.items()
@@ -142,6 +160,8 @@ class Store:
                   'binary': str(self.claude if claude else self.codex),
                   'home': str(self.claude_home if claude else self.home),
                   'python': str(self.python), 'profile': f'berman-{self.tag}-{run}'}
+        if self.runtime_python != self.python:
+            result['runtime_python'] = str(self.runtime_python)
         if claude:
             result['session_id'] = str(uuid.uuid4())
             if model is not None:

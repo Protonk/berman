@@ -87,7 +87,8 @@ def main(argv=None):
     commands.add_parser('version', help='show the software version and source identity')
     archive = commands.add_parser('archive', help='build or verify a reading edition')
     archive.add_argument('--verify', action='store_true')
-    archive.add_argument('--edition', choices=('connections', 'stewart'), default='connections')
+    archive.add_argument('--edition', choices=('connections', 'stewart'),
+                         help="default: the workspace's edition setting in berman.json, otherwise connections")
     archive.add_argument('--connection', action='append', default=[])
     archive.add_argument('--run', action='append', default=[])
 
@@ -126,6 +127,10 @@ def main(argv=None):
     readiness.add_argument('--adapter', choices=tuple(adapters.ADAPTERS), required=True)
     install = capture_commands.add_parser('install', help="add an adapter's hook definition to Codex hooks.json; grants no trust")
     install.add_argument('--adapter', choices=('berman-codex',), required=True)
+    generated = capture_commands.add_parser('definition', help='print the Codex hook definition generated from berman.json; '
+                                                               'with --write, keep it as the workspace template')
+    generated.add_argument('--adapter', choices=('berman-codex',), required=True)
+    generated.add_argument('--write', action='store_true', help='write hooks/berman-capture.hooks.json; installs nothing')
     trust = capture_commands.add_parser('record-trust', help='record an actual /hooks review in the Codex CLI')
     trust.add_argument('--evidence', type=Path, required=True, help='terminal record of the /hooks review')
     trust.add_argument('--adapter', choices=('codex', 'berman-claude'), default='codex')
@@ -185,7 +190,7 @@ def main(argv=None):
         args.root = selected
         if args.command == 'archive':
             from berman.archive.builder import main as archive_main
-            options = ['--root', str(selected), '--edition', args.edition]
+            options = ['--root', str(selected), '--edition', args.edition or workspace.edition(selected)]
             options += ['--verify'] if args.verify else []
             for kind in ('connection', 'run'):
                 for value in getattr(args, kind):
@@ -226,6 +231,8 @@ def main(argv=None):
                 result = adapters.readiness(store, args.adapter)
             elif args.capture_command == 'install':
                 result = adapters.install(store, args.adapter)
+            elif args.capture_command == 'definition':
+                result = adapters.template(store, args.adapter, args.write)
             elif args.capture_command == 'record-capture':
                 result = support_trials.record_capture(store, args.trial)
             else:
