@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from berman.capture import adapters
+from berman import presentation
 from berman import support as support_trials
 from berman import verify
 from berman import workspace
@@ -15,62 +16,12 @@ from berman.records import Store
 from berman.workflow import Workflow
 
 
-def render_cheatsheet(result):
-    """Commands a person types now, grouped by connection; the JSON form carries the same content."""
-    lines = []
-    for problem in result['workspace_problems']:
-        lines.append('Workspace needs attention: ' + problem)
-    for conn in result['connections']:
-        title = f'{conn["name"]} ({conn["id"]}' + (', default connection)' if conn['default'] else ')')
-        lines += [title, '  checkout: ' + conn['checkout'], '']
-        lines.append('  Ordinary development (no fieldwork record, no research-plan step; works from any directory):')
-        if not conn['development']:
-            lines.append('    no development launcher is configured; use the harness directly from the checkout')
-        for dev in conn['development']:
-            note = '' if dev['available'] else '    (launcher missing or not executable: ' + dev['launcher'] + ')'
-            lines.append('    ' + dev['command'] + note)
-        if conn['development']:
-            lines.append('    after --: --model MODEL, --effort LEVEL, one quoted opening prompt')
-            lines.append('    Codex automatically rechecks changed installations before starting; '
-                         'explicit checks exit without starting development (Claude uses a model session):')
-            lines += ['      ' + dev['command'] + ' --check' for dev in conn['development']]
-        lines.append('')
-        commands, fieldwork = conn['commands'], conn['fieldwork']
-        lines.append('  Fieldwork:')
-        if conn['operation_in_progress']:
-            lines.append('    an operation is in progress on this connection; wait for it, then ' + commands['status'])
-        for item in fieldwork['attention']:
-            lines.append(f'    {item["run"]} needs attention: {item["problem"]}; see ' + commands['status'])
-        for run, command in zip(fieldwork['ready'], commands['launch'], strict=True):
-            lines.append(f'    {run} is prepared and unstarted; start it with:')
-            lines.append('      ' + command)
-        for run in fieldwork['incomplete']:
-            lines.append(f'    {run} has an incomplete preparation; complete it with:')
-            lines.append('      ' + commands['new'])
-        for run, finish, supplement in zip(fieldwork['open'], commands['finish'], commands['supplement'], strict=True):
-            lines.append(f'    {run} is an open engagement. When the researcher says it has ended:')
-            lines.append('      ' + finish)
-            lines.append('    or end it while preparing the next fieldworker:')
-            lines.append('      ' + commands['finish_previous'])
-            lines.append('    or keep it open while preparing another:')
-            lines.append('      ' + commands['keep_open'])
-            lines.append('    retain later activity without ending it:')
-            lines.append('      ' + supplement)
-        for run in fieldwork['ending']:
-            lines.append(f'    {run} has a declared ending in progress; ' + commands['status'] + ' shows its state')
-        if not any(fieldwork.values()):
-            if conn['next_recipe']:
-                lines.append(f'    nothing outstanding; the next agreed role is {conn["next_recipe"]}. Prepare it with:')
-                lines.append('      ' + commands['new'])
-                lines.append('    then start it with the launch command that new prints')
-            else:
-                lines.append('    nothing outstanding; ' + (conn['next_note'] or 'no next role'))
-                lines.append('    a fieldworker needs a research plan that assigns one; development stays available')
-        elif conn['next_recipe'] and not fieldwork['ready'] and not fieldwork['incomplete']:
-            lines.append(f'    the next agreed role after these is {conn["next_recipe"]}')
-        lines.append('')
-    lines.append(result['meaning'])
-    return '\n'.join(lines)
+def show(args, kind, result):
+    """Print a result: JSON when asked or when no presentation is defined, otherwise for a person."""
+    if args.json or kind is None:
+        print(json.dumps(result, indent=2))
+    else:
+        presentation.show(kind, result)
 
 
 def main(argv=None):
@@ -183,7 +134,7 @@ def main(argv=None):
             if args.native_access or args.record:
                 raise Decision('--native-access and --record require a workspace verification')
             result = verify.software(skip=args.skip)
-            print(json.dumps(result, indent=2) if args.json else verify.render(result))
+            show(args, 'verification', result)
             return verify.EXIT[result['verdict']]
         if selected is None:
             raise Decision('Select a fieldwork workspace with --root, or create one with berman init')
@@ -202,7 +153,7 @@ def main(argv=None):
             # Before the workspace loads, so a broken berman.json is reported as a check, not a refusal.
             result = verify.verify(args.root, skip=args.skip, record=args.record,
                                           native=verify.native_access if args.native_access else None)
-            print(json.dumps(result, indent=2) if args.json else verify.render(result))
+            show(args, 'verification', result)
             return verify.EXIT[result['verdict']]
         store = Store(args.root)
         workflow = Workflow(store)
@@ -255,50 +206,7 @@ def main(argv=None):
         else:
             workflow.launch(args.run, args.connection)
             return 0
-        if args.json:
-            print(json.dumps(result, indent=2))
-        elif args.command == 'new':
-            for row in result['preserved']:
-                print(f'Preserved {row["run"]}: {row["package"]["path"]}')
-            checks = 'Prior native checks reused; configuration unchanged.' if result['checks_reused'] else 'Native checks passed in this preparation.'
-            print(f'{result["run"]} ({result["connection"]}) ready using {result["recipe"]}. {checks}')
-            for warning in result.get('warnings', []):
-                print('Warning: ' + warning)
-            print('Launch when ready:\n\n' + result['launch'])
-        elif args.command == 'cheatsheet':
-            print(render_cheatsheet(result))
-        elif args.command == 'status':
-            print(f'{result["archived"]} archived runs. Default connection: {result["default_connection"]}')
-            for problem in result['workspace_problems']:
-                print('Workspace needs attention: ' + problem)
-            for name, row in result['connections'].items():
-                busy = '; an operation is in progress' if row['operation_in_progress'] else ''
-                print(f'{name}: next fieldwork role: {row["next_recipe"]}{busy}')
-                for problem in row['blocked_by']:
-                    print('  needs attention: ' + problem)
-                for path in row['pending_requests']:
-                    print('  pending combined request: ' + path)
-            if not result['runs']:
-                print('No outstanding engagements or preparations.')
-            for row in result['runs']:
-                print(f'{row["run"]} ({row["connection"]}): {row["summary"]}')
-                if row['last_capture']:
-                    print(f'  Capture at {row["last_capture"]}; consistent: {row["capture_consistent"]}')
-                shown = set(row['problems'])
-                for name in row['unknown']:
-                    for reason in row['lifecycle'][name]['unknown']:
-                        if reason not in shown:
-                            shown.add(reason)
-                            print(f'  {name} unknown: {reason}')
-                for line in row['lifecycle']['disagreements'] + row['warnings'] + row['problems']:
-                    print('  ' + line)
-            for trial in result['support_trials']:
-                print(f'{trial["run"]} (support trial, {trial["adapter"]}; not research): {trial["phase"]}; '
-                      f'capture: {trial["capture_state"]}; next: {trial["next"]}')
-                for problem in trial['problems']:
-                    print('  ' + problem)
-        else:
-            print(json.dumps(result, indent=2))
+        show(args, {'new': 'prepared', 'cheatsheet': 'cheatsheet', 'status': 'status'}.get(args.command), result)
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         result = {'state': 'needs-attention', 'message': str(exc)}

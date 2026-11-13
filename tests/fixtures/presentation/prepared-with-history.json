@@ -1,0 +1,28 @@
+{
+  "state": "ready",
+  "run": "run-006",
+  "connection": "orchard",
+  "recipe": "participant-inquiry",
+  "preserved": [
+    {
+      "run": "run-005",
+      "state": "archived",
+      "package": {
+        "path": "/synthetic/study/archive/recordings/run-005.zip"
+      }
+    }
+  ],
+  "retained_open_runs": [
+    "run-004"
+  ],
+  "launch": "/synthetic/venv/bin/python -I -B -m berman --root '/synthetic/study with spaces' launch --run run-006",
+  "packet": "/synthetic/packets/run-006",
+  "preparation": "/synthetic/study/operations/run-006/preparation",
+  "checks_passed": true,
+  "checks_reused": true,
+  "warnings": [
+    "Claude CLI changed since qualification."
+  ],
+  "request": null,
+  "next": "Launch when wanted."
+}

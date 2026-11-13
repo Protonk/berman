@@ -1,0 +1,12 @@
+Orchard (orchard, default connection)
+  checkout: /synthetic/orchard
+
+  Ordinary development (no fieldwork record, no research-plan step; works from any directory):
+    no development launcher is configured; use the harness directly from the checkout
+
+  Fieldwork:
+    nothing outstanding; the next agreed role is work-accounts. Prepare it with:
+      berman --root '/synthetic/study with spaces' new
+    then start it with the launch command that new prints
+
+Commands use berman on PATH and select this workspace explicitly. Nothing was changed; launching still verifies the packet.

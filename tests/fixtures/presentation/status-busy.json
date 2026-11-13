@@ -1,0 +1,470 @@
+{
+  "runs": [
+    {
+      "run": "run-002",
+      "connection": "orchard",
+      "state": "archived",
+      "phase": "active",
+      "session": "session-1",
+      "ending_declared": false,
+      "started": true,
+      "prepared_unstarted": false,
+      "record": "/synthetic/study/operations/run-002",
+      "capture_consistent": null,
+      "last_capture": null,
+      "warnings": [],
+      "problems": [],
+      "operation_in_progress": false,
+      "summary": "capture closed by finalized.json (frozen; not an ending); no engagement ending declared; migration indexed; no recording package",
+      "unknown": [],
+      "lifecycle": {
+        "registered": {
+          "value": true,
+          "evidence": [
+            "session/binding.json names session-1",
+            "operation record started_session s"
+          ]
+        },
+        "capture": {
+          "value": "closed",
+          "evidence": [
+            "session/finalized.json"
+          ],
+          "closed_by": [
+            "finalized.json"
+          ],
+          "last_event": null,
+          "consistent": null,
+          "turn_pending": null
+        },
+        "finalized": {
+          "value": true,
+          "evidence": [
+            "session/finalized.json"
+          ]
+        },
+        "ending": {
+          "value": false,
+          "evidence": [
+            "no ending declaration recorded"
+          ]
+        },
+        "migration": {
+          "value": "indexed",
+          "evidence": [
+            "source-layout.json entry"
+          ]
+        },
+        "packaged": {
+          "value": false,
+          "evidence": [
+            "no recording package recorded"
+          ]
+        },
+        "disagreements": [
+          "migrated without a declared ending (low-level migration); no recording package is made automatically"
+        ],
+        "unknown": []
+      }
+    },
+    {
+      "run": "run-003",
+      "connection": "orchard",
+      "state": "migration-pending",
+      "phase": "closing",
+      "session": "session-1",
+      "ending_declared": true,
+      "started": true,
+      "prepared_unstarted": false,
+      "record": "/synthetic/study/operations/run-003",
+      "capture_consistent": null,
+      "last_capture": null,
+      "warnings": [],
+      "problems": [],
+      "operation_in_progress": false,
+      "summary": "capture closed by finalized.json (frozen; not an ending); ending declared; migration moved-and-verified; recording package pending",
+      "unknown": [],
+      "lifecycle": {
+        "registered": {
+          "value": true,
+          "evidence": [
+            "session/binding.json names session-1",
+            "operation record started_session s"
+          ]
+        },
+        "capture": {
+          "value": "closed",
+          "evidence": [
+            "session/finalized.json"
+          ],
+          "closed_by": [
+            "finalized.json"
+          ],
+          "last_event": null,
+          "consistent": null,
+          "turn_pending": null
+        },
+        "finalized": {
+          "value": true,
+          "evidence": [
+            "session/finalized.json"
+          ]
+        },
+        "ending": {
+          "value": true,
+          "evidence": [
+            "declared 2026-11-13T01:00:00.000000Z: The researcher said the encounter ended."
+          ],
+          "allow_incomplete": null
+        },
+        "migration": {
+          "value": "moved-and-verified",
+          "evidence": [
+            "migration journal phase moved-and-verified"
+          ]
+        },
+        "packaged": {
+          "value": false,
+          "evidence": [
+            "no recording package recorded"
+          ]
+        },
+        "disagreements": [],
+        "unknown": []
+      }
+    },
+    {
+      "run": "run-004",
+      "connection": "orchard",
+      "state": "open",
+      "phase": "active",
+      "session": "session-1",
+      "ending_declared": false,
+      "started": true,
+      "prepared_unstarted": false,
+      "record": "/synthetic/study/operations/run-004",
+      "capture_consistent": true,
+      "last_capture": "2026-11-13T00:30:00.000000Z",
+      "warnings": [
+        "Transcript grew after the last snapshot."
+      ],
+      "problems": [],
+      "operation_in_progress": false,
+      "summary": "session registered; capture open after Stop; no engagement ending declared",
+      "unknown": [],
+      "lifecycle": {
+        "registered": {
+          "value": true,
+          "evidence": [
+            "session/binding.json names session-1",
+            "operation record started_session session-1"
+          ]
+        },
+        "capture": {
+          "value": "open",
+          "evidence": [
+            "session/binding.json",
+            "last capture event Stop"
+          ],
+          "closed_by": [],
+          "last_event": "Stop",
+          "consistent": true,
+          "turn_pending": null
+        },
+        "finalized": {
+          "value": false,
+          "evidence": [
+            "no session/finalized.json"
+          ]
+        },
+        "ending": {
+          "value": false,
+          "evidence": [
+            "no ending declaration recorded"
+          ]
+        },
+        "migration": {
+          "value": "none",
+          "evidence": [
+            "packet not migrated"
+          ]
+        },
+        "packaged": {
+          "value": false,
+          "evidence": [
+            "no recording package recorded"
+          ]
+        },
+        "disagreements": [],
+        "unknown": []
+      }
+    },
+    {
+      "run": "run-005",
+      "connection": "orchard",
+      "state": "finalized",
+      "phase": "active",
+      "session": "session-1",
+      "ending_declared": false,
+      "started": true,
+      "prepared_unstarted": false,
+      "record": "/synthetic/study/operations/run-005",
+      "capture_consistent": true,
+      "last_capture": "2026-11-13T00:40:00.000000Z",
+      "warnings": [],
+      "problems": [],
+      "operation_in_progress": false,
+      "summary": "capture closed by finalized.json (frozen; not an ending); no engagement ending declared",
+      "unknown": [],
+      "lifecycle": {
+        "registered": {
+          "value": true,
+          "evidence": [
+            "session/binding.json names session-1",
+            "operation record started_session session-2"
+          ]
+        },
+        "capture": {
+          "value": "closed",
+          "evidence": [
+            "session/finalized.json"
+          ],
+          "closed_by": [
+            "finalized.json"
+          ],
+          "last_event": "SessionEnd",
+          "consistent": true,
+          "turn_pending": null
+        },
+        "finalized": {
+          "value": true,
+          "evidence": [
+            "session/finalized.json"
+          ]
+        },
+        "ending": {
+          "value": false,
+          "evidence": [
+            "no ending declaration recorded"
+          ]
+        },
+        "migration": {
+          "value": "none",
+          "evidence": [
+            "packet not migrated"
+          ]
+        },
+        "packaged": {
+          "value": false,
+          "evidence": [
+            "no recording package recorded"
+          ]
+        },
+        "disagreements": [],
+        "unknown": []
+      }
+    },
+    {
+      "run": "run-006",
+      "connection": "meadow",
+      "state": "bound-awaiting-capture",
+      "phase": "ready",
+      "session": null,
+      "ending_declared": false,
+      "started": false,
+      "prepared_unstarted": true,
+      "record": "/synthetic/study/operations/run-006",
+      "capture_consistent": null,
+      "last_capture": null,
+      "warnings": [],
+      "problems": [],
+      "operation_in_progress": true,
+      "summary": "ready; not yet started",
+      "unknown": [],
+      "lifecycle": {
+        "registered": {
+          "value": false,
+          "evidence": [
+            "no session binding, registration, replacement receipt or recorded session"
+          ]
+        },
+        "capture": {
+          "value": "none",
+          "evidence": [
+            "no registered session"
+          ],
+          "closed_by": [],
+          "last_event": null,
+          "consistent": null,
+          "turn_pending": null
+        },
+        "finalized": {
+          "value": false,
+          "evidence": [
+            "no session/finalized.json"
+          ]
+        },
+        "ending": {
+          "value": false,
+          "evidence": [
+            "no ending declaration recorded"
+          ]
+        },
+        "migration": {
+          "value": "none",
+          "evidence": [
+            "packet not migrated"
+          ]
+        },
+        "packaged": {
+          "value": false,
+          "evidence": [
+            "no recording package recorded"
+          ]
+        },
+        "disagreements": [],
+        "unknown": []
+      }
+    },
+    {
+      "run": "run-007",
+      "connection": "meadow",
+      "state": "needs-attention",
+      "phase": null,
+      "session": null,
+      "ending_declared": false,
+      "started": null,
+      "prepared_unstarted": false,
+      "record": null,
+      "capture_consistent": null,
+      "last_capture": null,
+      "warnings": [],
+      "problems": [
+        "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+      ],
+      "operation_in_progress": false,
+      "summary": "starting state unknown; ending unknown; unknown: registered, capture, finalized, ending, packaged",
+      "unknown": [
+        "registered",
+        "capture",
+        "finalized",
+        "ending",
+        "packaged"
+      ],
+      "lifecycle": {
+        "registered": {
+          "value": null,
+          "evidence": [],
+          "unknown": [
+            "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+          ]
+        },
+        "capture": {
+          "value": null,
+          "evidence": [],
+          "closed_by": [],
+          "last_event": null,
+          "consistent": null,
+          "turn_pending": null,
+          "unknown": [
+            "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+          ]
+        },
+        "finalized": {
+          "value": null,
+          "evidence": [],
+          "unknown": [
+            "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+          ]
+        },
+        "ending": {
+          "value": null,
+          "evidence": [],
+          "unknown": [
+            "operation record unreadable: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+          ]
+        },
+        "migration": {
+          "value": "none",
+          "evidence": [
+            "packet not migrated"
+          ]
+        },
+        "packaged": {
+          "value": null,
+          "evidence": [],
+          "unknown": [
+            "operation record unreadable: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+          ]
+        },
+        "disagreements": [],
+        "unknown": [
+          "registered",
+          "capture",
+          "finalized",
+          "ending",
+          "packaged"
+        ]
+      }
+    }
+  ],
+  "archived": 3,
+  "workspace_problems": [
+    "Unattributed damaged session registry /synthetic/codex/berman-capture/x.json: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "default_connection": "orchard",
+  "connections": {
+    "orchard": {
+      "name": "Orchard",
+      "plan": "orchard-roles",
+      "next_recipe": "participant-inquiry",
+      "capture": "berman-codex",
+      "checkout": "/synthetic/orchard",
+      "pending_requests": [
+        "/synthetic/study/operations/new-requests/abc.json"
+      ],
+      "blocked_by": [],
+      "operation_in_progress": false
+    },
+    "meadow": {
+      "name": "Meadow [draft]",
+      "plan": null,
+      "next_recipe": "no research plan assigns fieldwork",
+      "capture": "berman-claude",
+      "checkout": "/synthetic/meadow",
+      "pending_requests": [],
+      "blocked_by": [
+        "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+      ],
+      "operation_in_progress": true
+    }
+  },
+  "next_recipe": "participant-inquiry",
+  "operations_in_progress": [
+    "connection meadow",
+    "run-006"
+  ],
+  "support_trials": [
+    {
+      "run": "run-900101",
+      "adapter": "berman-codex",
+      "phase": "launching",
+      "evidence": "experiments/trial-a",
+      "capture_state": "open",
+      "next": "berman support-trial collect --evidence experiments/trial-a, after the single reply and a normal exit",
+      "problems": []
+    },
+    {
+      "run": "run-900102",
+      "adapter": "berman-claude",
+      "phase": null,
+      "evidence": "experiments/trial-b",
+      "capture_state": null,
+      "next": null,
+      "problems": [
+        "run-900102: its marker names experiments/trial-b/trial.json, which was never written"
+      ]
+    }
+  ],
+  "meaning": "Session activity and declared engagement endings are distinct. No files were changed."
+}

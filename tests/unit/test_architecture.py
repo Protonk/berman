@@ -48,7 +48,13 @@ VIOLATIONS = (
     ('lifecycle', 'lifecycle.py', 'import subprocess'),
     ('lifecycle', 'lifecycle.py', 'from berman import files'),
     ('frozen', 'config.py', 'from berman._legacy import capture_session'),
+    ('presentation', 'verify.py', 'from berman.presentation import plain'),
+    ('presentation', 'workflow.py', 'from berman import presentation'),
+    ('layers', 'presentation/plain.py', 'from berman import lifecycle'),
+    ('layers', 'presentation/terminal.py', 'from berman import verify'),
     ('confined', 'workflow.py', 'import rich'),
+    ('confined', 'presentation/plain.py', 'import rich'),
+    ('confined', 'cli.py', 'from rich.console import Console'),
     ('confined', 'records.py', 'import jsonschema'),
 )
 RUNNER = """

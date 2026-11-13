@@ -1,0 +1,33 @@
+{
+  "schema": "berman.verification/1",
+  "scope": "software",
+  "verdict": "passed",
+  "checked_at_utc": "2026-11-13T00:00:00.000000Z",
+  "root": null,
+  "code": "/synthetic/site-packages/berman",
+  "checks": {
+    "installation": {
+      "status": "passed",
+      "required": true,
+      "summary": "Synthetic pass for installation",
+      "details": {},
+      "meaning": "Installed package metadata and runtime resources can be read; no study is loaded."
+    },
+    "frozen-collector": {
+      "status": "passed",
+      "required": true,
+      "summary": "Synthetic pass for frozen-collector",
+      "details": {},
+      "meaning": "The installed historical collector retains its frozen bytes."
+    }
+  },
+  "failed": [],
+  "not_run": [],
+  "not_established": [],
+  "not_covered": [
+    "Developer regression tests (run separately from the source checkout).",
+    "Workspace records, preserved evidence and reading editions."
+  ],
+  "record": null,
+  "meaning": "Software checks only. No workspace or native installation was verified."
+}

@@ -1,0 +1,21 @@
+3 archived runs. Default connection: orchard
+Workspace needs attention: Unattributed damaged session registry /synthetic/codex/berman-capture/x.json: Expecting value: line 1 column 1 (char 0)
+orchard: next fieldwork role: participant-inquiry
+  pending combined request: /synthetic/study/operations/new-requests/abc.json
+meadow: next fieldwork role: no research plan assigns fieldwork; an operation is in progress
+  needs attention: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
+run-002 (orchard): capture closed by finalized.json (frozen; not an ending); no engagement ending declared; migration indexed; no recording package
+  migrated without a declared ending (low-level migration); no recording package is made automatically
+run-003 (orchard): capture closed by finalized.json (frozen; not an ending); ending declared; migration moved-and-verified; recording package pending
+run-004 (orchard): session registered; capture open after Stop; no engagement ending declared
+  Capture at 2026-11-13T00:30:00.000000Z; consistent: True
+  Transcript grew after the last snapshot.
+run-005 (orchard): capture closed by finalized.json (frozen; not an ending); no engagement ending declared
+  Capture at 2026-11-13T00:40:00.000000Z; consistent: True
+run-006 (meadow): ready; not yet started
+run-007 (meadow): starting state unknown; ending unknown; unknown: registered, capture, finalized, ending, packaged
+  ending unknown: operation record unreadable: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
+  Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
+run-900101 (support trial, berman-codex; not research): launching; capture: open; next: berman support-trial collect --evidence experiments/trial-a, after the single reply and a normal exit
+run-900102 (support trial, berman-claude; not research): None; capture: None; next: None
+  run-900102: its marker names experiments/trial-b/trial.json, which was never written

@@ -1,0 +1,43 @@
+Berman verification: FAILED
+  passed                      frozen-collector: Frozen collector SHA-256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; expected ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+  FAILED                      recorded-hashes: 14 of 120 recorded hashes do not hold
+                              mismatched: experiments/a/file-0.txt
+                              mismatched: experiments/a/file-1.txt
+                              mismatched: experiments/a/file-2.txt
+                              mismatched: experiments/a/file-3.txt
+                              mismatched: experiments/a/file-4.txt
+                              mismatched: experiments/a/file-5.txt
+                              mismatched: experiments/a/file-6.txt
+                              mismatched: experiments/a/file-7.txt
+                              mismatched: experiments/a/file-8.txt
+                              mismatched: experiments/a/file-9.txt
+                              ... and 2 more
+                              missing: experiments/b/gone.txt
+                              missing: experiments/b/[bold]also-gone[/bold].txt
+                              next: Restore the recorded bytes from Git; preserved evidence is never edited
+  FAILED                      workspace: berman status reports 2 problem(s)
+                              orchard: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
+                              support trial: run-900102: never written
+                              next: berman status
+  not established             hook-trust:berman-codex: The berman-codex collector implementation changed after its verification; renewed verification is required
+                              changed: capture/router.py
+                              changed: capture/runtime.py
+                              next: With the researcher's approval, review /hooks in the actual Codex CLI, then record it with berman capture record-trust --evidence FILE --attest
+  not established             native-capture:berman-codex: Depends on hook-trust:berman-codex
+                              next: A native support trial for berman-codex
+  passed (optional)           hook-trust:berman-claude: Per-launch hook template, in-session bytes, helpers and settings policy match the qualified support trial; warning: Claude CLI changed since qualification
+  not established (optional)  native-capture:berman-claude: Trust recorded; no native capture demonstrated for these implementation bytes
+                              next: A native support trial for berman-claude
+  not run                     archive: Skipped with --skip
+                              next: berman verify without --skip archive
+  not run                     native-access: Not selected
+                              next: berman verify --native-access
+Failed: recorded-hashes, workspace
+Not run: archive, native-access
+Not established: hook-trust:berman-codex, native-capture:berman-codex, native-capture:berman-claude (optional)
+Never checked by berman verify:
+  Developer regression tests (run separately from the source checkout).
+  The installed development launchers' --check (docs/development-launchers.md).
+  The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).
+  A native support trial; verify reports only a recorded successful capture.
+Recorded in /synthetic/study/experiments/check

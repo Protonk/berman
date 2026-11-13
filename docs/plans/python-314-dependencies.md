@@ -272,3 +272,25 @@ separately, in the development guide.
     the next `berman new` finishes its retirement.
   - *Not modelled:* a process killed outright, which also skips the cleanup an
     exception still runs. None of this is native qualification.
+- **13 November 2026, Rich.** Presentation moved out of `cli.py` and
+  `verify.py` into `berman.presentation`, which imports no other part of the
+  package and is imported only by the command line (two contracts).
+  - *Redirected output is unchanged.* `presentation.plain` holds the 0.4.1
+    renderers. Nine synthetic results were rendered by the 0.4.1 code before the
+    move, and the moved code must reproduce that text byte for byte. A pipe, a
+    file, `TERM=dumb` and `--json` never reach Rich.
+  - *Rich is used only on an interactive terminal,* for `status`, `verify`,
+    `cheatsheet` and the result of `new`. Every distinction is a word and a mark
+    with color on top, so `NO_COLOR` loses nothing. `status` adds a table of the
+    six lifecycle facts with the evidence for each, or the reason it is unknown;
+    the plain text has never shown that, and `--json` always has. `cheatsheet`
+    groups commands by whether they can be typed now or wait on the
+    researcher's decision.
+  - *Recorded text is literal.* No markup is interpreted, and control and
+    format characters are written as escapes, since reasons and paths come from
+    records. Commands are printed unwrapped so they copy intact.
+  - *Read against the researcher's later instruction that the command's
+    behavior for its user stay unchanged:* commands, options, exit codes, JSON
+    and redirected text are identical. What differs is the look of four
+    commands on a terminal. Selecting the plain text everywhere is a one-line
+    change in `presentation.show`.

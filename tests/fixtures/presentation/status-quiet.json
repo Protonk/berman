@@ -1,0 +1,22 @@
+{
+  "runs": [],
+  "archived": 0,
+  "workspace_problems": [],
+  "default_connection": "orchard",
+  "connections": {
+    "orchard": {
+      "name": "Orchard",
+      "plan": "orchard-roles",
+      "next_recipe": "work-accounts",
+      "capture": "berman-codex",
+      "checkout": "/synthetic/orchard",
+      "pending_requests": [],
+      "blocked_by": [],
+      "operation_in_progress": false
+    }
+  },
+  "next_recipe": "work-accounts",
+  "operations_in_progress": [],
+  "support_trials": [],
+  "meaning": "Session activity and declared engagement endings are distinct. No files were changed."
+}

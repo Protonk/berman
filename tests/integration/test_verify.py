@@ -23,6 +23,7 @@ from berman.installation import PACKAGE as ROOT
 from berman.capture import adapters
 from berman import cli
 from berman import verify
+from berman.presentation import plain
 from tests.support.workspace import workspace
 from tests.integration.test_connections import Base
 
@@ -173,7 +174,7 @@ class VerifyTests(Fixture, Base):
         self.assertIsNone(result['record'])
         self.assertFalse(any('unittest' in argv for argv, _ in self.runner.calls))
         self.assertFalse((self.root / '.berman-locks').exists())
-        text = verify.render(result)
+        text = plain.verification(result)
         self.assertTrue(text.startswith('Berman verification: INCOMPLETE'))
         self.assertIn('Not run: native-access', text)
         self.assertIn('next: ' + verify.NATIVE_NEXT, text)
@@ -228,7 +229,7 @@ class VerifyTests(Fixture, Base):
         self.assertEqual((result['verdict'], result['failed']), ('incomplete', []))
         # The other adapter's basis still names the current bytes.
         self.assertEqual(result['checks']['hook-trust:berman-claude']['status'], 'passed')
-        self.assertIn('changed: capture/runtime.py', verify.render(result))
+        self.assertIn('changed: capture/runtime.py', plain.verification(result))
 
     def test_unreviewed_adapter_names_no_changed_files(self):
         (self.root / adapters.ADAPTERS['berman-codex']['basis']).unlink()
@@ -238,7 +239,7 @@ class VerifyTests(Fixture, Base):
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('no recorded CLI trust review', trust['summary'])
         self.assertIsNone(trust['details']['changed_implementation'])
-        self.assertNotIn('changed: ', verify.render(result))
+        self.assertNotIn('changed: ', plain.verification(result))
 
     def test_recorded_capture_must_name_these_bytes_and_keep_its_events(self):
         successful = read(self.root / adapters.ADAPTERS['berman-codex']['basis'])['successful_capture']
@@ -387,7 +388,7 @@ class VerifyTests(Fixture, Base):
             self.assertEqual(self.workflow.status()['connections'][connection]['blocked_by'], [])
             with self.assertRaisesRegex(Decision, 'Invalid operation record'):
                 self.workflow.new(connection=connection)
-        self.assertIn('every connection: Invalid operation record', verify.render(result))
+        self.assertIn('every connection: Invalid operation record', plain.verification(result))
 
     def test_broken_workspace_still_checks_the_installed_collector(self):
         (self.root / 'berman.json').write_text('{broken')
@@ -602,7 +603,7 @@ class NativeAccessTests(Fixture, Base):
         self.assertEqual((check['status'], len(check['details']['problems'])), ('failed', 3))
         self.assertTrue(check['details']['problems'][0].startswith('stewart: Decision: Native access check did not pass'))
         self.assertEqual(check['next'], 'Keep the evidence with berman verify --native-access --record experiments/NAME')
-        self.assertIn('stewart: Decision: Native access check did not pass', verify.render(result))
+        self.assertIn('stewart: Decision: Native access check did not pass', plain.verification(result))
         problems = self.verify(native=failing, record='experiments/verify-failing',
                                skip=verify.SKIPPABLE)['checks']['native-access']['details']['problems']
         self.assertTrue(all(Path(p.rpartition('Details: ')[2]).is_file() for p in problems))
@@ -650,7 +651,7 @@ class UnusedAdapterTests(Fixture, unittest.TestCase):
         self.assertEqual(result['checks']['hook-trust:berman-codex']['required'], True)
         self.assertEqual((result['verdict'], result['not_established']),
                          ('passed', ['hook-trust:berman-claude', 'native-capture:berman-claude']))
-        text = verify.render(result)
+        text = plain.verification(result)
         self.assertIn('not established (optional)', text)
         self.assertIn('Not established: hook-trust:berman-claude (optional), native-capture:berman-claude (optional)', text)
         self.assertEqual(self.verify()['verdict'], 'incomplete')

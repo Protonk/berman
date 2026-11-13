@@ -149,7 +149,7 @@ layers = [
     "berman.records",
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.collector : berman.capture.claude : berman._legacy",
-    "berman.files | berman.installation | berman.schemas | berman.archive | berman.harnesses.probe | berman.harnesses.development",
+    "berman.files | berman.installation | berman.schemas | berman.presentation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
@@ -232,12 +232,23 @@ Other modules take RUN, SESSION and CODEX_HOME from berman._legacy.api, so one
 process never executes the frozen file twice."""
 
 [[tool.importlinter.contracts]]
+id = "presentation"
+name = "Only the command line imports presentation"
+type = "protected"
+protected_modules = ["berman.presentation"]
+allowed_importers = ["berman.cli"]
+broken_contract_guidance = """
+State and verdicts are computed without knowing how they will be shown. Return
+the result; berman.cli hands it to berman.presentation. The layers contract
+keeps presentation from importing the modules that compute state."""
+
+[[tool.importlinter.contracts]]
 id = "confined"
 name = "No module imports a third-party package except the one that confines it"
 type = "forbidden"
 source_modules = ["berman"]
 forbidden_modules = ["jsonschema", "rich"]
-ignore_imports = ["berman.schemas -> jsonschema"]
+ignore_imports = ["berman.schemas -> jsonschema", "berman.presentation.terminal -> rich"]
 broken_contract_guidance = """
 jsonschema and rich each have one importing module. Call that module instead of
 importing the library, so its use stays in one reviewable place."""

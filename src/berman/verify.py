@@ -98,9 +98,6 @@ ACCESS_NOT_ESTABLISHED = [
     'A model request, Codex folder trust or a live session.',
 ]
 FIXTURE_RELATIONSHIP = 'Native access fixture only; prepared in a disposable workspace and never launched.'
-LABELS = {'passed': 'passed', 'failed': 'FAILED', 'not-established': 'not established', 'not-run': 'not run'}
-LISTED = {'failing': '', 'problems': '', 'mismatched': 'mismatched: ', 'missing': 'missing: ',
-          'changed_implementation': 'changed: '}
 
 
 def row(status, summary, required=True, step=None, **details):
@@ -581,31 +578,6 @@ def verify(root, skip=(), native=None, record=None, run=subprocess.run, code=PAC
             keep(folder / name, data.encode())
         keep(folder / 'verification.json', files.json_bytes(result))
     return result
-
-
-def render(result):
-    lines = [f'Berman verification: {result["verdict"].upper()}']
-    for name, check in result['checks'].items():
-        label = LABELS[check['status']] + ('' if check['required'] else ' (optional)')
-        lines.append(f'  {label:<28}{name}: {check["summary"]}')
-        for key, prefix in LISTED.items():
-            items = check['details'].get(key) or []
-            lines += [' ' * 30 + prefix + item for item in items[:10]]
-            if len(items) > 10:
-                lines.append(' ' * 30 + f'... and {len(items) - 10} more')
-        if check.get('next'):
-            lines.append(' ' * 30 + 'next: ' + check['next'])
-
-    def named(names):
-        return ', '.join(n + ('' if result['checks'][n]['required'] else ' (optional)') for n in names)
-    for key, title in (('failed', 'Failed'), ('not_run', 'Not run'), ('not_established', 'Not established')):
-        if result[key]:
-            lines.append(f'{title}: {named(result[key])}')
-    lines.append('Never checked by berman verify:')
-    lines += ['  ' + item for item in result['not_covered']]
-    if result['record']:
-        lines.append('Recorded in ' + result['record']['directory'])
-    return '\n'.join(lines)
 
 
 def dependencies(installed):

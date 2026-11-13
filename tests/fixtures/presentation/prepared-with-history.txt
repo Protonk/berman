@@ -1,0 +1,6 @@
+Preserved run-005: /synthetic/study/archive/recordings/run-005.zip
+run-006 (orchard) ready using participant-inquiry. Prior native checks reused; configuration unchanged.
+Warning: Claude CLI changed since qualification.
+Launch when ready:
+
+/synthetic/venv/bin/python -I -B -m berman --root '/synthetic/study with spaces' launch --run run-006

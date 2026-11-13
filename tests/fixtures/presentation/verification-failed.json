@@ -1,0 +1,158 @@
+{
+  "schema": "berman.verification/1",
+  "verdict": "failed",
+  "checked_at_utc": "2026-11-13T00:00:00.000000Z",
+  "root": "/synthetic/study",
+  "code": "/synthetic/site-packages/berman",
+  "python": "/usr/bin/python3",
+  "python_version": "Python 3.14.9",
+  "checks": {
+    "frozen-collector": {
+      "status": "passed",
+      "required": true,
+      "summary": "Frozen collector SHA-256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; expected ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "details": {
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "meaning": "The installed historical collector retains its frozen bytes."
+    },
+    "recorded-hashes": {
+      "status": "failed",
+      "required": true,
+      "summary": "14 of 120 recorded hashes do not hold",
+      "next": "Restore the recorded bytes from Git; preserved evidence is never edited",
+      "details": {
+        "hashes": 120,
+        "mismatched": [
+          "experiments/a/file-0.txt",
+          "experiments/a/file-1.txt",
+          "experiments/a/file-2.txt",
+          "experiments/a/file-3.txt",
+          "experiments/a/file-4.txt",
+          "experiments/a/file-5.txt",
+          "experiments/a/file-6.txt",
+          "experiments/a/file-7.txt",
+          "experiments/a/file-8.txt",
+          "experiments/a/file-9.txt",
+          "experiments/a/file-10.txt",
+          "experiments/a/file-11.txt"
+        ],
+        "missing": [
+          "experiments/b/gone.txt",
+          "experiments/b/[bold]also-gone[/bold].txt"
+        ]
+      },
+      "meaning": "Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and inquiry/*/MANIFEST.json keep their recorded bytes."
+    },
+    "workspace": {
+      "status": "failed",
+      "required": true,
+      "summary": "berman status reports 2 problem(s)",
+      "next": "berman status",
+      "details": {
+        "outstanding_runs": [
+          "run-004"
+        ],
+        "next_recipe": {
+          "orchard": "participant-inquiry"
+        },
+        "operations_in_progress": [],
+        "problems": [
+          "orchard: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")",
+          "support trial: run-900102: never written"
+        ]
+      },
+      "meaning": "This workspace's berman.json, catalogue, connections and plans load with this code, and berman status reports no problem: none in the workspace, on an outstanding run (one with no connection blocks every connection) or on a support trial. Each connection's next step is listed, not judged, even when its plan refuses one."
+    },
+    "hook-trust:berman-codex": {
+      "status": "not-established",
+      "required": true,
+      "summary": "The berman-codex collector implementation changed after its verification; renewed verification is required",
+      "next": "With the researcher's approval, review /hooks in the actual Codex CLI, then record it with berman capture record-trust --evidence FILE --attest",
+      "details": {
+        "changed_implementation": [
+          "capture/router.py",
+          "capture/runtime.py"
+        ],
+        "basis": "hooks/verification/berman-codex.json",
+        "used_by": [
+          "orchard"
+        ],
+        "kept_qualified": true
+      },
+      "meaning": "The installed hooks match a definition reviewed in the actual CLI for these implementation bytes (Codex), or the per-launch template, in-session bytes, helpers and settings policy match the qualified support trial (Claude, which needs no review). verify reads that record; it never performs the review or the trial."
+    },
+    "native-capture:berman-codex": {
+      "status": "not-established",
+      "required": true,
+      "summary": "Depends on hook-trust:berman-codex",
+      "next": "A native support trial for berman-codex",
+      "details": {
+        "basis": "hooks/verification/berman-codex.json"
+      },
+      "meaning": "A native session captured its required events with these implementation bytes. Trust alone does not show this."
+    },
+    "hook-trust:berman-claude": {
+      "status": "passed",
+      "required": false,
+      "summary": "Per-launch hook template, in-session bytes, helpers and settings policy match the qualified support trial; warning: Claude CLI changed since qualification",
+      "details": {
+        "changed_implementation": [],
+        "warnings": [
+          "Claude CLI changed since qualification"
+        ]
+      },
+      "meaning": "The installed hooks match a definition reviewed in the actual CLI for these implementation bytes (Codex), or the per-launch template, in-session bytes, helpers and settings policy match the qualified support trial (Claude, which needs no review). verify reads that record; it never performs the review or the trial."
+    },
+    "native-capture:berman-claude": {
+      "status": "not-established",
+      "required": false,
+      "summary": "Trust recorded; no native capture demonstrated for these implementation bytes",
+      "next": "A native support trial for berman-claude",
+      "details": {},
+      "meaning": "A native session captured its required events with these implementation bytes. Trust alone does not show this."
+    },
+    "archive": {
+      "status": "not-run",
+      "required": true,
+      "summary": "Skipped with --skip",
+      "next": "berman verify without --skip archive",
+      "details": {},
+      "meaning": "Generated reading aids and the cumulative archive match their inputs. verify never rebuilds them."
+    },
+    "native-access": {
+      "status": "not-run",
+      "required": true,
+      "summary": "Not selected",
+      "next": "berman verify --native-access",
+      "details": {},
+      "meaning": "The native Codex sandbox gives each connection's assignment its intended access, checked in disposable roots."
+    }
+  },
+  "failed": [
+    "recorded-hashes",
+    "workspace"
+  ],
+  "not_run": [
+    "archive",
+    "native-access"
+  ],
+  "not_established": [
+    "hook-trust:berman-codex",
+    "native-capture:berman-codex",
+    "native-capture:berman-claude"
+  ],
+  "not_covered": [
+    "Developer regression tests (run separately from the source checkout).",
+    "The installed development launchers' --check (docs/development-launchers.md).",
+    "The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).",
+    "A native support trial; verify reports only a recorded successful capture."
+  ],
+  "record": {
+    "directory": "/synthetic/study/experiments/check",
+    "files": [
+      "verification.json"
+    ]
+  },
+  "meaning": "Each check is a separate fact; passed requires every required check. Nothing was rebuilt, reviewed or launched."
+}
