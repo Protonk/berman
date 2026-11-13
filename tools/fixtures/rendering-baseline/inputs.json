@@ -1,0 +1,32 @@
+{
+  "schema": "berman.rendering-baseline/1",
+  "rendered_by_commit": "Synthetic fixtures established during source separation",
+  "implementation_sha256": {
+    "capture_session.py": "f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99"
+  },
+  "fixture_head": "b2693747e4c12043e0d2de54527ae25b1d43a638",
+  "documents": {
+    "README.md": "Fixture Stewart README.\n",
+    "COORDINATOR-HANDOFF.md": "Fixture coordinator handoff.\n",
+    "AGENTS.md": "Fixture agent guidance.\n"
+  },
+  "git_identity_and_dates": {
+    "GIT_AUTHOR_NAME": "Baseline",
+    "GIT_AUTHOR_EMAIL": "baseline@invalid",
+    "GIT_COMMITTER_NAME": "Baseline",
+    "GIT_COMMITTER_EMAIL": "baseline@invalid",
+    "GIT_AUTHOR_DATE": "2026-10-24T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2026-10-24T00:00:00Z"
+  },
+  "runs": {
+    "work-accounts": "run-001",
+    "participant-inquiry": "run-002"
+  },
+  "recording_protocols": {
+    "work-accounts": "work-accounts/1",
+    "participant-inquiry": "participant-inquiry/1"
+  },
+  "substitution": {
+    "<BASE>": "the disposable fixture base directory; no other text is masked"
+  }
+}

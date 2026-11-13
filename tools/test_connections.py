@@ -1,0 +1,687 @@
+"""Repository connections: rendering compatibility, a second connection, isolation, and concurrency."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from unittest import mock
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from berman_records import Decision, ROOT, Store
+import berman_files
+from berman_files import read, write
+from berman_legacy import MARKER
+from berman_workflow import Workflow
+from berman_harness import COMMON_CHECKS, Codex, profile, profile_name
+from test_berman import FixtureHarness, git_repository, workspace, legacy_hooks, legacy_basis
+import berman_capture
+import berman_collector
+import fieldwork
+
+BASELINE = Path(__file__).resolve().parent / 'fixtures/rendering-baseline'
+INQUIRY_RELATIONSHIP = ('Independent: orchard fieldwork neither consumes, resets, nor reinterprets the Stewart '
+                        'repeat-then-Astra commitment.')
+
+
+def orchard(root, base, relationship=INQUIRY_RELATIONSHIP, default='stewart'):
+    """A disposable second project configured only through the connection interface."""
+    git_repository(base / 'orchard', {'GUIDE.md': 'How the orchard project works.\n',
+                                      'notes/plan.txt': 'Planting plan.\n'})
+    write(root / 'connections/orchard/connection.json', {
+        'schema': 'berman.connection/1', 'id': 'orchard', 'name': 'Orchard', 'version': 1,
+        'description': 'A disposable second repository with no Stewart bootstrap or auditor.',
+        'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'commission': 'COMMISSION.md',
+        'revision': 'Orchard maintenance; preparation-time HEAD {head}', 'checks': [], 'readers': []})
+    (root / 'connections/orchard/COMMISSION.md').write_text('Help maintain the orchard project with me.\n')
+    recipe = root / 'recipes/orchard-accounts'
+    write(recipe / 'recipe.json', {'schema': 'berman.recipe/2', 'id': 'orchard-accounts', 'connections': ['orchard'],
+                                   'coverage': ['notes'], 'recording_protocol': 'work-accounts/1',
+                                   'instructions': 'INSTRUCTIONS.md', 'research_commission': 'COMMISSION.md',
+                                   'source': 'fixture', 'meaning': 'fixture'})
+    (recipe / 'INSTRUCTIONS.md').write_text('# Orchard accounts\n\nWrite accounts of the work in `{{notes_directory}}`.\n')
+    (recipe / 'COMMISSION.md').write_text('Also keep accounts of the work as the instructions describe.\n')
+    write(root / 'plans/orchard-study/plan.json', {
+        'schema': 'berman.research-plan/1', 'id': 'orchard-study', 'connection': 'orchard',
+        'steps': [{'id': 'orchard-first', 'recipe': 'orchard-accounts'}, {'id': 'orchard-second', 'recipe': 'orchard-accounts'}],
+        'relationships': [{'plan': 'stewart-fieldwork-roles', 'relationship': relationship}] if relationship else []})
+    config = read(root / 'berman.json')
+    config['default_connection'] = default
+    config['connections']['orchard'] = {'definition': 'connections/orchard/connection.json', 'checkout': str(base / 'orchard'),
+                                        'plan': 'plans/orchard-study/plan.json', 'capture': 'berman-codex'}
+    write(root / 'berman.json', config)
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name).resolve()
+        self.root = self.base / 'berman'
+        self.home = self.base / 'codex'
+        self.home.mkdir()
+        workspace(self.root, self.base, self.base / 'stewart', documents=['README.md', 'COORDINATOR-HANDOFF.md'])
+        git_repository(self.base / 'stewart', {'README.md': 'Stewart\n', 'COORDINATOR-HANDOFF.md': 'Handoff\n'})
+        orchard(self.root, self.base)
+        self.reload()
+
+    def reload(self):
+        self.store = Store(self.root)
+        self.harness = FixtureHarness(self.store)
+        self.workflow = Workflow(self.store, self.harness)
+        self.legacy = self.store.collectors['legacy-codex']
+        self.berman = self.store.collectors['berman-codex']
+
+    def start(self, run, collector, prompt=None, stop=True, sid=None):
+        sid = sid or 'session-' + run
+        source = self.home / 'sessions' / (sid + '.jsonl')
+        source.parent.mkdir(exist_ok=True)
+        rows = [{'type': 'session_meta', 'payload': {'id': sid}},
+                {'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'text': 'done'}]}}]
+        source.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+        event = {'session_id': sid, 'transcript_path': str(source), 'turn_id': 'one'}
+        marker = MARKER if collector is self.legacy else berman_collector.MARKER
+        collector.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=prompt or marker + run))
+        if stop:
+            collector.hook(dict(event, hook_event_name='Stop'))
+        return source, event
+
+    def default(self, name):
+        config = read(self.root / 'berman.json')
+        config['default_connection'] = name
+        write(self.root / 'berman.json', config)
+        self.reload()
+
+
+class RenderingBaselineTests(unittest.TestCase):
+    """Complete rendered packets match the pre-refactor baseline, except the fixture base path."""
+
+    def render(self, legacy_input):
+        inputs = read(BASELINE / 'inputs.json')
+        with tempfile.TemporaryDirectory(prefix='berman-render-') as temporary:
+            base = Path(temporary).resolve()
+            project = base / 'stewart'
+            project.mkdir()
+            for name, text in inputs['documents'].items():
+                (project / name).write_text(text)
+            env = dict(os.environ, **inputs['git_identity_and_dates'])
+            for argv in (['init', '-q', '-b', 'main'], ['add', '.'],
+                         ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Fixed baseline input']):
+                subprocess.run(['git', '-C', str(project), *argv], check=True, env=env, capture_output=True)
+            head = subprocess.run(['git', '-C', str(project), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+            self.assertEqual(head, inputs['fixture_head'], 'fixture input differs; the comparison would be meaningless')
+            (base / 'codex').mkdir()
+            root = base / 'berman'
+            workspace(root, base, project, documents=sorted(inputs['documents']))
+            # Both formats render the same synthetic connection and instructions.
+            if legacy_input:
+                real = read(root / 'berman.json')
+                plan = read(root / 'plans/stewart-fieldwork-roles/plan.json')
+                write(root / 'berman.json', {
+                    'schema': 'berman.configuration/1', 'project': str(project), 'fieldwork': str(base / 'fieldwork'),
+                    'codex_home': str(base / 'codex'), 'python': real['python'], 'codex': real['codex'],
+                    'sequence_after': 'run-000', 'support_collections': [], 'sequence': plan['steps'],
+                    'commitment': plan['commitment'], 'documents': sorted(inputs['documents'])})
+            store = Store(root)
+            self.assertEqual(store.legacy_input, legacy_input)
+            workflow = Workflow(store, FixtureHarness(store))
+            rendered = {}
+
+            def keep(row):
+                packet = Path(row['packet'])
+                rendered[row['recipe']] = {f: (packet / f).read_text().replace(str(base), '<BASE>')
+                                           for f in ('ASSIGNMENT.md', 'INSTRUCTIONS.md')}
+                rendered[row['recipe']]['run'] = row['run']
+                rendered[row['recipe']]['protocol'] = read(packet / 'run.json')['recording_protocol']
+            first = workflow.new()
+            keep(first)
+            sid = 'baseline-' + first['run']
+            source = base / 'codex/sessions' / (sid + '.jsonl')
+            source.parent.mkdir(parents=True)
+            source.write_text(json.dumps({'type': 'session_meta', 'payload': {'id': sid}}) + '\n' + json.dumps(
+                {'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'text': 'done'}]}}) + '\n')
+            event = {'session_id': sid, 'transcript_path': str(source), 'turn_id': 'one'}
+            store.collector.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=MARKER + first['run']))
+            store.collector.hook(dict(event, hook_event_name='Stop'))
+            workflow.finish('Baseline fixture engagement concluded', first['run'])
+            keep(workflow.new())
+            return inputs, rendered
+
+    def compare(self, legacy_input):
+        inputs, rendered = self.render(legacy_input)
+        self.assertEqual(set(rendered), set(inputs['runs']))
+        for name, files in rendered.items():
+            self.assertEqual(files['run'], inputs['runs'][name])
+            self.assertEqual(files['protocol'], inputs['recording_protocols'][name])
+            for f in ('ASSIGNMENT.md', 'INSTRUCTIONS.md'):
+                with self.subTest(recipe=name, file=f):
+                    self.assertEqual(files[f], (BASELINE / name / f).read_text())
+
+    def test_workspace_configuration_renders_the_baseline_byte_for_byte(self):
+        self.compare(legacy_input=False)
+
+    def test_legacy_configuration_remains_a_supported_input(self):
+        self.compare(legacy_input=True)
+
+    def test_recipe_placeholder_is_resolved_in_the_saved_baseline(self):
+        repeat = (BASELINE / 'work-accounts/INSTRUCTIONS.md').read_text()
+        original = (ROOT / 'tools/fixtures/workspace/recipes/work-accounts/INSTRUCTIONS.md').read_text()
+        self.assertEqual(repeat, original.replace('{{notes_directory}}', '<BASE>/fieldwork/run-001/notes/'))
+
+
+class SecondConnectionTests(Base):
+    def test_lifecycle_keeps_documents_instructions_plans_and_sessions_separate(self):
+        stewart = self.workflow.new()
+        stewart_source, stewart_event = self.start(stewart['run'], self.legacy)
+        self.assertEqual(stewart['connection'], 'stewart')
+        one = self.workflow.new(connection='orchard')
+        self.assertEqual((stewart['run'], one['run']), ('run-001', 'run-002'))
+        packet = Path(one['packet'])
+        self.assertEqual(packet.parent, self.store.field)
+        assignment = (packet / 'ASSIGNMENT.md').read_text()
+        self.assertTrue(assignment.startswith('Berman-Fieldwork-Run: run-002\n'))
+        self.assertIn('Help maintain the orchard project with me.\n\nAlso keep accounts', assignment)
+        self.assertNotIn('Stewart', assignment)
+        self.assertIn(str(packet / 'notes') + '/', (packet / 'INSTRUCTIONS.md').read_text())
+        self.assertFalse((packet / 'narrative.md').exists() or (packet / 'scratch').exists())
+        meta = read(packet / 'run.json')
+        self.assertEqual((meta['schema'], meta['connection']), ('berman.run-preparation/1', 'orchard'))
+        snap = read(self.store.folder(one['run']) / 'preparation/initial-project/snapshot.json')
+        self.assertEqual([r['path'] for r in snap['files']], ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'])
+        self.assertTrue(snap['files'][-1]['missing'])
+        record = self.store.record(one['run'])
+        self.assertEqual((record['connection']['id'], record['plan']['id'], record['capture']['adapter']),
+                         ('orchard', 'orchard-study', 'berman-codex'))
+        # Each plan advances only through its own connection's started runs.
+        status = self.workflow.status()
+        self.assertEqual(status['connections']['stewart']['next_recipe'], 'participant-inquiry')
+        self.assertEqual(status['connections']['orchard']['next_recipe'], 'orchard-accounts')
+        orchard_source, orchard_event = self.start(one['run'], self.berman, prompt=assignment)
+        binding = read(packet / 'session/binding.json')
+        self.assertEqual((binding['collector'], binding['marker']), (berman_collector.OWNER, 'Berman-Fieldwork-Run: run-002'))
+        self.assertEqual(self.workflow.status()['connections']['orchard']['next_recipe'], 'orchard-accounts')
+        # Changing the default connection redirects neither callbacks nor selection of an earlier run.
+        self.default('orchard')
+        with orchard_source.open('a') as stream:
+            stream.write(json.dumps({'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant',
+                                                                           'content': [{'text': 'later'}]}}) + '\n')
+        self.berman.hook(dict(orchard_event, hook_event_name='Stop'))
+        self.assertEqual(read(packet / 'session/capture.json')['saved_bytes'], orchard_source.stat().st_size)
+        self.legacy.hook(dict(stewart_event, hook_event_name='Stop'))
+        self.assertTrue((self.store.field / stewart['run'] / 'session/capture.json').exists())
+        self.store.collectors['berman-codex'].command('finalize', one['run'])
+        with orchard_source.open('a') as stream:
+            stream.write(json.dumps({'type': 'response_item', 'payload': {'type': 'message', 'role': 'user',
+                                                                           'content': [{'text': 'continued'}]}}) + '\n')
+        supplement = self.workflow.supplement('Retain orchard continuation')
+        self.assertIn(one['run'], supplement['path'])
+        # An interrupted migration resumes its recorded target.
+        atomic = berman_files.atomic
+        def interrupted(path, data):
+            if path == self.root / 'source-layout.json':
+                raise OSError('index update interrupted')
+            return atomic(path, data)
+        with mock.patch.object(berman_files, 'atomic', side_effect=interrupted):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                self.workflow.finish('The orchard engagement ended')
+        self.assertTrue((self.root / 'runs' / one['run']).exists())
+        result = self.workflow.finish('The orchard engagement ended')
+        self.assertEqual((result['run'], result['state']), (one['run'], 'archived'))
+        self.assertEqual(result['package']['namespace'], 'berman-analysis/')
+        with zipfile.ZipFile(result['package']['path']) as archive:
+            self.assertIn(f'berman-analysis/runs/{one["run"]}/ASSIGNMENT.md', archive.namelist())
+        archived = self.root / 'runs' / one['run']
+        self.assertEqual((archived / 'context/berman/closing-project/GUIDE.md').read_text(), 'How the orchard project works.\n')
+        self.assertEqual(len(list((archived / 'session-supplements').iterdir())), 1)
+        # Stewart's engagement stayed open and untouched throughout.
+        self.assertTrue((self.store.field / stewart['run'] / 'session/binding.json').exists())
+        self.assertNotIn('ending', self.store.record(stewart['run']))
+        self.default('stewart')
+        self.workflow.finish('The Stewart engagement ended')
+        runs = [r['run'] for r in read(self.root / 'source-layout.json')['runs']]
+        self.assertEqual(sorted(runs), ['run-001', 'run-002'])
+        two = self.workflow.new(connection='orchard')
+        self.assertEqual(two['run'], 'run-003')
+        self.assertEqual(self.store.record('run-003')['step'], 'orchard-second')
+
+    def test_another_connections_runs_neither_advance_nor_invalidate_stewart(self):
+        support = self.root / 'support-trial'
+        write(support / 'source-layout.json', {'runs': [{'run': 'run-900101', 'current_root': 'runs/run-900101'}]})
+        write(support / 'runs/run-900101/session/binding.json', {'run': 'run-900101', 'session_id': 'support-session'})
+        write(self.home / 'stewart-fieldwork/support-session.json', {'run': 'run-900101', 'session_id': 'support-session'})
+        self.store.catalogue.support = ['support-trial']
+        for _ in range(2):
+            row = self.workflow.new(connection='orchard')
+            self.start(row['run'], self.berman)
+            self.workflow.finish('done', connection='orchard')
+        status = self.workflow.status()
+        self.assertEqual(status['connections']['stewart']['next_recipe'], 'work-accounts')
+        self.assertIn('sequence is complete', status['connections']['orchard']['next_recipe'])
+        self.assertEqual(self.workflow.new()['run'], 'run-003')
+        # Within Stewart, a started run without a plan association still needs an explicit relationship.
+        fieldwork.prepare(self.legacy, 'run-010', 'Unplanned', self.store.connections['stewart'].checkout, 'fixture',
+                          ['narrative', 'scratch'])
+        self.start('run-010', self.legacy)
+        with self.assertRaisesRegex(Decision, 'began outside the recorded research plan'):
+            self.store.connections['stewart'].plan.next_step(self.store.discover())
+
+    def test_explicit_run_determines_its_connection(self):
+        one = self.workflow.new(connection='orchard')
+        with self.assertRaisesRegex(Decision, 'belongs to connection orchard, not stewart'):
+            self.workflow.launch(one['run'], connection='stewart')
+        with mock.patch('os.execv') as execute:
+            self.workflow.launch(one['run'])
+        execute.assert_called_once()
+        self.default('stewart')
+        record = self.store.record(one['run'])
+        self.assertEqual(record['project'], str(self.base / 'orchard'))
+        self.assertEqual(Codex(self.store).argv(one['run'])[:5],
+                         [str(self.store.codex), '-p', profile_name(self.store, one['run']), '-C', str(self.base / 'orchard')])
+
+    def test_blocked_operation_is_visible_without_blocking_another_connection(self):
+        one = self.workflow.new(connection='orchard')
+        shutil.rmtree(Path(one['packet']))
+        status = self.workflow.status()
+        self.assertIn('packet is missing', status['connections']['orchard']['blocked_by'][0])
+        self.assertEqual(status['connections']['stewart']['blocked_by'], [])
+        with self.assertRaisesRegex(Decision, 'packet is missing'):
+            self.workflow.new(connection='orchard')
+        self.assertEqual(self.workflow.new()['run'], 'run-002')
+
+    def test_ordinary_development_creates_no_assignment_or_plan_step(self):
+        launcher = self.base / 'bin/stewart-dev-codex'
+        launcher.parent.mkdir()
+        launcher.write_text('#!/bin/sh\n')
+        launcher.chmod(0o755)
+        config = read(self.root / 'berman.json')
+        config['connections']['stewart']['development'] = {'codex': str(launcher)}
+        write(self.root / 'berman.json', config)
+        self.reload()
+        before = sorted(p.relative_to(self.root) for p in self.root.rglob('*'))
+        self.assertEqual(self.workflow.dev('codex', ['--model', 'fixture']),
+                         {'argv': [str(launcher), '--model', 'fixture'], 'connection': 'stewart',
+                          'cwd': str(self.store.connection('stewart').checkout)})
+        sheet = self.workflow.cheatsheet()['connections'][0]
+        self.assertEqual([d['harness'] for d in sheet['development']], ['codex'])
+        self.assertEqual(sheet['development'][0]['available'], True)
+        self.assertEqual(sheet['development'][0]['command'], self.workflow.command('dev', '--harness', 'codex'))
+        self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
+        self.assertEqual(self.workflow.status()['connections']['stewart']['next_recipe'], 'work-accounts')
+        with self.assertRaisesRegex(Decision, 'No ordinary development launcher is configured for orchard'):
+            self.workflow.dev('codex', connection='orchard')
+
+
+class ResearchPlanRelationshipTests(Base):
+    def test_fieldwork_elsewhere_must_state_its_relationship_to_an_unfulfilled_commitment(self):
+        orchard(self.root, self.base / 'second', relationship=None)
+        self.reload()
+        with self.assertRaisesRegex(Decision, 'unfulfilled commitment'):
+            self.workflow.new(connection='orchard')
+        self.assertFalse(self.store.operations.exists() and any(self.store.operations.glob('run-*')))
+        orchard(self.root, self.base / 'third')
+        self.reload()
+        self.assertEqual(self.workflow.new(connection='orchard')['connection'], 'orchard')
+
+    def test_a_connection_without_a_plan_assigns_no_fieldwork(self):
+        config = read(self.root / 'berman.json')
+        del config['connections']['orchard']['plan']
+        write(self.root / 'berman.json', config)
+        self.reload()
+        with self.assertRaisesRegex(Decision, 'does not assign participant observation'):
+            self.workflow.new(connection='orchard')
+
+    def test_recipe_worded_for_stewart_cannot_serve_another_connection(self):
+        plan = read(self.root / 'plans/orchard-study/plan.json')
+        plan['steps'][0]['recipe'] = 'work-accounts'
+        write(self.root / 'plans/orchard-study/plan.json', plan)
+        self.reload()
+        with self.assertRaisesRegex(Decision, 'worded for stewart, not orchard'):
+            self.workflow.new(connection='orchard')
+
+
+class AccessTests(Base):
+    def test_external_packet_roots_are_rejected_before_preparation(self):
+        config = read(self.root / 'berman.json')
+        config['connections']['orchard']['packet_root'] = str(self.base / 'orchard-packets')
+        write(self.root / 'berman.json', config)
+        with self.assertRaisesRegex(Decision, 'shared denied packet root'):
+            Store(self.root)
+        del config['connections']['orchard']['packet_root']
+        write(self.root / 'berman.json', config)
+        definition = read(self.root / 'connections/orchard/connection.json')
+        definition['fieldwork'] = str(self.base / 'elsewhere')
+        write(self.root / 'connections/orchard/connection.json', definition)
+        with self.assertRaisesRegex(Decision, 'shared packet root'):
+            Store(self.root)
+
+    def test_recorded_packet_outside_the_shared_root_is_refused(self):
+        with mock.patch.object(self.workflow.harness, 'ensure', side_effect=Decision('stop before checks')):
+            with self.assertRaises(Decision):
+                self.workflow.new(connection='orchard')
+        record = self.store.record('run-001')
+        record['packet'] = str(self.base / 'elsewhere/run-001')
+        self.store.save(record)
+        with self.assertRaisesRegex(Decision, 'outside the shared packet root'):
+            self.workflow.new(connection='orchard')
+
+    def test_profile_and_probe_cover_research_roots_unassigned_packet_and_assignment(self):
+        import tomllib
+        one = self.workflow.new(connection='orchard')
+        project = self.base / 'orchard'
+        access = tomllib.loads(profile(self.store, one['run'], project))['permissions'][
+            f'berman_{self.store.tag}_{one["run"].replace("-", "_")}']['filesystem']
+        self.assertEqual({k: v for k, v in access.items() if v != 'read'},
+                         {str(self.root): 'deny', str(self.store.field): 'deny', str(self.store.field / one['run']): 'write'})
+        harness = Codex(self.store)
+        seen = {}
+        def invoke(argv, cwd=None, **kwargs):
+            if 'sandbox' in argv:
+                spec = read(Path(argv[-1]))
+                seen['spec'], seen['cwd'] = spec, cwd
+                checks = {k: True for k in COMMON_CHECKS | {c['id'] for c in spec['project_checks']}}
+                return subprocess.CompletedProcess(argv, 0, json.dumps({'token': spec['token'], 'checks': checks}), '')
+            paths = ''.join(f'<entry access="deny" escalatable="false"><path>{p}</path></entry>' for p in (self.root, self.store.field))
+            paths += f'<entry access="write"><path>{self.store.field / one["run"]}</path></entry>'
+            paths += ''.join(f'<entry access="read"><path>{project / p}</path></entry>' for p in ('.git', '.agents', '.codex', '.aws'))
+            return subprocess.CompletedProcess(argv, 0, json.dumps({'context': '<environment_context>' + paths}), '')
+        folder = self.store.folder(one['run']) / 'preparation'
+        with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
+             mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: {'fixed': True}), \
+             mock.patch.object(harness, 'invoke', side_effect=invoke), \
+             mock.patch('berman_harness.shutil.which', return_value='/fixture/rg'):
+            self.assertTrue(harness.ensure(one['run'], folder)['passed'])
+        spec = seen['spec']
+        self.assertEqual(seen['cwd'], project)
+        self.assertEqual(set(spec['canaries']), {'berman', 'unassigned_packet'})
+        self.assertEqual(Path(spec['canaries']['unassigned_packet']).parent.parent, self.store.field)
+        self.assertEqual(spec['project_checks'], [])
+        self.assertEqual(spec['reads'], ['GUIDE.md', 'notes/plan.txt'])
+        # Stewart's declared project checks resolve to explicit argument lists.
+        stewart = self.store.connections['stewart']
+        with mock.patch('berman_harness.shutil.which', side_effect=lambda name: '/fixture/' + name):
+            from berman_harness import project_checks
+            checks = project_checks(stewart.checks(), {'python': '/py', 'project': '/stewart', 'fixture': '/fx', 'packet': '/p'})
+        self.assertEqual([c['id'] for c in checks], ['stewart_cargo_metadata', 'stewart_rustc_startup'])
+        self.assertEqual(checks[0]['argv'][:4], ['/py', '-I', '-B', '-c'])
+        self.assertEqual(checks[0]['argv'][-2:], ['/fixture/cargo', '/stewart/service'])
+        self.assertEqual(checks[1], {'id': 'stewart_rustc_startup', 'argv': ['/fixture/rustc', '--version'],
+                                     'timeout': 20, 'stdout_contains': 'rustc '})
+
+
+class CollectorOwnershipTests(Base):
+    def test_legacy_collector_bytes_are_frozen_and_match_their_basis(self):
+        digest = berman_files.digest((ROOT / 'tools/capture_session.py').read_bytes())
+        self.assertEqual(digest, 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99')
+        self.assertEqual(legacy_basis()['implementation_sha256'],
+                         {'tools/capture_session.py': digest})
+        self.assertEqual(read(BASELINE / 'inputs.json')['implementation_sha256']['capture_session.py'], digest)
+        self.assertNotIn(b'berman_collector', (ROOT / 'tools/capture_session.py').read_bytes())
+
+    def test_frozen_collector_ignores_new_openings_and_refuses_new_packets(self):
+        one = self.workflow.new(connection='orchard')
+        opening = (Path(one['packet']) / 'ASSIGNMENT.md').read_text()
+        event = {'session_id': 'mixed-up', 'transcript_path': None, 'turn_id': 'one', 'hook_event_name': 'UserPromptSubmit'}
+        self.assertEqual(self.legacy.hook(dict(event, prompt=opening)), {})
+        self.assertFalse((self.home / 'stewart-fieldwork/mixed-up.json').exists())
+        # The notes layout has no narrative.md, so the frozen run_path check refuses registration.
+        with self.assertRaisesRegex(OSError, 'narrative.md'):
+            self.legacy.hook(dict(event, prompt=MARKER + one['run']))
+        # Through the installed hook command, that refusal becomes a message and never a binding.
+        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/capture_session.py'), 'hook',
+                               '--fieldwork-root', str(self.store.field), '--analysis-root', str(self.root),
+                               '--codex-home', str(self.home)],
+                              input=json.dumps(dict(event, prompt=MARKER + one['run'])),
+                              capture_output=True, text=True, env=dict(os.environ, CODEX_HOME=str(self.home)))
+        self.assertIn('narrative.md', json.loads(hook.stdout)['systemMessage'])
+        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/capture_session.py'), 'hook',
+                               '--fieldwork-root', str(self.store.field), '--analysis-root', str(self.root),
+                               '--codex-home', str(self.home)],
+                              input=json.dumps(dict(event, prompt=opening)), capture_output=True, text=True)
+        self.assertEqual(json.loads(hook.stdout), {})
+        self.assertFalse((Path(one['packet']) / 'session').exists())
+        self.assertFalse((self.home / 'stewart-fieldwork/mixed-up.json').exists())
+
+    def test_new_collector_refuses_legacy_packets_and_legacy_claimed_sessions(self):
+        stewart = self.workflow.new()
+        self.start(stewart['run'], self.legacy, sid='shared-session')
+        with self.assertRaisesRegex(ValueError, 'not assigned to the berman-collector/1 collector'):
+            self.berman.hook({'session_id': 'other', 'turn_id': 'x', 'hook_event_name': 'UserPromptSubmit',
+                              'prompt': berman_collector.MARKER + stewart['run']})
+        one = self.workflow.new(connection='orchard')
+        with self.assertRaisesRegex(ValueError, 'already belongs to the other collector for run-001'):
+            self.berman.hook({'session_id': 'shared-session', 'turn_id': 'two', 'hook_event_name': 'UserPromptSubmit',
+                              'prompt': berman_collector.MARKER + one['run']})
+        self.assertFalse((Path(one['packet']) / 'session').exists())
+
+    def test_new_collector_routes_through_records_and_ignores_other_workspaces(self):
+        one = self.workflow.new(connection='orchard')
+        source, event = self.start(one['run'], self.berman)
+        state = read(self.home / f'berman-capture/{event["session_id"]}.json')
+        self.assertEqual((state['workspace'], state['harness'], state['collector'], state['packet']),
+                         (str(self.root), 'codex', berman_collector.OWNER, one['packet']))
+        elsewhere = berman_collector.Collector(self.base / 'unrouted', self.home, self.base / 'another-workspace')
+        self.assertEqual(elsewhere.hook(dict(event, hook_event_name='Stop')), {})
+        unrouted = berman_collector.Collector(self.base / 'unrouted', self.home, self.root)
+        unrouted.hook(dict(event, hook_event_name='Stop'))
+        self.assertEqual(read(Path(one['packet']) / 'session/capture.json')['event'], 'Stop')
+
+    def test_installation_waits_for_closed_captures_and_trust_needs_a_recorded_review(self):
+        (self.root / 'hooks').mkdir(exist_ok=True)
+        write(self.root / 'hooks/fieldwork.hooks.json', legacy_hooks())
+        write(self.root / 'hooks/berman-capture.hooks.json', berman_capture.definition(self.store, 'berman-codex'))
+        legacy_definition = legacy_hooks()
+        original_hooks = json.loads(json.dumps(legacy_definition))
+        unrelated = {'type': 'command', 'command': '/bin/true', 'timeout': 1}
+        original_hooks['hooks']['Stop'][0]['hooks'].append(unrelated)
+        write(self.home / 'hooks.json', original_hooks)
+        stewart = self.workflow.new()
+        source, event = self.start(stewart['run'], self.legacy, stop=False)
+        with self.assertRaisesRegex(Decision, 'requires closed captures'):
+            berman_capture.install(self.store, 'berman-codex')
+        self.legacy.hook(dict(event, hook_event_name='Stop'))
+        with self.assertRaisesRegex(Decision, 'requires closed captures'):
+            berman_capture.install(self.store, 'berman-codex')
+        self.workflow.finish('Fixture session concluded', stewart['run'])
+        receipt = berman_capture.install(self.store, 'berman-codex')
+        self.assertEqual(receipt['registrations_at_installation'][0]['collector'], 'legacy-codex')
+        installed = read(self.home / 'hooks.json')
+        self.assertIn({'hooks': [unrelated]}, installed['hooks']['Stop'])
+        for event_name, groups in legacy_definition['hooks'].items():
+            self.assertTrue(all(g not in installed['hooks'][event_name] for g in groups))
+        self.assertEqual(berman_capture.install(self.store, 'berman-codex')['state'], 'already-installed')
+        with self.assertRaisesRegex(Decision, 'no recorded CLI trust review'):
+            berman_capture.readiness(self.store, 'berman-codex')
+        evidence = self.base / 'hooks.terminal'
+        evidence.write_text('Fixture /hooks review record\n')
+        recorded = berman_capture.record_trust(self.store, evidence, 'fixture review')
+        self.assertEqual(len(recorded['bases']), 2)
+        self.assertEqual(berman_capture.readiness(self.store, 'berman-codex')['adapter'], 'berman-codex')
+        self.assertEqual(berman_capture.readiness(self.store, 'legacy-codex')['adapter'], 'legacy-codex')
+        # Any later change to the installed file needs another recorded review.
+        installed['hooks']['Stop'].append({'hooks': [{'type': 'command', 'command': '/bin/true', 'timeout': 1}]})
+        write(self.home / 'hooks.json', installed)
+        with self.assertRaisesRegex(Decision, 'actual CLI review'):
+            berman_capture.readiness(self.store, 'berman-codex')
+
+    def test_generated_definition_matches_the_retained_template(self):
+        store = self.store
+        template = berman_capture.definition(store, 'berman-codex')
+        command = template['hooks']['Stop'][0]['hooks'][0]['command']
+        self.assertIn(str(ROOT / 'tools/berman_capture_router.py'), command)
+        self.assertNotIn(str(store.root / 'tools/berman_capture_router.py'), command)
+        # This assertion must not depend on the operator's current installed/trusted hooks.
+        (self.root / 'hooks').mkdir(exist_ok=True)
+        write(self.root / 'hooks/berman-capture.hooks.json', berman_capture.definition(self.store, 'berman-codex'))
+        write(self.home / 'hooks.json', {'hooks': {}})
+        with self.assertRaisesRegex(Decision, 'capture hook differs'):
+            berman_capture.readiness(self.store, 'berman-codex')
+
+
+class ConcurrencyTests(Base):
+    def test_blocked_native_check_on_one_connection_permits_another(self):
+        release, entered = threading.Event(), threading.Event()
+        class Blocking(FixtureHarness):
+            def ensure(inner, run, folder):
+                if (inner.store.record(run) or {}).get('connection', {}).get('id') == 'stewart':
+                    entered.set()
+                    release.wait(10)
+                return FixtureHarness.ensure(inner, run, folder)
+        results, errors = {}, []
+        def stewart():
+            try:
+                store = Store(self.root)
+                results['stewart'] = Workflow(store, Blocking(store)).new()
+            except Exception as exc:  # surfaced in the assertion below
+                errors.append(exc)
+        thread = threading.Thread(target=stewart)
+        thread.start()
+        self.assertTrue(entered.wait(10))
+        try:
+            with self.assertRaisesRegex(Decision, 'Another Berman operation is using connection stewart'):
+                Workflow(Store(self.root), FixtureHarness(self.store)).new()
+            self.assertIn('connection stewart', Workflow(Store(self.root), FixtureHarness(self.store)).status()['operations_in_progress'])
+            results['orchard'] = Workflow(Store(self.root), FixtureHarness(self.store)).new(connection='orchard')
+        finally:
+            release.set()
+            thread.join(10)
+        self.assertEqual(errors, [])
+        self.assertEqual({results['stewart']['run'], results['orchard']['run']}, {'run-001', 'run-002'})
+
+    def test_simultaneous_finishes_retain_every_inventory_entry(self):
+        stewart = self.workflow.new(); self.start(stewart['run'], self.legacy)
+        one = self.workflow.new(connection='orchard'); self.start(one['run'], self.berman)
+        barrier = threading.Barrier(2, timeout=10)
+        verify = fieldwork.verify_moved
+        def slow_verify(root, entry):
+            result = verify(root, entry)
+            if root.parent == self.root / 'runs':
+                barrier.wait()  # Both migrations have moved and verified before either indexes.
+            return result
+        errors = []
+        def finish(connection):
+            try:
+                store = Store(self.root)
+                Workflow(store, FixtureHarness(store)).finish('ended', connection=connection)
+            except Exception as exc:
+                errors.append(exc)
+        with mock.patch.object(fieldwork, 'verify_moved', side_effect=slow_verify):
+            threads = [threading.Thread(target=finish, args=(c,)) for c in ('stewart', 'orchard')]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(20)
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(r['run'] for r in read(self.root / 'source-layout.json')['runs']), ['run-001', 'run-002'])
+
+    def test_preserving_one_run_does_not_skip_another_sessions_callbacks(self):
+        first = self.workflow.new(); self.start(first['run'], self.legacy)
+        second = self.workflow.new(keep_open=True)
+        source, event = self.start(second['run'], self.legacy, stop=False)
+        entry = fieldwork.migration_entry
+        observed = {}
+        def during_inventory(root, run, destination):
+            # A live session's callback arrives while the other packet is inventoried and hashed.
+            observed['hook'] = self.legacy.hook(dict(event, hook_event_name='Stop'))
+            return entry(root, run, destination)
+        with mock.patch.object(fieldwork, 'migration_entry', side_effect=during_inventory):
+            self.workflow.finish('First engagement ended', first['run'])
+        self.assertEqual(observed['hook'], {})
+        self.assertEqual(read(self.store.field / second['run'] / 'session/capture.json')['event'], 'Stop')
+        self.assertFalse(read(self.home / f'stewart-fieldwork/{event["session_id"]}.json')['active_turn'])
+
+    def test_contention_names_the_occupied_run(self):
+        one = self.workflow.new(connection='orchard')
+        with self.store.lock('run', one['run']):
+            with self.assertRaisesRegex(Decision, f'Another Berman operation is using {one["run"]}'):
+                self.workflow.launch(one['run'])
+
+
+
+class ArchiveEditionTests(Base):
+    def builder(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('edition_builder', ROOT / 'tools/build_archive.py')
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        return builder
+
+    def build(self, edition, connections, builder=None):
+        builder = builder or self.builder()
+        build = builder.select(self.root, edition, connections)
+        generated, _ = builder.render(build)
+        payload = builder.assemble(build, generated)
+        return build, generated, payload, builder.make_zip(payload, build.edition.prefix)
+
+    def mixed(self):
+        """One finished Stewart run and one finished orchard run in the disposable root."""
+        for name in set(__import__('build_archive').CONTEXT_DOCUMENTS) | set(__import__('build_archive').EDITION_DOCUMENTS):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f'Fixture framing: {name}\n')
+        for name in ('AGENTS.md', '.gitignore'):
+            (self.root / name).write_text('Fixture support file.\n')
+        stewart = self.workflow.new(); self.start(stewart['run'], self.legacy)
+        self.workflow.finish('Stewart engagement ended')
+        one = self.workflow.new(connection='orchard')
+        self.start(one['run'], self.berman, prompt=(Path(one['packet']) / 'ASSIGNMENT.md').read_text())
+        (self.store.field / one['run'] / 'notes/account.md').write_text('An orchard account with a path /tmp/orchard-note.\n')
+        self.workflow.finish('Orchard engagement ended', connection='orchard')
+        return stewart, one
+
+    def test_mixed_edition_identifies_connections_without_stewart_explanations(self):
+        stewart, one = self.mixed()
+        build, generated, payload, zipped = self.build('connections', ['stewart', 'orchard'])
+        self.assertEqual(build.archive_path, 'archive/editions/berman-orchard-stewart.zip')
+        edition = json.loads(generated['review/EDITION.json'])
+        self.assertEqual(edition['namespace'], 'berman-analysis/')
+        self.assertEqual([(r['run'], r['connection'], r['attribution']) for r in edition['runs']],
+                         [(stewart['run'], 'stewart', 'operation record'), (one['run'], 'orchard', 'operation record')])
+        reader = generated[f'review/{one["run"]}.txt'].decode()
+        self.assertTrue(reader.startswith(f'ORCHARD FIELDWORK: {one["run"]}\n\nConnection: orchard (attributed by operation record)'))
+        self.assertNotIn('Stewart', reader)
+        self.assertNotIn('EVIDENCE EXPORTS', reader)
+        self.assertIn('INCLUDED SESSION CONVERSATION FILES', reader)
+        self.assertIn('context/berman/closing-project/', reader)
+        self.assertIn('An orchard account', reader)
+        self.assertTrue(generated[f'review/{stewart["run"]}.txt'].decode().startswith(f'STEWART FIELDWORK: {stewart["run"]}'))
+        rows = list(__import__('csv').DictReader(__import__('io').StringIO(generated['review/transcript-map.csv'].decode())))
+        kinds = {r['record_kind'] for r in rows if r['run'] == one['run']}
+        self.assertIn('rendered session conversation', kinds)
+        self.assertNotIn('rendered manager conversation', kinds)
+        self.assertIn(b'DECODED SESSION CONVERSATIONS', generated['review/manager-events.txt'])
+        guide = generated['ARCHIVE-GUIDE.txt'].decode()
+        self.assertIn(f'  orchard (Orchard): {one["run"]}', guide)
+        self.assertIn('Orchard: no specialized readers or coverage notes are recorded', guide)
+        self.assertNotIn('Run 003', guide)
+        with zipfile.ZipFile(__import__('io').BytesIO(zipped)) as archive:
+            names = archive.namelist()
+        self.assertTrue(all(n.startswith('berman-analysis/') for n in names))
+        self.assertIn(f'berman-analysis/runs/{one["run"]}/notes/account.md', names)
+        refs = generated['review/external-references.csv'].decode()
+        self.assertIn('/tmp/orchard-note', refs)
+        # The Stewart edition keeps Stewart runs only, with its own namespace and framing.
+        build, generated, payload, zipped = self.build('stewart', [])
+        self.assertEqual(build.runs, (stewart['run'],))
+        self.assertEqual([r['run'] for r in json.loads(payload['source-layout.json'][0])['runs']], [stewart['run']])
+        self.assertNotIn(f'runs/{one["run"]}/ASSIGNMENT.md', payload)
+        with zipfile.ZipFile(__import__('io').BytesIO(zipped)) as archive:
+            self.assertTrue(all(n.startswith('stewart-analysis/') for n in archive.namelist()))
+        with self.assertRaisesRegex(ValueError, 'outside this edition'):
+            self.builder().select(self.root, 'stewart', [], [one['run']])
+
+    def test_editions_built_in_one_process_share_no_state(self):
+        self.mixed()
+        fresh_stewart = self.build('stewart', [])[1:]
+        fresh_mixed = self.build('connections', ['stewart', 'orchard'])[1:]
+        builder = self.builder()
+        self.assertEqual(self.build('connections', ['stewart', 'orchard'], builder)[1:], fresh_mixed)
+        self.assertEqual(self.build('stewart', [], builder)[1:], fresh_stewart)
+        self.assertEqual(self.build('connections', ['stewart', 'orchard'], builder)[1:], fresh_mixed)
+
+
+if __name__ == '__main__':
+    unittest.main()

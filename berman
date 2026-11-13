@@ -1,0 +1,20 @@
+#!/usr/bin/env -S python3 -I -B
+"""Berman's local command; resolves its repository even through an installed symlink."""
+import sys
+import os
+import shutil
+
+if sys.version_info < (3, 11):
+    for name in ('python3.14', 'python3.13', 'python3.12', 'python3.11'):
+        binary = shutil.which(name)
+        if binary:
+            os.execv(binary, [binary, '-I', '-B', __file__, *sys.argv[1:]])
+    raise SystemExit('Berman requires Python 3.11 or later; run it with a supported interpreter.')
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'tools'))
+from berman_cli import main
+
+if __name__ == '__main__':
+    raise SystemExit(main())

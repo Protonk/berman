@@ -1,0 +1,15 @@
+{
+  "schema": "berman.recipe/2",
+  "id": "work-accounts",
+  "connections": [
+    "stewart"
+  ],
+  "coverage": [
+    "notes"
+  ],
+  "recording_protocol": "work-accounts/1",
+  "instructions": "INSTRUCTIONS.md",
+  "research_commission": "COMMISSION.md",
+  "source": "synthetic fixture",
+  "meaning": "Synthetic instructions for compatibility tests."
+}
