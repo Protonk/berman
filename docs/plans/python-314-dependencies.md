@@ -215,3 +215,31 @@ separately, in the development guide.
   Its fingerprint-coverage, single-load and frozen-byte tests stay. New
   specialized tests cover what a contract cannot name: any third-party import in
   a hook or copied script, undeclared dependencies, and unlayered modules.
+- **13 November 2026, JSON Schema.** Nine schemas in `src/berman/schemas/`,
+  packaged with the wheel and covered by the software identity. Seven are the
+  commissioned families (workspace, connection, recipe, research plan, run
+  catalogue, operation record, combined request). Two were added because this
+  work changes them: the software identity, which gains an optional
+  `environment`, and the verification result, whose checks grow.
+  - *A schema states JSON types and required fields only.* Phases, purposes,
+    adapter names and identity syntax stay in Python. Otherwise the run identity
+    pattern, which comes from the frozen collector, would have a second source.
+  - *Existing refusals keep their wording.* Where a Python rule already refused
+    a record, it still runs first; the schema then refuses structure nothing
+    looked at before, which used to surface later as a bare `KeyError` or a
+    traceback. This was a change of approach: schema-first would have been
+    tidier and would have reworded errors operators already know.
+  - *Every object stays open* to fields the schema does not name. Researcher
+    inputs in the adjacent study carry explanatory fields the code never reads.
+  - *Hooks and the archive builder do not validate.* They read their records
+    directly, as before, and their bytes are unchanged.
+  - *Checked against real history, read-only:* all 44 records of the adjacent
+    study satisfy the schemas (26 operation records in every phase, 11 retained
+    verification results, its inputs and its 0.4.1 software identity). No study
+    record is copied here; the fixtures are synthetic.
+  - *Dependencies and identity.* `berman version` now reports the interpreter
+    and the installed version of every distribution the declared dependencies
+    require, under `environment`, beside the unchanged source digests.
+    `berman verify --software` gains `dependencies` and `schemas` checks.
+    Versions are recorded context. Nothing fingerprints them, and the contracts
+    keep them out of everything qualification does fingerprint.

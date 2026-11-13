@@ -1,0 +1,11 @@
+{
+  "schema": "berman.recipe/2",
+  "id": "work-account",
+  "connections": [
+    "orchard"
+  ],
+  "coverage": "notes",
+  "recording_protocol": "work-accounts/1",
+  "instructions": "",
+  "research_commission": "COMMISSION.md"
+}

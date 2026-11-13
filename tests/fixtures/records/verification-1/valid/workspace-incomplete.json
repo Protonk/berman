@@ -1,0 +1,59 @@
+{
+  "schema": "berman.verification/1",
+  "verdict": "incomplete",
+  "checked_at_utc": "2026-11-13T00:00:00.000000Z",
+  "root": "/synthetic/study",
+  "code": "/synthetic/site-packages/berman",
+  "checks": {
+    "frozen-collector": {
+      "status": "passed",
+      "required": true,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic."
+    },
+    "hook-trust:berman-codex": {
+      "status": "not-established",
+      "required": true,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic.",
+      "next": "Review /hooks, then record it."
+    },
+    "archive": {
+      "status": "not-run",
+      "required": true,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic.",
+      "next": "berman verify without --skip archive"
+    },
+    "native-access": {
+      "status": "not-run",
+      "required": false,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic."
+    }
+  },
+  "failed": [],
+  "not_run": [
+    "archive",
+    "native-access"
+  ],
+  "not_established": [
+    "hook-trust:berman-codex"
+  ],
+  "not_covered": [
+    "Developer regression tests."
+  ],
+  "record": {
+    "directory": "/synthetic/study/experiments/check",
+    "files": [
+      "verification.json"
+    ]
+  },
+  "meaning": "Synthetic.",
+  "python": "/usr/bin/python3",
+  "python_version": "Python 3.14.9"
+}

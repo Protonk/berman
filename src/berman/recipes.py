@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 
 from berman import files
+from berman import schemas
 from berman.files import Decision, keep, read, write
 from berman import recovery as fieldwork
 
@@ -20,13 +21,15 @@ def recipe(store, name, connection):
         raise ValueError('Invalid recipe name')
     folder = store.root / 'recipes' / name
     meta = read(folder / 'recipe.json')
-    if meta.get('id') != name or meta.get('schema') != 'berman.recipe/2' or meta.get('coverage') != ['notes']:
+    if (not isinstance(meta, dict) or meta.get('id') != name or meta.get('schema') != 'berman.recipe/2'
+            or meta.get('coverage') != ['notes']):
         raise ValueError('This workflow requires a named notes recipe')
     if meta.get('recording_protocol') not in PROTOCOLS:
         raise ValueError('Recipe must explicitly name a supported recording protocol')
     if connection.id not in meta.get('connections', []):
         raise Decision(f'Recipe {name} is worded for {", ".join(meta.get("connections", [])) or "no connection"}, '
                        f'not {connection.id}; introduce a separately versioned recipe')
+    schemas.validate('berman.recipe/2', meta, folder / 'recipe.json')
     result = {'metadata': meta}
     for key in ('instructions', 'research_commission'):
         path = Path(meta[key])

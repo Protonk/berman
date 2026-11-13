@@ -8,6 +8,8 @@ Without --record or --native-access it creates or changes no file, takes no lock
 command. --native-access runs the real Codex binary against disposable Berman, packet and Codex roots
 and the real checkouts, as a preparation does; nothing outside its evidence folder is kept.
 """
+import importlib
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -18,11 +20,12 @@ import tempfile
 
 from berman.capture import adapters as capture_adapters
 from berman import files
+from berman import schemas
 from berman.files import Decision, keep, read, write
 from berman.harnesses.codex import Codex
 from berman.recipes import git_state
 from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256, command as module_command
-from berman.workspace import identity
+from berman.workspace import distribution_name, identity
 from berman.records import Store
 from berman.workflow import Workflow
 
@@ -35,6 +38,9 @@ PROBLEMS = (OSError, ValueError, KeyError, TypeError, AttributeError)
 MEANING = {
     'frozen-collector': 'The installed historical collector retains its frozen bytes.',
     'installation': 'Installed package metadata and runtime resources can be read; no study is loaded.',
+    'dependencies': 'The packages Berman declares as runtime dependencies are installed and import. Their versions '
+                    'are environment facts: nothing fingerprints them and no qualification rests on them.',
+    'schemas': 'The packaged record schemas are present, well formed and named for their own record families.',
     'recorded-hashes': 'Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and '
                        'inquiry/*/MANIFEST.json keep their recorded bytes.',
     'workspace': "This workspace's berman.json, catalogue, connections and plans load with this code, and berman status "
@@ -602,6 +608,33 @@ def render(result):
     return '\n'.join(lines)
 
 
+def dependencies(installed):
+    """Whether every required distribution is installed and each declared dependency's modules import."""
+    missing = sorted(name for name, version in installed.items() if version is None)
+    declared = {distribution_name(r) for r in metadata.requires('berman') or []} - {None}
+    broken = []
+    for module, owners in sorted(metadata.packages_distributions().items()):
+        if declared & {distribution_name(owner) for owner in owners}:
+            try:
+                importlib.import_module(module)
+            except Exception as exc:  # A damaged binary wheel fails here in its own way.
+                broken.append(f'{module}: {type(exc).__name__}: {exc}')
+    details = {'installed': installed, 'missing': missing, 'problems': broken}
+    if missing or broken:
+        return row('failed', f'{len(missing) + len(broken)} runtime dependency problem(s)',
+                   step='Reinstall the package with its dependencies', **details)
+    return row('passed', ', '.join(f'{name} {version}' for name, version in installed.items()) or 'none declared',
+               **details)
+
+
+def packaged_schemas():
+    try:
+        digests = schemas.check()
+    except PROBLEMS + (ImportError,) as exc:
+        return row('failed', str(exc), step='Reinstall the package; schema files are part of it')
+    return row('passed', f'{len(digests)} record schemas are packaged and well formed', sha256=digests)
+
+
 def software(skip=(), code=PACKAGE):
     """Verify installed package resources; never load a workspace or harness home."""
     if skip:
@@ -609,9 +642,11 @@ def software(skip=(), code=PACKAGE):
     try:
         installed = identity()
         checks = {'installation': row('passed', f"Berman {installed['version']} is installed", software=installed)}
+        checks['dependencies'] = dependencies(installed['environment']['dependencies'])
     except (OSError, ValueError, RuntimeError) as exc:
         checks = {'installation': row('failed', f'Installed package cannot be read: {exc}')}
     checks['frozen-collector'] = integrity(code)
+    checks['schemas'] = packaged_schemas()
     for name, check in checks.items():
         check['meaning'] = MEANING[name]
     return {'schema': 'berman.verification/1', 'scope': 'software', 'verdict': verdict(checks),

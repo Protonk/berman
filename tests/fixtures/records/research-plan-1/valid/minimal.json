@@ -1,0 +1,11 @@
+{
+  "schema": "berman.research-plan/1",
+  "id": "orchard-roles",
+  "connection": "orchard",
+  "steps": [
+    {
+      "id": "first-account",
+      "recipe": "work-account"
+    }
+  ]
+}

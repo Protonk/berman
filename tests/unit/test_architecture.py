@@ -37,9 +37,11 @@ VIOLATIONS = (
     ('layers', 'capture/runtime.py', 'from berman import records'),
     ('layers', 'archive/select.py', 'from berman import files'),
     ('layers', 'files.py', 'from berman import installation'),
+    ('layers', 'schemas/__init__.py', 'from berman import files'),
     ('layers', 'harnesses/development/launch.py', 'from berman import files'),
     ('hooks', 'capture/runtime.py', 'import rich'),
     ('hooks', 'files.py', 'import jsonschema'),
+    ('hooks', 'capture/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
     ('archive', 'archive/package.py', 'import rich.console'),
     ('scripts', 'harnesses/probe.py', 'import jsonschema'),
     ('scripts', 'harnesses/development/launch.py', 'import rich'),
@@ -49,7 +51,6 @@ VIOLATIONS = (
     ('confined', 'workflow.py', 'import rich'),
     ('confined', 'records.py', 'import jsonschema'),
 )
-# Modules that confine a third-party package are added to VIOLATIONS' exceptions by their own tests.
 RUNNER = """
 import sys
 sys.path.insert(0, sys.argv[1])

@@ -1,0 +1,36 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-900101",
+  "phase": "support-trial",
+  "purpose": "support-trial",
+  "support_trial": "experiments/synthetic-trial/trial.json",
+  "reserved_at_utc": "2026-11-13T00:00:00.000000Z",
+  "workspace": {
+    "root": "/synthetic/study",
+    "tag": "abcdef12"
+  },
+  "packet_root": "/synthetic/packets",
+  "packet": "/synthetic/packets/run-900101",
+  "project": "/tmp/berman-support-run-900101-abcdef12",
+  "capture": {
+    "adapter": "berman-claude",
+    "harness": "claude",
+    "collector": "berman-collector/1",
+    "marker": "Berman-Fieldwork-Run: ",
+    "layout": "notes",
+    "definition": "hooks/berman-capture.hooks.json",
+    "implementation_sha256": {
+      "capture/router.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "harness": {
+    "id": "claude",
+    "binary": "/synthetic/bin/claude",
+    "home": "/synthetic/claude",
+    "python": "/usr/bin/python3",
+    "runtime_python": "/synthetic/study/.state/runtime/bin/python",
+    "profile": "berman-abcdef12-run-900101",
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "model": "haiku"
+  }
+}

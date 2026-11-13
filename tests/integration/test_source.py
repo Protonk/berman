@@ -64,7 +64,7 @@ class StandaloneTests(unittest.TestCase):
         with mock.patch.object(verify, 'Store', side_effect=AssertionError('study loaded')):
             result = verify.software()
         self.assertEqual(result['verdict'], 'passed')
-        self.assertEqual(set(result['checks']), {'installation', 'frozen-collector'})
+        self.assertEqual(set(result['checks']), {'installation', 'dependencies', 'frozen-collector', 'schemas'})
         self.assertEqual(result['scope'], 'software')
 
     def test_changing_probe_python_keeps_the_initialized_package_interpreter(self):

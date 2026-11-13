@@ -1,0 +1,23 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-003",
+  "phase": "closing",
+  "project": "/synthetic/orchard",
+  "documents": [],
+  "started_session": "synthetic-session-3",
+  "migration_authority": {
+    "journal": "/synthetic/study/migrations/run-003.json"
+  },
+  "ending": {
+    "reason": "finalized",
+    "basis": "Previously written finalized.json or migration journal; no new completion inferred."
+  },
+  "previous_ending_interpretations": [
+    {
+      "reason": "finalized",
+      "basis": "earlier inference"
+    }
+  ],
+  "package": null,
+  "plan": null
+}

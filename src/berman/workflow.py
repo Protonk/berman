@@ -18,7 +18,8 @@ from berman.recipes import compose, prepare, recipe, snapshot
 from berman.preserve import finish, finishable, preserve
 from berman.harnesses.codex import Harnesses
 from berman.lifecycle import (BEFORE_SESSION, CANCELLATION, SESSION_MATERIAL, authorized, declared, describe,
-                              open_engagement, outstanding, progress_state, unused, validate_request)
+                              open_engagement, outstanding, progress_state, unused)
+from berman.records import checked_request
 
 
 class Workflow:
@@ -75,10 +76,14 @@ class Workflow:
         values = []
         for path in sorted((self.store.operations / 'new-requests').glob('*.json')):
             try:
-                values.append((path, validate_request(read(path))))
+                values.append((path, checked_request(read(path))))
             except ValueError as exc:
                 raise Decision(f'Invalid new-run request: {path}: {exc}') from exc
         return values
+
+    def save_request(self, request):
+        """Write the combined request this command is working through; an invalid one is never written."""
+        write(self.request_path, checked_request(request))
 
     def status(self):
         from berman import support  # Imported here: berman_support uses berman_verify, which imports this module.
@@ -308,7 +313,7 @@ class Workflow:
                            'created_at_utc': files.now(), 'previous_run': previous['run'],
                            'finish_reason': finish_previous, 'step': step['id'], 'result_run': None}
                 self.request_path = self.store.operations / 'new-requests' / (uuid.uuid4().hex + '.json')
-                write(self.request_path, request)
+                self.save_request(request)
             preserved = []
             if request:
                 self.touched.add(request['previous_run'])
@@ -325,7 +330,7 @@ class Workflow:
                     else:
                         preserved.append(finish(self.store, previous, request['finish_reason']))
                 request['previous_preserved'] = preserved[-1]
-                write(self.request_path, request)
+                self.save_request(request)
             preserved.extend(self.settle(self.within(self.rows(), conn)))
             scoped = self.within(self.rows(), conn)
             opened = [r for r in scoped if open_engagement(r)]
@@ -366,7 +371,7 @@ class Workflow:
                 self.store.save(record)
                 if request:
                     request['result_run'] = run
-                    write(self.request_path, request)
+                    self.save_request(request)
                 if record['project'] != str(conn.checkout):
                     raise Decision('The reserved project differs from current configuration; the run record governs its packet')
                 packet = prepare(self.store, record)
@@ -381,7 +386,7 @@ class Workflow:
                 keep(self.store.folder(run) / 'preparation/LAUNCH.txt', (command + '\n').encode())
                 if request:
                     request['state'] = 'complete'
-                    write(self.request_path, request)
+                    self.save_request(request)
             return {'state': 'ready', 'run': run, 'connection': conn.id, 'recipe': record['recipe']['metadata']['id'],
                     'preserved': preserved, 'retained_open_runs': retained,
                     'launch': command, 'packet': str(packet), 'preparation': str(self.store.folder(run) / 'preparation'),

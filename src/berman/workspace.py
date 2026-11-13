@@ -1,7 +1,10 @@
 """Source identity and explicit, side-effect-free workspace selection."""
 import hashlib
+from importlib import metadata
 import json
 from pathlib import Path
+import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -9,15 +12,54 @@ import uuid
 
 from berman.installation import PACKAGE, version
 
+SOURCE = ('.py', '.json')  # Modules and the packaged record schemas.
+
+
+def distribution_name(requirement):
+    """The normalized distribution a requirement names, or None when it applies only to an extra."""
+    spec, _, marker = requirement.partition(';')
+    if 'extra' in marker:
+        return None
+    return re.sub(r'[-_.]+', '-', re.match(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)', spec).group(1)).lower()
+
+
+def dependencies():
+    """The installed version of every distribution Berman's declared dependencies require.
+
+    Read from installed metadata, following requirements but never extras. A requirement that is
+    not installed is None, unless it carries an environment marker, which is taken not to apply.
+    """
+    found, pending = {}, list(metadata.requires('berman') or [])
+    while pending:
+        requirement = pending.pop()
+        name = distribution_name(requirement)
+        if name is None or name in found:
+            continue
+        try:
+            distribution = metadata.distribution(name)
+        except metadata.PackageNotFoundError:
+            if not requirement.partition(';')[2].strip():
+                found[name] = None
+            continue
+        found[name] = distribution.version
+        pending += distribution.requires or []
+    return dict(sorted(found.items()))
 
 
 def identity():
-    paths = sorted(PACKAGE.rglob('*.py'))
+    """Digests of Berman's own installed files, and beside them the environment they run in.
+
+    source_sha256 and files_sha256 identify bytes. environment names the interpreter and
+    dependency releases found at this moment: recorded context, not a fingerprint. A dependency
+    resolved at install time can differ between two installations of one wheel.
+    """
+    paths = sorted(p for p in PACKAGE.rglob('*') if p.suffix in SOURCE and p.is_file())
     hashes = {p.relative_to(PACKAGE).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in paths if not p.name.startswith('test_')}
     return {'schema': 'berman.software/1', 'version': version(),
             'source_sha256': hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
-            'files_sha256': hashes}
+            'files_sha256': hashes,
+            'environment': {'python': platform.python_version(), 'dependencies': dependencies()}}
 
 
 def discover(start=None):

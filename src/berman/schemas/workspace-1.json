@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:berman:schema:workspace-1",
+  "title": "berman.workspace/1",
+  "description": "A fieldwork workspace's local installation settings (berman.json). Structure only: adapter names, the reading edition, connection identities and the disjointness of roots are checked by berman.records and berman.config.",
+  "type": "object",
+  "required": ["schema", "packet_root", "codex_home", "python", "codex", "connections"],
+  "properties": {
+    "schema": {"const": "berman.workspace/1"},
+    "collection_id": {"type": "string"},
+    "packet_root": {"$ref": "#/$defs/path"},
+    "codex_home": {"$ref": "#/$defs/path"},
+    "claude_home": {"$ref": "#/$defs/path"},
+    "python": {"$ref": "#/$defs/path"},
+    "runtime_python": {"$ref": "#/$defs/path"},
+    "codex": {"$ref": "#/$defs/path"},
+    "claude": {"$ref": "#/$defs/path"},
+    "default_connection": {"type": ["string", "null"]},
+    "legacy_connection": {"type": ["string", "null"]},
+    "catalogue": {"type": ["string", "null"]},
+    "support_collections": {"type": "array", "items": {"type": "string"}},
+    "qualified_adapters": {"type": "array", "items": {"type": "string"}},
+    "edition": {"type": "string"},
+    "connections": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/connection"}
+    }
+  },
+  "$defs": {
+    "path": {"type": "string", "minLength": 1},
+    "connection": {
+      "description": "This workspace's binding of a named connection to a checkout.",
+      "type": "object",
+      "required": ["definition", "checkout"],
+      "properties": {
+        "definition": {"$ref": "#/$defs/path"},
+        "checkout": {"$ref": "#/$defs/path"},
+        "capture": {"type": "string"},
+        "plan": {"type": ["string", "null"]},
+        "fieldwork_model": {"type": ["string", "null"]},
+        "documents": {"type": "array", "items": {"type": "string"}},
+        "development": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    }
+  }
+}

@@ -22,7 +22,8 @@ from berman.capture import adapters
 from berman import files
 from berman.files import Decision, digest_json, keep, read, write
 from berman.harnesses.codex import Codex
-from berman.lifecycle import SESSION_MATERIAL, validate_record
+from berman.lifecycle import SESSION_MATERIAL
+from berman.records import checked
 from berman.verify import evidence_folder
 from berman import recovery as fieldwork
 
@@ -188,7 +189,7 @@ def reserve(store, folder, adapter, facts):
                       'packet': str(store.field / run), 'project': str(project),
                       'capture': adapters.reservation(adapter),
                       'harness': store.harness_identity(adapter, run)}
-            keep(store.folder(run) / 'operation.json', files.json_bytes(validate_record(record, run)))
+            keep(store.folder(run) / 'operation.json', files.json_bytes(checked(record, run)))
         trial = {'schema': SCHEMA, 'run': run, 'adapter': adapter, 'phase': 'reserved',
                  'purpose': 'Native support trial; consumes no research-plan step.', 'evidence': rel,
                  'operation_record': relative(store, store.folder(run) / 'operation.json'),

@@ -1,0 +1,15 @@
+{
+  "schema": "berman.run-catalogue/1",
+  "runs": [
+    {
+      "run": "run-001",
+      "connection": "orchard",
+      "relationship": "predates research plans",
+      "basis": "synthetic"
+    }
+  ],
+  "support_collections": [
+    "experiments/synthetic-trial/collection"
+  ],
+  "support_basis": "Kept though unnamed."
+}

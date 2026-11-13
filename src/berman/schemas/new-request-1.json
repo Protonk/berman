@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:berman:schema:new-request-1",
+  "title": "berman.new-request/1",
+  "description": "A combined request to end one engagement and prepare the next, kept so an interrupted command resumes its recorded ending. Structure only: the states and run identities are checked by berman.lifecycle.",
+  "type": "object",
+  "required": ["schema", "state", "previous_run", "finish_reason", "step"],
+  "properties": {
+    "schema": {"const": "berman.new-request/1"},
+    "state": {"type": "string"},
+    "connection": {"type": "string"},
+    "created_at_utc": {"type": "string"},
+    "previous_run": {"type": "string"},
+    "finish_reason": {"type": "string"},
+    "step": {"type": "string"},
+    "result_run": {"type": ["string", "null"]},
+    "previous_preserved": {"type": "object"}
+  }
+}

@@ -6,12 +6,13 @@ from pathlib import Path
 import time
 import uuid
 
+from berman import schemas
 from berman.capture import runtime
 from berman.capture.claude import ClaudeCollector
 from berman.config import Catalogue, Connection
 from berman.files import Decision, digest, read, safe_directory, write
 from berman._legacy.api import RUN
-from berman.lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record
+from berman.lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record, validate_request
 
 LOCK_LABELS = {'global': 'the Berman workspace allocation and index', 'connection': 'connection {}',
                'run': '{}', 'installation': 'harness installation resource {}'}
@@ -30,6 +31,20 @@ def packet_evidence(root):
             'session_material': any((root / name).exists() for name in SESSION_MATERIAL)}
 
 
+def checked(value, run):
+    """An operation record unchanged, or ValueError saying why it is not one.
+
+    Lifecycle rules come first and keep their wording; the schema then refuses structure they never
+    looked at. Neither changes the record.
+    """
+    return schemas.validate('berman.operation/1', validate_record(value, run))
+
+
+def checked_request(value):
+    """A combined new-run request unchanged, or ValueError; lifecycle rules first, then structure."""
+    return schemas.validate('berman.new-request/1', validate_request(value))
+
+
 def runtime_adapters():
     from berman.config import CAPTURE_ADAPTERS
     return CAPTURE_ADAPTERS
@@ -40,11 +55,13 @@ class Store:
         self.root = Path(root).expanduser().resolve()
         safe_directory(self.root)
         raw = read(self.root / 'berman.json')
-        if raw.get('schema') == 'berman.configuration/1':
+        family = raw.get('schema') if isinstance(raw, dict) else None
+        if family == 'berman.configuration/1':
             raise ValueError('The single-project berman.configuration/1 format is no longer read; describe the '
                              'project as a connection in a berman.workspace/1 file')
-        if raw.get('schema') != 'berman.workspace/1':
+        if family != 'berman.workspace/1':
             raise ValueError('Unsupported berman.json schema')
+        schemas.validate('berman.workspace/1', raw, self.root / 'berman.json')
         workspace = raw
         self.workspace = workspace
         self.field = self.path(workspace['packet_root'])
@@ -115,14 +132,14 @@ class Store:
         if not path.exists():
             return None
         try:
-            return validate_record(read(path), run)
+            return checked(read(path), run)
         except ValueError as exc:
             raise ValueError(f'Invalid operation record: {path}: {exc}') from exc
 
     def save(self, record):
         path = self.folder(record['run']) / 'operation.json'
         try:
-            validate_record(record, record['run'])
+            checked(record, record['run'])
         except ValueError as exc:
             raise ValueError(f'Invalid operation record: {path}: {exc}') from exc
         write(path, record)

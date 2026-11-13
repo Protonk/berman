@@ -1,0 +1,16 @@
+{
+  "schema": "berman.recipe/2",
+  "id": "work-account",
+  "connections": [
+    "orchard"
+  ],
+  "coverage": [
+    "notes"
+  ],
+  "recording_protocol": "work-accounts/1",
+  "instructions": "INSTRUCTIONS.md",
+  "research_commission": "COMMISSION.md",
+  "source": "synthetic fixture",
+  "meaning": "Synthetic.",
+  "wording": "Kept though unnamed."
+}

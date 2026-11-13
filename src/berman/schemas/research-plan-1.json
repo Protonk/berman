@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:berman:schema:research-plan-1",
+  "title": "berman.research-plan/1",
+  "description": "Which engagements are wanted for one connection, in order (plan.json). Structure only: identities, unique step identities and the plan's agreement with its connection are checked by berman.config.",
+  "type": "object",
+  "required": ["schema", "id", "connection", "steps"],
+  "properties": {
+    "schema": {"const": "berman.research-plan/1"},
+    "id": {"type": "string"},
+    "connection": {"type": "string"},
+    "commitment": {"type": ["string", "null"]},
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "recipe"],
+        "properties": {
+          "id": {"type": "string"},
+          "recipe": {"type": "string"}
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["plan"],
+        "properties": {
+          "plan": {"type": "string"},
+          "relationship": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-002",
+  "phase": "archived",
+  "project": "/synthetic/orchard",
+  "documents": [
+    "README.md"
+  ],
+  "connection_attribution": {
+    "id": "orchard",
+    "basis": "run catalogue"
+  },
+  "adopted_existing_run_at_utc": "2026-10-20T00:00:00.000000Z",
+  "started_session": "synthetic-session-2",
+  "ending": {
+    "declared_at_utc": "2026-11-13T01:00:00.000000Z",
+    "reason": "The researcher said the encounter ended.",
+    "allow_incomplete": "",
+    "meaning": "Operator declares this engagement ended; not a claim that its development or inquiry is complete.",
+    "override_recorded_at_utc": "2026-10-20T00:05:00.000000Z"
+  },
+  "package": {
+    "path": "/synthetic/study/archive/recordings/run-002.zip",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 1,
+    "members": 1
+  }
+}

@@ -34,6 +34,9 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+berman = ["schemas/*.json"]
+
 
 # Ruff. Lint applies to everything but the frozen collector. The formatter
 # governs new files only: docs/development.md explains the exemptions.
@@ -146,7 +149,7 @@ layers = [
     "berman.records",
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.collector : berman.capture.claude : berman._legacy",
-    "berman.files | berman.installation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
+    "berman.files | berman.installation | berman.schemas | berman.archive | berman.harnesses.probe | berman.harnesses.development",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
@@ -234,6 +237,7 @@ name = "No module imports a third-party package except the one that confines it"
 type = "forbidden"
 source_modules = ["berman"]
 forbidden_modules = ["jsonschema", "rich"]
+ignore_imports = ["berman.schemas -> jsonschema"]
 broken_contract_guidance = """
 jsonschema and rich each have one importing module. Call that module instead of
 importing the library, so its use stays in one reviewable place."""

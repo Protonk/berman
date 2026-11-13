@@ -1,0 +1,32 @@
+{
+  "schema": "berman.verification/1",
+  "scope": "software",
+  "verdict": "passed",
+  "checked_at_utc": "2026-11-13T00:00:00.000000Z",
+  "root": null,
+  "code": "/synthetic/site-packages/berman",
+  "checks": {
+    "installation": {
+      "status": "passed",
+      "required": true,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic."
+    },
+    "frozen-collector": {
+      "status": "passed",
+      "required": true,
+      "summary": "Synthetic.",
+      "details": {},
+      "meaning": "Synthetic."
+    }
+  },
+  "failed": [],
+  "not_run": [],
+  "not_established": [],
+  "not_covered": [
+    "Developer regression tests."
+  ],
+  "record": null,
+  "meaning": "Synthetic."
+}

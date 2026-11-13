@@ -1,0 +1,6 @@
+{
+  "schema": "berman.workspace/1",
+  "python": "/usr/bin/python3",
+  "codex": "/synthetic/bin/codex",
+  "connections": {}
+}

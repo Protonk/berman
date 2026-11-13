@@ -1,0 +1,8 @@
+{
+  "schema": "berman.new-request/1",
+  "state": "pending",
+  "previous_run": "run-001",
+  "finish_reason": "The researcher said the encounter ended.",
+  "step": "second",
+  "result_run": null
+}

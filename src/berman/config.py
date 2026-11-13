@@ -8,6 +8,7 @@ berman.json and are kept apart from the reusable connection description.
 from pathlib import Path
 import re
 
+from berman import schemas
 from berman.files import Decision, digest, digest_json, read, regular
 from berman._legacy.api import RUN
 
@@ -51,8 +52,10 @@ class Connection:
             raise ValueError(f'Connection definitions are researcher inputs held in Berman: {self.definition_path}')
         self.folder = self.definition_path.parent
         self.definition = read(self.definition_path)
-        if self.definition.get('schema') != 'berman.connection/1' or self.definition.get('id') != self.id:
+        if (not isinstance(self.definition, dict) or self.definition.get('schema') != 'berman.connection/1'
+                or self.definition.get('id') != self.id):
             raise ValueError(f'Invalid connection definition: {self.definition_path}')
+        schemas.validate('berman.connection/1', self.definition, self.definition_path)
         if any(key in self.definition for key in PACKET_ROOT_KEYS):
             raise Decision(f'Connection {ident} definition names a packet location; it must use the shared packet root')
         self.checkout = store.path(entry['checkout'])
@@ -109,8 +112,9 @@ class Plan:
         if not self.path.is_relative_to(store.root):
             raise ValueError(f'Research plans are researcher inputs held in Berman: {self.path}')
         self.data = read(self.path)
-        if self.data.get('schema') != 'berman.research-plan/1':
+        if not isinstance(self.data, dict) or self.data.get('schema') != 'berman.research-plan/1':
             raise ValueError(f'Invalid research plan: {self.path or value}')
+        schemas.validate('berman.research-plan/1', self.data, self.path)
         self.store = store
         self.id = identity(self.data['id'], 'research plan')
         self.connection = identity(self.data['connection'], 'connection')
@@ -180,8 +184,9 @@ class Catalogue:
         self.store = store
         path = workspace.get('catalogue')
         data = read(store.path(path)) if path else {'schema': 'berman.run-catalogue/1', 'runs': []}
-        if data.get('schema') != 'berman.run-catalogue/1':
+        if not isinstance(data, dict) or data.get('schema') != 'berman.run-catalogue/1':
             raise ValueError('Invalid run catalogue')
+        schemas.validate('berman.run-catalogue/1', data, store.path(path) if path else None)
         self.data = data
         self.runs = {}
         for row in data['runs']:

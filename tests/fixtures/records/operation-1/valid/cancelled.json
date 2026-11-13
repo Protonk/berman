@@ -1,0 +1,99 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-001",
+  "phase": "cancelled",
+  "software": {
+    "schema": "berman.software/1",
+    "version": "0.5.0",
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "files_sha256": {
+      "cli.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "environment": {
+      "python": "3.14.9",
+      "dependencies": {
+        "jsonschema": "4.26.0",
+        "rich": "15.0.0"
+      }
+    }
+  },
+  "reserved_at_utc": "2026-11-13T00:00:00.000000Z",
+  "workspace": {
+    "root": "/synthetic/study",
+    "tag": "abcdef12"
+  },
+  "connection": {
+    "id": "orchard",
+    "name": "Orchard",
+    "definition": "connections/orchard/connection.json",
+    "files_sha256": {
+      "connections/orchard/connection.json": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "version": 1,
+    "documents": [
+      "README.md"
+    ],
+    "commission": "Synthetic commission.\n",
+    "revision_template": "Synthetic work; preparation-time HEAD {head}",
+    "checks": [],
+    "readers": [],
+    "checkout": "/synthetic/orchard"
+  },
+  "plan": {
+    "id": "orchard-roles",
+    "path": "plans/orchard-roles/plan.json",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "step": "first-account"
+  },
+  "step": "first-account",
+  "recipe": {
+    "metadata": {
+      "schema": "berman.recipe/2",
+      "id": "work-account",
+      "recording_protocol": "work-accounts/1"
+    },
+    "instructions": "Write accounts in `{{notes_directory}}`.\n",
+    "research_commission": "Keep accounts.\n"
+  },
+  "commission": "Synthetic commission.\n\nKeep accounts.\n",
+  "recording_protocol": "work-accounts/1",
+  "project": "/synthetic/orchard",
+  "documents": [
+    "README.md"
+  ],
+  "packet_root": "/synthetic/packets",
+  "packet": "/synthetic/packets/run-001",
+  "capture": {
+    "adapter": "berman-codex",
+    "harness": "codex",
+    "collector": "berman-collector/1",
+    "marker": "Berman-Fieldwork-Run: ",
+    "layout": "notes",
+    "definition": "hooks/berman-capture.hooks.json",
+    "implementation_sha256": {
+      "capture/router.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "harness": {
+    "id": "codex",
+    "binary": "/synthetic/bin/codex",
+    "home": "/synthetic/codex",
+    "python": "/usr/bin/python3",
+    "profile": "berman-abcdef12-run-001"
+  },
+  "retained_open_runs": [],
+  "readiness": "/synthetic/study/operations/run-001/preparation/readiness.json",
+  "cancellation": {
+    "at_utc": "2026-11-13T00:30:00.000000Z",
+    "reason": "Prepared for the wrong step."
+  },
+  "unused_inventory": [
+    {
+      "path": "notes",
+      "mode": "0o755",
+      "mtime_ns": 1,
+      "type": "directory"
+    }
+  ]
+}

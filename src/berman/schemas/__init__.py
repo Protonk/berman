@@ -1,0 +1,179 @@
+"""Structural contracts for the records Berman reads and writes, as packaged JSON Schemas.
+
+A record's `schema` value names its family and version, and that name selects one schema
+file beside this module. A schema says what kind of JSON value each field holds and which
+fields a record of that family cannot lack. It does not say whether the record describes a
+state the workflow can be in. Phases, purposes, adapter names, run and session identities,
+agreement between records and filesystem safety belong to the Python that makes those
+decisions, in wording those modules already own.
+
+Validation only reads. It fills no default, coerces no type and returns the value it was
+given, so reading a preserved record cannot change it. A record that fails is invalid data,
+which stays distinct from a record that is absent, from an operation that is incomplete (its
+record is valid at every step) and from a fact nobody recorded (an optional field left out).
+
+Versions: a released schema keeps accepting what it accepted. Adding an optional field is
+compatible within a version. A change that would refuse a record the released schema took,
+or give a field another meaning, is a new name and a new file beside the old one.
+
+This is the only module that imports jsonschema, and it does so when first used, so that a
+command which validates nothing, and `berman verify --software` in a damaged environment,
+still start. Hooks, probes and the archive builder read their records directly and never
+come here; pyproject.toml's Import Linter contracts hold them to that.
+"""
+
+from functools import cache
+import hashlib
+import json
+from pathlib import Path
+
+HERE = Path(__file__).parent
+SUPPORTED = (
+    'berman.workspace/1',
+    'berman.connection/1',
+    'berman.recipe/2',
+    'berman.research-plan/1',
+    'berman.run-catalogue/1',
+    'berman.operation/1',
+    'berman.new-request/1',
+    'berman.software/1',
+    'berman.verification/1',
+)
+KINDS = {
+    'object': 'an object',
+    'array': 'an array',
+    'string': 'a string',
+    'integer': 'an integer',
+    'number': 'a number',
+    'boolean': 'a boolean',
+    'null': 'null',
+}
+SHOWN = 8  # Problems named in one message; the rest are counted.
+
+
+class InvalidRecord(ValueError):
+    """A value does not have the structure its schema requires; `problems` names each place."""
+
+    def __init__(self, name, problems, source=None):
+        self.schema, self.problems, self.source = name, tuple(problems), source
+        shown = '; '.join(self.problems[:SHOWN])
+        if len(self.problems) > SHOWN:
+            shown += f'; and {len(self.problems) - SHOWN} more'
+        super().__init__(
+            f'{source} does not satisfy {name}: {shown}' if source else f'does not satisfy {name}: {shown}'
+        )
+
+
+def path(name):
+    """The packaged file for a supported schema name: berman.recipe/2 is recipe-2.json."""
+    if name not in SUPPORTED:
+        raise KeyError(f'No packaged schema is named {name}')
+    return HERE / (name.removeprefix('berman.').replace('/', '-') + '.json')
+
+
+@cache
+def schema(name):
+    return json.loads(path(name).read_text(encoding='utf-8'))
+
+
+@cache
+def validator(name):
+    from jsonschema import Draft202012Validator
+
+    Draft202012Validator.check_schema(schema(name))
+    return Draft202012Validator(schema(name))
+
+
+def kind(value):
+    if value is None:
+        return 'null'
+    if isinstance(value, bool):
+        return 'boolean'
+    if isinstance(value, dict):
+        return 'object'
+    if isinstance(value, list):
+        return 'array'
+    if isinstance(value, str):
+        return 'string'
+    return 'integer' if isinstance(value, int) else 'number'
+
+
+def found(value):
+    """What a value is, with a short rendering of a scalar: an integer (12)."""
+    name = kind(value)
+    if name in ('object', 'array', 'null'):
+        return KINDS[name]
+    text = json.dumps(value, ensure_ascii=False)
+    return f'{KINDS[name]} ({text if len(text) <= 40 else text[:37] + "..."})'
+
+
+def location(parts):
+    """A field's place as an operator would write it: connections.stewart.checks[0].argv."""
+    text = ''
+    for part in parts:
+        text += f'[{part}]' if isinstance(part, int) else ('.' if text else '') + str(part)
+    return text
+
+
+def describe(error):
+    """(place, plain statement) for each thing a jsonschema error reports; never the whole offending value."""
+    place = list(error.absolute_path)
+    subject = location(place) or 'the document'
+    rule, expected, value = error.validator, error.validator_value, error.instance
+    if rule == 'required':
+        return [(place + [name], f'{location(place + [name])} is required') for name in expected if name not in value]
+    if rule == 'type':
+        kinds = [expected] if isinstance(expected, str) else expected
+        text = f'{subject} must be {" or ".join(KINDS[k] for k in kinds)}, not {found(value)}'
+    elif rule == 'const':
+        text = f'{subject} must be {json.dumps(expected)}, not {found(value)}'
+    elif rule == 'enum':
+        text = f'{subject} must be one of {", ".join(json.dumps(e) for e in expected)}, not {found(value)}'
+    elif rule == 'pattern':
+        text = f'{subject} must be {error.schema.get("description", "text matching " + expected)}, not {found(value)}'
+    elif rule in ('minLength', 'minItems'):
+        text = f'{subject} must not be empty'
+    else:
+        text = f'{subject}: {error.message if len(error.message) <= 120 else error.message[:117] + "..."}'
+    return [(place, text)]
+
+
+def problems(name, value):
+    """Every structural problem in value, ordered by the field it names; empty when the schema is satisfied."""
+    found_problems = [item for error in validator(name).iter_errors(value) for item in describe(error)]
+    # Array positions order as numbers and precede names, so steps[2] comes before steps[10].
+    found_problems.sort(
+        key=lambda item: ([(0, part, '') if isinstance(part, int) else (1, 0, part) for part in item[0]], item[1])
+    )
+    return list(dict.fromkeys(text for _, text in found_problems))
+
+
+def validate(name, value, source=None):
+    """The same value, unchanged, or InvalidRecord naming source and each problem."""
+    found_problems = problems(name, value)
+    if found_problems:
+        raise InvalidRecord(name, found_problems, source)
+    return value
+
+
+def check():
+    """Each packaged schema's digest, after confirming it is well formed and titled with its own name.
+
+    For installation verification. Raises ValueError when a schema file is missing, malformed, not
+    a valid Draft 2020-12 schema, or names another family.
+    """
+    digests = {}
+    for name in SUPPORTED:
+        try:
+            data = path(name).read_bytes()
+            loaded = schema(name)
+            validator(name)
+        except Exception as exc:  # jsonschema's own error type is not imported at module level.
+            raise ValueError(f'Packaged schema {name} cannot be used: {type(exc).__name__}: {exc}') from exc
+        if loaded.get('title') != name or loaded['properties']['schema'].get('const') != name:
+            raise ValueError(f'Packaged schema {path(name).name} does not declare {name}')
+        digests[name] = hashlib.sha256(data).hexdigest()
+    unlisted = sorted(p.name for p in HERE.glob('*.json') if p not in {path(n) for n in SUPPORTED})
+    if unlisted:
+        raise ValueError(f'Schema files without a supported name: {", ".join(unlisted)}')
+    return digests
