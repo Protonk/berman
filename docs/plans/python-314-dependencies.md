@@ -1,0 +1,197 @@
+# Python 3.14 and dependency integration
+
+An outline of the move to a `uv`-managed Python 3.14 environment and the
+integration of five dependencies. It records goals, boundaries and decisions,
+not procedure. The [decision log](#decision-log) at the end is added to as the
+work proceeds; where it disagrees with the outline above it, the log is right.
+
+Commissioned 13 November 2026. Starting point: version 0.4.1, commit `018fec4`.
+
+## Goals
+
+Berman's commitments are mostly conventions today: record shapes are checked
+by scattered `.get()` calls, architectural boundaries by a few hand-written
+tests, behavior by examples, and operator output by `print`. The integration
+makes the important ones explicit and mechanically checked.
+
+| Dependency | Kind | What it is for |
+| --- | --- | --- |
+| Ruff | development | Error detection and a fixed syntax baseline; formatting of new code. |
+| Import Linter | development | Architectural boundaries as executable contracts. |
+| JSON Schema (`jsonschema`) | runtime | Structural contracts for persisted and supplied records. |
+| Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. |
+| Rich | runtime | Operator-facing presentation on a terminal. |
+
+The expected benefit is not shorter code. It is that a malformed record is
+reported as invalid data with its location, that a boundary violation fails a
+check rather than a review, that retry and interruption guarantees are tested
+beyond the cases someone thought of, and that an operator can tell a failed
+check from an unestablished fact at a glance.
+
+## Baseline
+
+Taken before any change, from commit `018fec4`:
+
+- Python 3.14.9: 289 tests pass; `berman verify --software` passes. The
+  checkout's source digest equals the published 0.4.1 identity
+  (`759ff80a…9227`).
+- Python 3.11.17: two launcher tests fail (five outcomes). `argparse` before
+  CPython 3.12 consumes the launcher's optional prompt too early, so
+  `launch.py codex --model M 'a prompt'` is refused. The declared
+  `requires-python = ">=3.11"` was therefore untested and already untrue.
+- No runtime dependencies. The wheel installs with pip alone.
+
+## Compatibility commitments
+
+**Python 3.14 is the one supported and tested version.** The commission asked
+to retain 3.11 support; the researcher withdrew that on 13 November 2026 in
+favor of a single test suite on a single version. `requires-python` becomes
+`>=3.14` and the syntax baseline is 3.14. No 3.11 or intermediate runs are kept.
+
+Unchanged commitments:
+
+- The wheel installs and runs with pip. `uv` is a development tool only.
+- Command names, options, exit codes and `--json` output keep their meaning.
+- Persisted formats stay readable. Reading never rewrites a record.
+- `_legacy/capture_session.py` keeps its frozen bytes.
+- An active study's pinned runtime is not touched by this work.
+
+## Byte-sensitive files
+
+Some files are identity, not just source. Changing their bytes has a cost
+outside this repository, so the integration leaves them byte-identical to
+0.4.1 unless a defect requires otherwise:
+
+| Files | What their bytes identify |
+| --- | --- |
+| `_legacy/capture_session.py` | Frozen historical collector. |
+| The adapters' `implementation` lists in `capture/adapters.py` (hook entry points and what they import, `installation.py`, `files.py`, `harnesses/claude.py`) and four launcher helpers fingerprinted by source | Hook trust and native capture. A change means renewed qualification in every adopting study. |
+| `archive/*.py` | Reading-edition identity (`review/EDITION.json`). A change means a rebuilt edition. |
+| `harnesses/codex.py`, `harnesses/probe.py` | Per-run access receipts, rechecked automatically. |
+
+This shapes every phase: style-only fixes are not applied to these files,
+validation and presentation are attached elsewhere, and the result is checked
+at the end by comparing them with `018fec4`.
+
+## Boundaries
+
+Established by reading the import graph, not assumed. Real today:
+
+- `archive/` imports nothing else in the package.
+- `files.py`, `installation.py`, the sandbox probes and the development
+  launcher scripts import no other Berman module; probes and launchers run as
+  copied files under another interpreter.
+- Only `capture/collector.py` imports the frozen collector.
+- Hook entry points (`capture/router.py`, `capture/claude_router.py`) reach
+  only the fingerprinted capture modules.
+- `lifecycle.py` reads no files; discovery passes evidence in.
+- `config` and `lifecycle` sit below `records`, which sits below the
+  operator-side modules, which sit below `cli`. The operator-side modules
+  (`workflow`, `verify`, `support`, the harnesses, `capture/adapters.py`) import
+  each other, including cyclically through deferred imports. That cluster is
+  recorded as one layer, not untangled.
+
+Intended, and created by this integration:
+
+- Third-party packages never load in a hook, a probe, a launcher script or the
+  archive builder.
+- Only one module imports `jsonschema`, and only one imports `rich`.
+- Presentation receives finished results and computes no state; nothing but
+  the command line imports it.
+
+Import Linter states these as contracts. The existing tests in
+`tests/unit/test_boundaries.py` stay where they prove what a contract cannot:
+that every module a hook imports is fingerprinted, that the frozen collector is
+loaded once, and that the frozen bytes and serialization helpers are unchanged.
+
+## Phases
+
+Each phase ends with the full suite passing and a commit.
+
+1. **Environment.** `uv`, `.python-version`, `uv.lock`, dependency groups.
+   Nothing else depends on the tools being integrated yet.
+2. **Ruff and Import Linter.** Lint findings are fixed where they are defects
+   and configured away, with a stated reason, where they are style in a
+   byte-sensitive file. Contracts follow the boundaries above. Each contract is
+   paired with a test that injects a violation and expects that contract to fail.
+3. **JSON Schema.** Depends on phase 2: the contract confining `jsonschema`
+   exists before the import does.
+4. **Hypothesis.** Depends on phase 3: several properties are about validated
+   records, and the stateful test exercises the workflow as phase 3 leaves it.
+5. **Rich.** Depends on phase 2 for its confinement contract; otherwise
+   independent. Last because it changes the least that matters.
+6. **Close.** Guidance, agent instructions, a wheel built and smoke-tested
+   outside the checkout, and the byte-sensitive comparison.
+
+## Decisions that need care
+
+**Formatting.** Ruff's formatter would rewrite 51 of 73 files (about 2,700
+lines removed and 3,600 to 6,800 added of 15,000, depending on line length),
+including every byte-sensitive file. That is widespread churn with a
+qualification cost and no behavioral gain. Intended resolution: the formatter
+governs new files, existing files are listed as exempt, and lint applies to
+everything except the frozen collector.
+
+**Runtime dependencies and software identity.** `berman version` digests
+Berman's own files. A dependency resolved at install time is not covered by
+that digest, and "the same wheel installs the same bytes" stops being the whole
+story. Intended resolution: keep dependencies out of everything qualification
+fingerprints (enforced by contract), record their installed versions beside the
+source identity as environment facts, and say plainly that a version string
+names a release, not bytes. A study that needs byte-level reproducibility keeps
+the dependency wheels with its adoption record.
+
+**Capture isolation.** Hooks run on every turn of a fieldworker's session.
+They load only the standard library and fingerprinted Berman modules. Schema
+validation is not added to the hook path; the hook keeps reading its operation
+record directly.
+
+**Historical records.** Schemas describe the shapes the workflow has written,
+including older ones, and stay permissive about unknown fields. Vocabulary that
+drives lifecycle decisions (phases, purposes) stays in Python, where its
+existing messages and tolerances live. Validation never fills defaults,
+normalizes or rewrites. Invalid data, a missing record, an incomplete operation
+and an unknown fact remain four different reports.
+
+**Command compatibility.** Rich output is for a terminal. Redirected output
+and `--json` keep their current bytes, so anything that parses them is
+unaffected.
+
+## Verification
+
+- One suite: `python -m unittest discover -s tests -t .` on Python 3.14,
+  including the contract, schema, property and presentation tests.
+- `ruff check`, `ruff format --check` and `lint-imports` as documented commands.
+- `berman verify --software` from the development environment.
+- A built wheel installed with pip into a fresh environment and smoke-tested
+  from outside the checkout.
+- Byte-sensitive files compared with `018fec4`.
+
+Accepted when the commission's criteria hold, read with the Python decision
+above: a reproducible 3.14 environment, all five dependencies doing work in a
+maintained workflow, contracts that can be shown to fail, tested schemas for the
+chosen formats, properties covering interruption, retry and sequences, clearer
+operator output with unchanged machine output, and updated guidance.
+
+None of this qualifies a native installation. Passing tests establish
+simulated behavior only. What an adopting study must still do is recorded
+separately, in the development guide.
+
+## Open questions and risks
+
+- `jsonschema` brings a compiled dependency (`rpds-py`). Installation now
+  depends on a binary wheel existing for the platform.
+- A schema stricter than a study's real historical records would turn readable
+  history into reported damage. Mitigation: check the schemas, read-only,
+  against an existing study's records before settling them.
+- The stateful test drives real preparation and preservation and is slow per
+  step. Its limits trade coverage for suite time.
+- An adopting study's restore procedure that installs one wheel with
+  `--no-index` will not work for a version with dependencies.
+
+## Decision log
+
+- **13 November 2026.** Python 3.14 only, by the researcher's decision; see
+  [compatibility commitments](#compatibility-commitments). The 3.11 launcher
+  defect found in the baseline is left as it is: it does not occur on 3.14 and
+  the file is otherwise untouched.
