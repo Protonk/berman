@@ -1,4 +1,5 @@
 """Exercise the operator workflow against isolated repositories and real capture records."""
+from tests.support.paths import REPO
 import importlib.util
 import io
 import json
@@ -14,102 +15,20 @@ import zipfile
 from contextlib import redirect_stdout, redirect_stderr
 from contextlib import contextmanager
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from berman_records import Decision, ROOT, Store
-import berman_files
-from berman_files import read, write
-from berman_legacy import MARKER
-from berman_workflow import Workflow
-from berman_harness import COMMON_CHECKS, Codex, profile, profile_name
-import berman_collector
-import berman_preserve
-import berman_cli
-import fieldwork
+from berman.records import Decision, Store
+from berman.installation import PACKAGE as ROOT
+from berman import files
+from berman.files import read, write
+from berman._legacy.api import MARKER
+from berman.workflow import Workflow
+from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
+from berman.capture import collector
+from berman import preserve
+from berman import cli
+from berman import recovery as fieldwork
 
 
-def legacy_hooks():
-    command = f'"{sys.executable}" -I -B "{ROOT / "tools/capture_session.py"}" hook'
-    return {'description': 'Synthetic legacy hook fixture; never installed outside tests.',
-            'hooks': {event: [{'hooks': [{'type': 'command', 'command': command, 'timeout': timeout}]}]
-                      for event, timeout in [('UserPromptSubmit', 3), ('Stop', 10), ('Interrupt', 3), ('SessionEnd', 3)]}}
-
-
-def legacy_basis():
-    return {'schema': 'berman.capture-verification/1', 'adapter': 'legacy-codex',
-            'definition': 'hooks/fieldwork.hooks.json',
-            'definition_sha256': berman_files.digest_json(legacy_hooks()),
-            'implementation_sha256': {'tools/capture_session.py':
-                'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'},
-            'meaning': 'Synthetic integrity fixture, not evidence of native capture or trust.'}
-
-
-def workspace(root, base, project, documents=None, catalogue_runs=()):
-    """A disposable workspace with the Stewart connection/recipes and its own test sequence."""
-    (root / 'runs').mkdir(parents=True)
-    write(root / 'source-layout.json', {'runs': []})
-    shutil.copytree(ROOT / 'tools/fixtures/workspace/recipes', root / 'recipes')
-    shutil.copytree(ROOT / 'tools/fixtures/workspace/connections/stewart', root / 'connections/stewart')
-    # This fixture owns its sequence; completed workspace plans can be retired.
-    write(root / 'plans/stewart-fieldwork-roles/plan.json', {
-        'schema': 'berman.research-plan/1', 'id': 'stewart-fieldwork-roles', 'connection': 'stewart',
-        'steps': [{'id': 'repeat-after-008', 'recipe': 'work-accounts'},
-                  {'id': 'inquiry-after-repeat', 'recipe': 'participant-inquiry'}],
-        'commitment': 'Disposable test sequence; not a live research commitment.',
-        'relationships': []})
-    if documents is not None:
-        definition = read(root / 'connections/stewart/connection.json')
-        definition['documents'] = documents
-        write(root / 'connections/stewart/connection.json', definition)
-    write(root / 'connections/catalogue.json', {'schema': 'berman.run-catalogue/1', 'support_collections': [],
-                                                'runs': [{'run': r, 'connection': 'stewart', 'relationship': 'predates research plans',
-                                                          'basis': 'fixture'} for r in catalogue_runs]})
-    binary = base / 'fixture-bin/codex'
-    binary.parent.mkdir(exist_ok=True)
-    binary.write_text('#!/bin/sh\n[ "$1" = "--version" ] || exit 2\nprintf "codex synthetic-fixture\\n"\n')
-    binary.chmod(0o755)
-    real = {'python': sys.executable, 'codex': str(binary)}
-    write(root / 'berman.json', {
-        'schema': 'berman.workspace/1', 'packet_root': str(base / 'fieldwork'), 'codex_home': str(base / 'codex'),
-        'python': real['python'], 'codex': real['codex'], 'default_connection': 'stewart', 'legacy_connection': 'stewart',
-        'catalogue': 'connections/catalogue.json',
-        'connections': {'stewart': {'definition': 'connections/stewart/connection.json', 'checkout': str(project),
-                                    'plan': 'plans/stewart-fieldwork-roles/plan.json', 'capture': 'legacy-codex'}}})
-
-
-def git_repository(path, files, env=None):
-    path.mkdir(parents=True, exist_ok=True)
-    for name, text in files.items():
-        (path / name).parent.mkdir(parents=True, exist_ok=True)
-        (path / name).write_text(text)
-    env = dict(os.environ, **(env or {}))
-    for argv in (['init', '-q', '-b', 'main'], ['add', '.'],
-                 ['-c', 'user.name=Test', '-c', 'user.email=test@invalid', '-c', 'commit.gpgsign=false',
-                  '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'initial']):
-        subprocess.run(['git', '-C', str(path), *argv], check=True, env=env, capture_output=True)
-
-
-class FixtureHarness:
-    def __init__(self, store):
-        self.store = store
-        self.calls = 0
-        self.fail = False
-        self.preflight_fail = False
-
-    def preflight(self, connection=None):
-        if self.preflight_fail:
-            raise Decision('fixture hook check failed')
-
-    def ensure(self, run, folder):
-        self.calls += 1
-        if self.fail:
-            raise Decision('fixture native check failed')
-        reused = (folder / 'readiness.json').exists()
-        receipt = {'passed': True, 'fixture_only': True}
-        write(folder / 'readiness.json', receipt)
-        return dict(receipt, reused=reused)
-
-    def argv(self, run):
-        return ['/fixture/codex', run]
+from tests.support.workspace import FixtureHarness, workspace, git_repository, legacy_hooks, legacy_basis
 
 
 class WorkflowTests(unittest.TestCase):
@@ -148,7 +67,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.workflow.new()['run'], one['run'])
         self.assertEqual(self.workflow.status()['next_recipe'], 'work-accounts')
         text = (Path(one['packet']) / 'INSTRUCTIONS.md').read_text()
-        original = (ROOT / 'tools/fixtures/workspace/recipes/work-accounts/INSTRUCTIONS.md').read_text()
+        original = (REPO / 'tests/fixtures/workspace/recipes/work-accounts/INSTRUCTIONS.md').read_text()
         self.assertEqual(text, original.replace('{{notes_directory}}', one['packet'] + '/notes/'))
         self.assertNotIn('inquiry-after-repeat', (Path(one['packet']) / 'ASSIGNMENT.md').read_text())
         self.assertTrue(read(self.store.folder(one['run']) / 'preparation/initial-project/snapshot.json')['files'][-1]['missing'])
@@ -189,13 +108,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((archived / 'context/berman/closing-project/COORDINATOR-HANDOFF.md').read_text(), 'Closing handoff\n')
         self.assertEqual((archived / 'context/berman/preparation/initial-project/COORDINATOR-HANDOFF.md').read_text(), 'Ordinary handoff\n')
         package = self.store.record('run-001')['package']
-        self.assertEqual(berman_files.digest(Path(package['path']).read_bytes()), package['sha256'])
+        self.assertEqual(files.digest(Path(package['path']).read_bytes()), package['sha256'])
         with zipfile.ZipFile(package['path']) as z:
             self.assertEqual(z.read('stewart-analysis/runs/run-001/notes/one.txt'), b'An actual participant account.\n')
 
     def test_failed_packaging_is_resumed_by_new(self):
         first = self.workflow.new(); self.start(first['run'])
-        with mock.patch.object(berman_preserve, 'package', side_effect=OSError('power loss')):
+        with mock.patch.object(preserve, 'package', side_effect=OSError('power loss')):
             with self.assertRaisesRegex(OSError, 'power loss'):
                 self.workflow.finish('The engagement ended')
         self.assertEqual(self.store.record('run-001')['phase'], 'closing')
@@ -206,12 +125,12 @@ class WorkflowTests(unittest.TestCase):
 
     def test_interrupted_migration_resumes_without_recollecting_context(self):
         first = self.workflow.new(); self.start(first['run'])
-        atomic = berman_files.atomic
+        atomic = files.atomic
         def fail(path, data):
             if path == self.root / 'source-layout.json':
                 raise OSError('inventory update interrupted')
             return atomic(path, data)
-        with mock.patch.object(berman_files, 'atomic', side_effect=fail):
+        with mock.patch.object(files, 'atomic', side_effect=fail):
             with self.assertRaisesRegex(OSError, 'interrupted'):
                 self.workflow.finish('finished')
         (self.project / 'COORDINATOR-HANDOFF.md').write_text('Later unrelated work\n')
@@ -251,7 +170,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.workflow.new()['run'], 'run-001')
 
     def test_reserved_identity_survives_interruption_before_packet_creation(self):
-        with mock.patch('berman_workflow.prepare', side_effect=OSError('stopped before packet')):
+        with mock.patch('berman.workflow.prepare', side_effect=OSError('stopped before packet')):
             with self.assertRaises(OSError):
                 self.workflow.new()
         self.assertEqual(self.store.record('run-001')['phase'], 'reserved')
@@ -385,8 +304,8 @@ class WorkflowTests(unittest.TestCase):
 
     def call_cli(self, *args, json_mode=True):
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(berman_cli, 'Workflow', return_value=self.workflow), redirect_stdout(out), redirect_stderr(err):
-            code = berman_cli.main(['--root', str(self.root), *(['--json'] if json_mode else []), *args])
+        with mock.patch.object(cli, 'Workflow', return_value=self.workflow), redirect_stdout(out), redirect_stderr(err):
+            code = cli.main(['--root', str(self.root), *(['--json'] if json_mode else []), *args])
         return code, out.getvalue(), err.getvalue()
 
     def test_cheatsheet_follows_the_recorded_situation_without_changing_files(self):
@@ -437,12 +356,12 @@ class WorkflowTests(unittest.TestCase):
             for options in (['--harness', harness, '--check'], ['--check', '--harness', harness],
                             ['--harness', harness, '--', '--check']):
                 with self.subTest(options=options):
-                    result = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'berman'),
+                    result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman',
                                              '--root', str(self.root), 'dev', '--connection', 'stewart', *options],
                                             cwd=self.base, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.splitlines()[-2:], [str(self.project), '--check'])
-        result = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'berman'), '--root', str(self.root),
+        result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman', '--root', str(self.root),
                                  'dev', '--harness', 'codex', '--check', '--', '--model', 'chosen',
                                  '--effort', 'high', '--', '--check is my prompt'],
                                 cwd=self.base, capture_output=True, text=True)
@@ -475,7 +394,7 @@ class WorkflowTests(unittest.TestCase):
         archived = self.root / 'runs' / first['run']
         self.assertEqual((archived / 'session/transcript.jsonl').read_bytes(), frozen)
         coverage = read(archived / 'context/berman/source-coverage.json')
-        self.assertEqual(coverage['source_sha256'], berman_files.digest(source.read_bytes()))
+        self.assertEqual(coverage['source_sha256'], files.digest(source.read_bytes()))
         self.assertEqual((archived / coverage['retained_in'] / 'session/transcript.jsonl').read_bytes(), source.read_bytes())
 
     def test_bad_supplement_is_not_mistaken_for_retained_later_activity(self):
@@ -576,7 +495,7 @@ class WorkflowTests(unittest.TestCase):
         hostile = self.base / 'hostile'; hostile.mkdir()
         marker = self.base / 'startup-ran'
         (hostile / 'sitecustomize.py').write_text(f'open({str(marker)!r}, "w").write("loaded")\n')
-        result = subprocess.run([str(ROOT / 'berman'), '--help'], env=dict(os.environ, PYTHONPATH=str(hostile)), capture_output=True)
+        result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman', '--help'], env=dict(os.environ, PYTHONPATH=str(hostile)), capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(marker.exists())
 
@@ -607,7 +526,7 @@ class WorkflowTests(unittest.TestCase):
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
              mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: dict(control['fingerprint'])), \
              mock.patch.object(harness, 'invoke', side_effect=invoke) as calls, \
-             mock.patch('berman_harness.shutil.which', return_value='/fixture/executable'):
+             mock.patch('berman.harnesses.codex.shutil.which', return_value='/fixture/executable'):
             yield harness, control, calls
 
     def test_native_adapter_reuses_only_unchanged_passing_checks(self):
@@ -649,7 +568,7 @@ class WorkflowTests(unittest.TestCase):
         archived = self.root / 'runs' / first['run']
         coverage = read(archived / 'context/berman/source-coverage.json')
         self.assertGreater(coverage['partial_tail_bytes'], 0)
-        self.assertEqual(coverage['source_sha256'], berman_files.digest(source.read_bytes()))
+        self.assertEqual(coverage['source_sha256'], files.digest(source.read_bytes()))
 
     def test_old_inferred_ending_does_not_reintroduce_automatic_archival(self):
         first = self.workflow.new(); source = self.start(first['run'])
@@ -671,12 +590,12 @@ class WorkflowTests(unittest.TestCase):
 
     def test_combined_request_retries_after_migration_interruption(self):
         first = self.workflow.new(); self.start(first['run'])
-        atomic = berman_files.atomic
+        atomic = files.atomic
         def fail(path, data):
             if path == self.root / 'source-layout.json':
                 raise OSError('index update interrupted')
             return atomic(path, data)
-        with mock.patch.object(berman_files, 'atomic', side_effect=fail):
+        with mock.patch.object(files, 'atomic', side_effect=fail):
             code, out, err = self.call_cli('new', '--finish-previous', 'Concluded')
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(err)['progress'][0]['state'], 'migrated; packaging pending')

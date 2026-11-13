@@ -1,4 +1,5 @@
 """Repository connections: rendering compatibility, a second connection, isolation, and concurrency."""
+from tests.support.paths import REPO
 import json
 import os
 from pathlib import Path
@@ -11,19 +12,19 @@ import unittest
 from unittest import mock
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from berman_records import Decision, ROOT, Store
-import berman_files
-from berman_files import read, write
-from berman_legacy import MARKER
-from berman_workflow import Workflow
-from berman_harness import COMMON_CHECKS, Codex, profile, profile_name
-from test_berman import FixtureHarness, git_repository, workspace, legacy_hooks, legacy_basis
-import berman_capture
-import berman_collector
-import fieldwork
+from berman.records import Decision, Store
+from berman.installation import PACKAGE as ROOT
+from berman import files
+from berman.files import read, write
+from berman._legacy.api import MARKER
+from berman.workflow import Workflow
+from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
+from tests.support.workspace import FixtureHarness, git_repository, workspace, legacy_hooks, legacy_basis
+from berman.capture import adapters
+from berman.capture import collector as capture_collector
+from berman import recovery as fieldwork
 
-BASELINE = Path(__file__).resolve().parent / 'fixtures/rendering-baseline'
+BASELINE = REPO / 'tests/fixtures/rendering-baseline'
 INQUIRY_RELATIONSHIP = ('Independent: orchard fieldwork neither consumes, resets, nor reinterprets the Stewart '
                         'repeat-then-Astra commitment.')
 
@@ -84,7 +85,7 @@ class Base(unittest.TestCase):
                 {'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'text': 'done'}]}}]
         source.write_text(''.join(json.dumps(r) + '\n' for r in rows))
         event = {'session_id': sid, 'transcript_path': str(source), 'turn_id': 'one'}
-        marker = MARKER if collector is self.legacy else berman_collector.MARKER
+        marker = MARKER if collector is self.legacy else capture_collector.MARKER
         collector.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=prompt or marker + run))
         if stop:
             collector.hook(dict(event, hook_event_name='Stop'))
@@ -169,7 +170,7 @@ class RenderingBaselineTests(unittest.TestCase):
 
     def test_recipe_placeholder_is_resolved_in_the_saved_baseline(self):
         repeat = (BASELINE / 'work-accounts/INSTRUCTIONS.md').read_text()
-        original = (ROOT / 'tools/fixtures/workspace/recipes/work-accounts/INSTRUCTIONS.md').read_text()
+        original = (REPO / 'tests/fixtures/workspace/recipes/work-accounts/INSTRUCTIONS.md').read_text()
         self.assertEqual(repeat, original.replace('{{notes_directory}}', '<BASE>/fieldwork/run-001/notes/'))
 
 
@@ -202,7 +203,7 @@ class SecondConnectionTests(Base):
         self.assertEqual(status['connections']['orchard']['next_recipe'], 'orchard-accounts')
         orchard_source, orchard_event = self.start(one['run'], self.berman, prompt=assignment)
         binding = read(packet / 'session/binding.json')
-        self.assertEqual((binding['collector'], binding['marker']), (berman_collector.OWNER, 'Berman-Fieldwork-Run: run-002'))
+        self.assertEqual((binding['collector'], binding['marker']), (capture_collector.OWNER, 'Berman-Fieldwork-Run: run-002'))
         self.assertEqual(self.workflow.status()['connections']['orchard']['next_recipe'], 'orchard-accounts')
         # Changing the default connection redirects neither callbacks nor selection of an earlier run.
         self.default('orchard')
@@ -220,12 +221,12 @@ class SecondConnectionTests(Base):
         supplement = self.workflow.supplement('Retain orchard continuation')
         self.assertIn(one['run'], supplement['path'])
         # An interrupted migration resumes its recorded target.
-        atomic = berman_files.atomic
+        atomic = files.atomic
         def interrupted(path, data):
             if path == self.root / 'source-layout.json':
                 raise OSError('index update interrupted')
             return atomic(path, data)
-        with mock.patch.object(berman_files, 'atomic', side_effect=interrupted):
+        with mock.patch.object(files, 'atomic', side_effect=interrupted):
             with self.assertRaisesRegex(OSError, 'interrupted'):
                 self.workflow.finish('The orchard engagement ended')
         self.assertTrue((self.root / 'runs' / one['run']).exists())
@@ -392,7 +393,7 @@ class AccessTests(Base):
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
              mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: {'fixed': True}), \
              mock.patch.object(harness, 'invoke', side_effect=invoke), \
-             mock.patch('berman_harness.shutil.which', return_value='/fixture/rg'):
+             mock.patch('berman.harnesses.codex.shutil.which', return_value='/fixture/rg'):
             self.assertTrue(harness.ensure(one['run'], folder)['passed'])
         spec = seen['spec']
         self.assertEqual(seen['cwd'], project)
@@ -402,8 +403,8 @@ class AccessTests(Base):
         self.assertEqual(spec['reads'], ['GUIDE.md', 'notes/plan.txt'])
         # Stewart's declared project checks resolve to explicit argument lists.
         stewart = self.store.connections['stewart']
-        with mock.patch('berman_harness.shutil.which', side_effect=lambda name: '/fixture/' + name):
-            from berman_harness import project_checks
+        with mock.patch('berman.harnesses.codex.shutil.which', side_effect=lambda name: '/fixture/' + name):
+            from berman.harnesses.codex import project_checks
             checks = project_checks(stewart.checks(), {'python': '/py', 'project': '/stewart', 'fixture': '/fx', 'packet': '/p'})
         self.assertEqual([c['id'] for c in checks], ['stewart_cargo_metadata', 'stewart_rustc_startup'])
         self.assertEqual(checks[0]['argv'][:4], ['/py', '-I', '-B', '-c'])
@@ -414,12 +415,12 @@ class AccessTests(Base):
 
 class CollectorOwnershipTests(Base):
     def test_legacy_collector_bytes_are_frozen_and_match_their_basis(self):
-        digest = berman_files.digest((ROOT / 'tools/capture_session.py').read_bytes())
+        digest = files.digest((ROOT / '_legacy/capture_session.py').read_bytes())
         self.assertEqual(digest, 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99')
         self.assertEqual(legacy_basis()['implementation_sha256'],
-                         {'tools/capture_session.py': digest})
+                         {'_legacy/capture_session.py': digest})
         self.assertEqual(read(BASELINE / 'inputs.json')['implementation_sha256']['capture_session.py'], digest)
-        self.assertNotIn(b'berman_collector', (ROOT / 'tools/capture_session.py').read_bytes())
+        self.assertNotIn(b'berman_collector', (ROOT / '_legacy/capture_session.py').read_bytes())
 
     def test_frozen_collector_ignores_new_openings_and_refuses_new_packets(self):
         one = self.workflow.new(connection='orchard')
@@ -431,13 +432,13 @@ class CollectorOwnershipTests(Base):
         with self.assertRaisesRegex(OSError, 'narrative.md'):
             self.legacy.hook(dict(event, prompt=MARKER + one['run']))
         # Through the installed hook command, that refusal becomes a message and never a binding.
-        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/capture_session.py'), 'hook',
+        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / '_legacy/capture_session.py'), 'hook',
                                '--fieldwork-root', str(self.store.field), '--analysis-root', str(self.root),
                                '--codex-home', str(self.home)],
                               input=json.dumps(dict(event, prompt=MARKER + one['run'])),
                               capture_output=True, text=True, env=dict(os.environ, CODEX_HOME=str(self.home)))
         self.assertIn('narrative.md', json.loads(hook.stdout)['systemMessage'])
-        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/capture_session.py'), 'hook',
+        hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / '_legacy/capture_session.py'), 'hook',
                                '--fieldwork-root', str(self.store.field), '--analysis-root', str(self.root),
                                '--codex-home', str(self.home)],
                               input=json.dumps(dict(event, prompt=opening)), capture_output=True, text=True)
@@ -450,11 +451,11 @@ class CollectorOwnershipTests(Base):
         self.start(stewart['run'], self.legacy, sid='shared-session')
         with self.assertRaisesRegex(ValueError, 'not assigned to the berman-collector/1 collector'):
             self.berman.hook({'session_id': 'other', 'turn_id': 'x', 'hook_event_name': 'UserPromptSubmit',
-                              'prompt': berman_collector.MARKER + stewart['run']})
+                              'prompt': capture_collector.MARKER + stewart['run']})
         one = self.workflow.new(connection='orchard')
         with self.assertRaisesRegex(ValueError, 'already belongs to the other collector for run-001'):
             self.berman.hook({'session_id': 'shared-session', 'turn_id': 'two', 'hook_event_name': 'UserPromptSubmit',
-                              'prompt': berman_collector.MARKER + one['run']})
+                              'prompt': capture_collector.MARKER + one['run']})
         self.assertFalse((Path(one['packet']) / 'session').exists())
 
     def test_new_collector_routes_through_records_and_ignores_other_workspaces(self):
@@ -462,17 +463,17 @@ class CollectorOwnershipTests(Base):
         source, event = self.start(one['run'], self.berman)
         state = read(self.home / f'berman-capture/{event["session_id"]}.json')
         self.assertEqual((state['workspace'], state['harness'], state['collector'], state['packet']),
-                         (str(self.root), 'codex', berman_collector.OWNER, one['packet']))
-        elsewhere = berman_collector.Collector(self.base / 'unrouted', self.home, self.base / 'another-workspace')
+                         (str(self.root), 'codex', capture_collector.OWNER, one['packet']))
+        elsewhere = capture_collector.Collector(self.base / 'unrouted', self.home, self.base / 'another-workspace')
         self.assertEqual(elsewhere.hook(dict(event, hook_event_name='Stop')), {})
-        unrouted = berman_collector.Collector(self.base / 'unrouted', self.home, self.root)
+        unrouted = capture_collector.Collector(self.base / 'unrouted', self.home, self.root)
         unrouted.hook(dict(event, hook_event_name='Stop'))
         self.assertEqual(read(Path(one['packet']) / 'session/capture.json')['event'], 'Stop')
 
     def test_installation_waits_for_closed_captures_and_trust_needs_a_recorded_review(self):
         (self.root / 'hooks').mkdir(exist_ok=True)
         write(self.root / 'hooks/fieldwork.hooks.json', legacy_hooks())
-        write(self.root / 'hooks/berman-capture.hooks.json', berman_capture.definition(self.store, 'berman-codex'))
+        write(self.root / 'hooks/berman-capture.hooks.json', adapters.definition(self.store, 'berman-codex'))
         legacy_definition = legacy_hooks()
         original_hooks = json.loads(json.dumps(legacy_definition))
         unrelated = {'type': 'command', 'command': '/bin/true', 'timeout': 1}
@@ -481,44 +482,44 @@ class CollectorOwnershipTests(Base):
         stewart = self.workflow.new()
         source, event = self.start(stewart['run'], self.legacy, stop=False)
         with self.assertRaisesRegex(Decision, 'requires closed captures'):
-            berman_capture.install(self.store, 'berman-codex')
+            adapters.install(self.store, 'berman-codex')
         self.legacy.hook(dict(event, hook_event_name='Stop'))
         with self.assertRaisesRegex(Decision, 'requires closed captures'):
-            berman_capture.install(self.store, 'berman-codex')
+            adapters.install(self.store, 'berman-codex')
         self.workflow.finish('Fixture session concluded', stewart['run'])
-        receipt = berman_capture.install(self.store, 'berman-codex')
+        receipt = adapters.install(self.store, 'berman-codex')
         self.assertEqual(receipt['registrations_at_installation'][0]['collector'], 'legacy-codex')
         installed = read(self.home / 'hooks.json')
         self.assertIn({'hooks': [unrelated]}, installed['hooks']['Stop'])
         for event_name, groups in legacy_definition['hooks'].items():
             self.assertTrue(all(g not in installed['hooks'][event_name] for g in groups))
-        self.assertEqual(berman_capture.install(self.store, 'berman-codex')['state'], 'already-installed')
+        self.assertEqual(adapters.install(self.store, 'berman-codex')['state'], 'already-installed')
         with self.assertRaisesRegex(Decision, 'no recorded CLI trust review'):
-            berman_capture.readiness(self.store, 'berman-codex')
+            adapters.readiness(self.store, 'berman-codex')
         evidence = self.base / 'hooks.terminal'
         evidence.write_text('Fixture /hooks review record\n')
-        recorded = berman_capture.record_trust(self.store, evidence, 'fixture review')
+        recorded = adapters.record_trust(self.store, evidence, 'fixture review')
         self.assertEqual(len(recorded['bases']), 2)
-        self.assertEqual(berman_capture.readiness(self.store, 'berman-codex')['adapter'], 'berman-codex')
-        self.assertEqual(berman_capture.readiness(self.store, 'legacy-codex')['adapter'], 'legacy-codex')
+        self.assertEqual(adapters.readiness(self.store, 'berman-codex')['adapter'], 'berman-codex')
+        self.assertEqual(adapters.readiness(self.store, 'legacy-codex')['adapter'], 'legacy-codex')
         # Any later change to the installed file needs another recorded review.
         installed['hooks']['Stop'].append({'hooks': [{'type': 'command', 'command': '/bin/true', 'timeout': 1}]})
         write(self.home / 'hooks.json', installed)
         with self.assertRaisesRegex(Decision, 'actual CLI review'):
-            berman_capture.readiness(self.store, 'berman-codex')
+            adapters.readiness(self.store, 'berman-codex')
 
     def test_generated_definition_matches_the_retained_template(self):
         store = self.store
-        template = berman_capture.definition(store, 'berman-codex')
+        template = adapters.definition(store, 'berman-codex')
         command = template['hooks']['Stop'][0]['hooks'][0]['command']
-        self.assertIn(str(ROOT / 'tools/berman_capture_router.py'), command)
-        self.assertNotIn(str(store.root / 'tools/berman_capture_router.py'), command)
+        self.assertIn('-m berman.capture.router', command)
+        self.assertNotIn(str(store.root / 'capture/router.py'), command)
         # This assertion must not depend on the operator's current installed/trusted hooks.
         (self.root / 'hooks').mkdir(exist_ok=True)
-        write(self.root / 'hooks/berman-capture.hooks.json', berman_capture.definition(self.store, 'berman-codex'))
+        write(self.root / 'hooks/berman-capture.hooks.json', adapters.definition(self.store, 'berman-codex'))
         write(self.home / 'hooks.json', {'hooks': {}})
         with self.assertRaisesRegex(Decision, 'capture hook differs'):
-            berman_capture.readiness(self.store, 'berman-codex')
+            adapters.readiness(self.store, 'berman-codex')
 
 
 class ConcurrencyTests(Base):
@@ -604,9 +605,7 @@ class ConcurrencyTests(Base):
 class ArchiveEditionTests(Base):
     def builder(self):
         import importlib.util
-        spec = importlib.util.spec_from_file_location('edition_builder', ROOT / 'tools/build_archive.py')
-        builder = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(builder)
+        from berman.archive import builder
         return builder
 
     def build(self, edition, connections, builder=None):
@@ -618,7 +617,7 @@ class ArchiveEditionTests(Base):
 
     def mixed(self):
         """One finished Stewart run and one finished orchard run in the disposable root."""
-        for name in set(__import__('build_archive').CONTEXT_DOCUMENTS) | set(__import__('build_archive').EDITION_DOCUMENTS):
+        for name in set(__import__('berman.archive.builder', fromlist=['builder']).CONTEXT_DOCUMENTS) | set(__import__('berman.archive.builder', fromlist=['builder']).EDITION_DOCUMENTS):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f'Fixture framing: {name}\n')

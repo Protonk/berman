@@ -19,8 +19,9 @@ from berman.installation import PACKAGE, command as module_command
 from berman.records import closed_by
 
 EVENTS = ('UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd')
-ROUTER_IMPLEMENTATION = ('capture/router.py', 'capture/runtime.py',
-                         'capture/collector.py', '_legacy/capture_session.py')
+PACKAGE_IMPLEMENTATION = ('__init__.py', 'capture/__init__.py', '_legacy/__init__.py', 'installation.py')
+ROUTER_IMPLEMENTATION = PACKAGE_IMPLEMENTATION + ('capture/router.py', 'capture/runtime.py',
+                                                'capture/collector.py', '_legacy/capture_session.py')
 ADAPTERS = {
     'legacy-codex': {
         'harness': 'codex', 'collector': 'capture_session', 'marker': MARKER, 'layout': 'legacy',
@@ -37,7 +38,8 @@ ADAPTERS = {
         'definition': 'harnesses/claude.py', 'basis': 'hooks/verification/berman-claude.json',
         # The bytes that run in a fieldworker's session plus the module that generates its settings.
         # Readiness fingerprints the launcher helpers it imports by function source (berman_claude.helpers).
-        'implementation': ('harnesses/claude.py', 'capture/claude_router.py',
+        'implementation': PACKAGE_IMPLEMENTATION + ('harnesses/__init__.py', 'harnesses/development/__init__.py',
+                           'harnesses/claude.py', 'capture/claude_router.py', 'capture/router.py',
                            'capture/claude.py', 'capture/runtime.py',
                            'capture/collector.py', 'files.py', '_legacy/api.py',
                            '_legacy/capture_session.py')},

@@ -1,0 +1,5 @@
+graft docs
+graft examples
+graft tests
+include AGENTS.md
+global-exclude __pycache__ *.py[cod] .DS_Store

@@ -1,4 +1,5 @@
 """Offline regression tests; native harness checks are separate."""
+from tests.support.paths import REPO
 import importlib.util
 import json
 from pathlib import Path
@@ -12,15 +13,7 @@ import subprocess
 import sys
 
 
-spec = importlib.util.spec_from_file_location('launch', Path(__file__).with_name('launch.py'))
-launch = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(launch)
-install_spec = importlib.util.spec_from_file_location('install', Path(__file__).with_name('install.py'))
-install = importlib.util.module_from_spec(install_spec)
-install_spec.loader.exec_module(install)
-probe_spec = importlib.util.spec_from_file_location('probe', Path(__file__).with_name('probe.py'))
-probe = importlib.util.module_from_spec(probe_spec)
-probe_spec.loader.exec_module(probe)
+from berman.harnesses.development import launch, install, probe
 
 
 class LaunchTests(unittest.TestCase):
@@ -502,7 +495,7 @@ class LaunchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             for name in ('launch.py', 'probe.py'):
-                (root / name).write_bytes(Path(__file__).with_name(name).read_bytes())
+                (root / name).write_bytes(Path(launch.__file__).with_name(name).read_bytes())
             fake = root / 'fake-cli'
             fake.write_text('#!/bin/sh\nif [ "$1" = "--version" ]; then echo fake-1; else printf "%s\\n" "$@"; fi\n')
             fake.chmod(0o755)

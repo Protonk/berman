@@ -1,9 +1,10 @@
 """Current guidance agrees with the code: its links resolve, its commands exist and its quoted digest holds.
 
-Reads only the repository's own current guidance documents and tools/capture_session.py. It never
+Reads only the repository's own current guidance documents and _legacy/capture_session.py. It never
 reads beneath runs/ (links there are skipped unopened) or ~/.codex, and runs no command: each
 documented `berman` invocation is checked against the argparse help of berman_cli.main.
 """
+from tests.support.paths import REPO
 import contextlib
 import functools
 import hashlib
@@ -15,17 +16,16 @@ import shlex
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import berman_cli
+from berman import cli
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = REPO
 # Current guidance and planning entry points; historical reports and preserved records are excluded.
-GUIDANCE = ('README.md', 'AGENTS.md', 'BERMAN.md', 'LIMITS.md', 'MAINTENANCE.md',
-            'tools/development_launchers/README.md')
-COMMANDS = ('AGENTS.md', 'BERMAN.md', 'MAINTENANCE.md')
+GUIDANCE = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/limitations.md', 'docs/development.md',
+            'docs/development-launchers.md')
+COMMANDS = ('AGENTS.md', 'docs/usage.md', 'docs/development.md')
 # Current procedure names maintained commands; experiment scripts are evidence of their own dates.
-NO_SCRIPTS = ('README.md', 'AGENTS.md', 'BERMAN.md', 'MAINTENANCE.md', 'SESSION-CAPTURE.txt')
-DIGESTS = ('SESSION-CAPTURE.txt', 'MAINTENANCE.md')
+NO_SCRIPTS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/capture.md')
+DIGESTS = ('docs/capture.md', 'docs/development.md')
 FENCE = re.compile(r'^```[^\n]*\n(.*?)^```', re.M | re.S)
 LINK = re.compile(r'\]\(([^)\s]+)\)')
 HEADING = re.compile(r'^#{1,6}[ \t]+(.+?)[ \t]*$', re.M)
@@ -95,7 +95,7 @@ def usage(words):
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
         try:
-            berman_cli.main([*words, '--help'])
+            cli.main([*words, '--help'])
             code = None
         except SystemExit as exc:
             code = exc.code
@@ -154,10 +154,10 @@ class GuidanceTest(unittest.TestCase):
         self.assertTrue({'--root', '--json'} <= options(()))
 
     def test_frozen_collector_digest_matches_guidance(self):
-        digest = hashlib.sha256((ROOT / 'tools/capture_session.py').read_bytes()).hexdigest()
+        digest = hashlib.sha256((ROOT / 'src/berman/_legacy/capture_session.py').read_bytes()).hexdigest()
         for name in DIGESTS:
             self.assertTrue(FROZEN.findall(text(name)), f'{name} quotes no frozen-collector digest')
-        for name in (*GUIDANCE, 'SESSION-CAPTURE.txt'):
+        for name in (*GUIDANCE, 'docs/capture.md'):
             for quoted in FROZEN.findall(text(name)):
                 self.assertTrue(digest.startswith(quoted), f'{name} quotes {quoted}; capture_session.py is {digest}')
 

@@ -1,4 +1,5 @@
 """Check command recording layouts and preservation of original evidence."""
+from tests.support.paths import REPO
 
 import copy
 import csv
@@ -48,9 +49,8 @@ class ArchiveTests(unittest.TestCase):
         (self.root / "source-layout.json").write_text(json.dumps(self.layout))
         for name in ("AGENTS.md", ".gitignore", "SESSION-CAPTURE.txt"):
             (self.root / name).write_text("Fixture support file.\n")
-        spec = importlib.util.spec_from_file_location("fixture_archive", Path(__file__).with_name("build_archive.py"))
-        self.builder = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.builder)
+        from berman.archive import builder
+        self.builder = builder
         for name in self.builder.CONTEXT_DOCUMENTS:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -262,11 +262,11 @@ class ArchiveTests(unittest.TestCase):
             build.edition.prefix = "elsewhere/"
 
     def test_edition_record_names_every_builder_module(self):
-        tools = Path(__file__).resolve().parent
+        tools = Path(self.builder.__file__).parent
         record = json.loads(self.render()["review/EDITION.json"])
-        expected = {"build_archive.py"} | {path.name for path in tools.glob("archive_*.py")}
+        expected = set(self.builder.BUILDER)
         self.assertEqual(set(record["builder_sha256"]), expected)
-        self.assertEqual(list(record["builder_sha256"])[:2], ["build_archive.py", "archive_stewart.py"])
+        self.assertEqual(list(record["builder_sha256"])[:2], ["builder.py", "stewart.py"])
         for name, digest in record["builder_sha256"].items():
             self.assertEqual(digest, hashlib.sha256((tools / name).read_bytes()).hexdigest())
 
@@ -315,47 +315,21 @@ class ArchiveTests(unittest.TestCase):
             self.builder.inventory(self.root)
 
 
-class ArchiveInterpreterTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name).resolve()
-        tools = self.root / "tools"
-        tools.mkdir()
-        source = Path(__file__).parent
-        for name in ("build_archive.py", "archive_select.py", "archive_package.py", "archive_stewart.py"):
-            shutil.copyfile(source / name, tools / name)
-        self.script = tools / "build_archive.py"
+class ArchiveInstallationTests(unittest.TestCase):
+    """The archive CLI stays with its installed package interpreter."""
+    setUp = ArchiveTests.setUp
+    inventory = ArchiveTests.inventory
 
-    def invoke(self, python, *args):
-        (self.root / "berman.json").write_text(json.dumps({"python": str(python)}))
-        return subprocess.run([sys.executable, "-I", "-B", str(self.script), *args],
-                              text=True, capture_output=True, timeout=10, cwd=self.root)
-
-    def test_cli_selects_configured_interpreter_before_reading_inventory(self):
-        target = self.root / "configured python"
-        target.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
-        target.chmod(0o755)
-        # A relative installation path, spaces and every builder argument survive.
-        result = self.invoke(target.name, "--verify", "--run", "run-005")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), ["-I", "-B", str(self.script), "--verify", "--run", "run-005"])
-        self.assertFalse((self.root / "review").exists())
-
-    def test_same_interpreter_alias_does_not_reexecute(self):
-        target = self.root / "python-alias"
-        target.symlink_to(sys.executable)
-        result = self.invoke(target, "--help")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--verify", result.stdout)
-
-    def test_missing_configured_interpreter_refuses_before_building(self):
-        result = self.invoke(self.root / "missing-python", "--verify")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Archive interpreter configured in", result.stderr)
-        self.assertIn("is unavailable", result.stderr)
-        self.assertNotIn("stale", result.stderr)
-        self.assertFalse((self.root / "review").exists())
+    def test_installed_command_builds_and_verifies_from_an_unrelated_directory(self):
+        # A workspace's native harness interpreter does not select archive code.
+        (self.root / "berman.json").write_text(json.dumps({"python": "/unavailable/harness/python"}))
+        command = [sys.executable, "-I", "-B", "-m", "berman", "--root", str(self.root),
+                   "archive", "--edition", "stewart", "--run", "run-005"]
+        for extra in ([], ["--verify"]):
+            result = subprocess.run(command + extra, text=True, capture_output=True, cwd=self.root.parent)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["python"], sys.executable)
+        self.assertEqual(self.inventory(), self.layout["runs"][0]["entries"])
 
 
 if __name__ == "__main__":

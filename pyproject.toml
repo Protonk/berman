@@ -16,6 +16,9 @@ berman = "berman.cli:main"
 [project.urls]
 Repository = "https://github.com/Protonk/berman"
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

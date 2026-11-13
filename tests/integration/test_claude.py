@@ -1,4 +1,5 @@
 """Claude-specific boundaries and native-format preservation, without model calls."""
+from tests.support.paths import REPO
 import copy
 import json
 import os
@@ -8,16 +9,15 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import berman_capture
-import berman_claude
-import berman_claude_support as support
-import berman_support
-from berman_claude_capture import MARKER, render
-from berman_claude_router import access
-from berman_files import Decision, read, write
-from berman_records import Store
-from test_berman import workspace, git_repository
+from berman.capture import adapters
+from berman.harnesses import claude
+from berman.harnesses import claude_support as support
+from berman import support as support_trials
+from berman.capture.claude import MARKER, render
+from berman.capture.claude_router import access
+from berman.files import Decision, read, write
+from berman.records import Store
+from tests.support.workspace import workspace, git_repository
 
 
 class ClaudeTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class ClaudeTests(unittest.TestCase):
         config['claude_home'] = str(base / 'claude')
         write(self.root / 'berman.json', config)
         self.store = Store(self.root)
-        with mock.patch.object(berman_claude, 'configuration', return_value={'fixture': True}):
+        with mock.patch.object(claude, 'configuration', return_value={'fixture': True}):
             self.trial = support.prepare(self.store, 'experiments/claude-test')
         self.run = self.trial['run']
         self.record = self.store.record(self.run)
@@ -76,12 +76,12 @@ class ClaudeTests(unittest.TestCase):
         self.message('assistant', trial['expected_reply'])
         self.hook('Stop', last_assistant_message=trial['expected_reply'])
         self.hook('SessionEnd', reason='prompt_input_exit')
-        result = berman_support.collect(self.store, self.trial['evidence'])
+        result = support_trials.collect(self.store, self.trial['evidence'])
         self.assertTrue(result['demonstrates_capture'])
         preserved = self.root / result['preserved_packet']
         self.assertEqual((preserved / 'session/transcript.jsonl').read_bytes(), self.source.read_bytes())
         self.assertIn('SOURCE: transcript.jsonl#L2 /message/content', (preserved / 'session/conversation.txt').read_text())
-        cleaned = berman_support.cleanup(self.store, self.trial['evidence'], 'fixture completed')
+        cleaned = support_trials.cleanup(self.store, self.trial['evidence'], 'fixture completed')
         self.assertEqual(cleaned['phase'], 'cleaned')
         self.assertTrue(read(self.collector.registry(self.sid))['retired'])
         self.assertTrue(self.project.exists())
@@ -164,8 +164,8 @@ class ClaudeTests(unittest.TestCase):
 
     def test_new_needs_explicit_qualification_and_generated_settings_match(self):
         with self.assertRaisesRegex(Decision, 'no qualified'):
-            berman_claude.readiness(self.store, self.project)
-        settings_path = berman_claude.settings_path(self.store, self.run)
+            claude.readiness(self.store, self.project)
+        settings_path = claude.settings_path(self.store, self.run)
         settings = read(settings_path)
         self.assertEqual(settings['sandbox']['filesystem']['allowRead'], [str(self.packet)])
         self.assertFalse(settings['sandbox']['allowUnsandboxedCommands'])
@@ -173,30 +173,30 @@ class ClaudeTests(unittest.TestCase):
         settings['sandbox']['enabled'] = False
         write(settings_path, settings)
         with self.assertRaisesRegex(Decision, 'differ'):
-            berman_claude.Claude(self.store).argv(self.run)
+            claude.Claude(self.store).argv(self.run)
 
     def test_model_is_pinned_in_the_reserved_launch(self):
         self.record['harness']['model'] = 'claude-opus-5-5'
         write(self.store.folder(self.run) / 'operation.json', self.record)
-        argv = berman_claude.Claude(self.store).argv(self.run)
+        argv = claude.Claude(self.store).argv(self.run)
         self.assertEqual(argv[argv.index('--model') + 1], 'claude-opus-5-5')
 
     def configure(self, settings_file):
         """The real configuration() against one local settings file, with the CLI and conflicts mocked."""
         self.store.claude = Path(sys.executable)
         with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.store.claude_home)}), \
-             mock.patch.object(berman_claude, 'claude_sources', return_value={settings_file: None}), \
-             mock.patch.object(berman_claude, 'claude_conflicts', return_value=[]), \
-             mock.patch.object(berman_claude.subprocess, 'run', return_value=mock.Mock(stdout='fixture version')):
-            return berman_claude.configuration(self.store, self.project)
+             mock.patch.object(claude, 'claude_sources', return_value={settings_file: None}), \
+             mock.patch.object(claude, 'claude_conflicts', return_value=[]), \
+             mock.patch.object(claude.subprocess, 'run', return_value=mock.Mock(stdout='fixture version')):
+            return claude.configuration(self.store, self.project)
 
     def test_configuration_separates_policy_keys_harness_and_context(self):
         settings_file = self.root.parent / 'user-settings.json'
         write(settings_file, {'theme': 'dark'})
         before = self.configure(settings_file)
-        self.assertEqual(before['schema'], berman_claude.CONFIGURATION)
+        self.assertEqual(before['schema'], claude.CONFIGURATION)
         self.assertEqual(before['policy']['settings'], {str(settings_file): None})
-        self.assertEqual(before['policy']['template'], berman_claude.definition())
+        self.assertEqual(before['policy']['template'], claude.definition())
         self.assertEqual(before['harness']['version'], 'fixture version')
         self.assertIn('project_checks', before['context'])
         write(settings_file, {'theme': 'light', 'statusLine': {'type': 'command'}})
@@ -212,15 +212,15 @@ class ClaudeTests(unittest.TestCase):
             self.configure(settings_file)
 
     def qualify(self, configuration, **changes):
-        basis = {'schema': berman_claude.SCHEMA, 'adapter': 'berman-claude',
-                 'implementation_sha256': berman_capture.implementation('berman-claude'),
-                 'helpers_sha256': berman_claude.helpers(), 'evidence_sha256': {}, 'hook_review': None,
+        basis = {'schema': claude.SCHEMA, 'adapter': 'berman-claude',
+                 'implementation_sha256': adapters.implementation('berman-claude'),
+                 'helpers_sha256': claude.helpers(), 'evidence_sha256': {}, 'hook_review': None,
                  'configuration': configuration, 'successful_capture': {'run': 'run-900101'}, 'meaning': 'fixture'}
-        write(self.root / berman_claude.BASIS, dict(basis, **changes))
+        write(self.root / claude.BASIS, dict(basis, **changes))
 
     def test_readiness_tiers_stop_warn_and_ignore(self):
-        qualified = {'schema': berman_claude.CONFIGURATION,
-                     'policy': {'project': str(self.project), 'template': berman_claude.definition(),
+        qualified = {'schema': claude.CONFIGURATION,
+                     'policy': {'project': str(self.project), 'template': claude.definition(),
                                 'settings': {'/home/settings.json': 'policy-a', '/home/settings.local.json': None}},
                      'harness': {'binary': '/versions/2.1.312', 'version': '2.1.312 (Claude Code)',
                                  'binary_size': 1, 'binary_mtime_ns': 1},
@@ -233,51 +233,51 @@ class ClaudeTests(unittest.TestCase):
                 value[section].update(update)
             return value
 
-        with mock.patch.object(berman_claude, 'configuration', return_value=current()):
-            self.assertEqual(berman_claude.readiness(self.store, self.project)['warnings'], [])
+        with mock.patch.object(claude, 'configuration', return_value=current()):
+            self.assertEqual(claude.readiness(self.store, self.project)['warnings'], [])
         context = current(context={'project_checks': {'stewart': [{'id': 'new'}]}, 'settings_sha256': {'/home/settings.json': 'y'}})
-        with mock.patch.object(berman_claude, 'configuration', return_value=context):
-            self.assertEqual(berman_claude.readiness(self.store, self.project)['warnings'], [])
+        with mock.patch.object(claude, 'configuration', return_value=context):
+            self.assertEqual(claude.readiness(self.store, self.project)['warnings'], [])
         harness = current(harness={'binary': '/versions/2.1.316', 'version': '2.1.316 (Claude Code)'})
-        with mock.patch.object(berman_claude, 'configuration', return_value=harness):
-            result = berman_claude.readiness(self.store, self.project)
+        with mock.patch.object(claude, 'configuration', return_value=harness):
+            result = claude.readiness(self.store, self.project)
             self.assertEqual(len(result['warnings']), 1)
             self.assertIn('2.1.312 (Claude Code) at /versions/2.1.312 is now 2.1.316', result['warnings'][0])
             self.assertEqual(result['harness']['current']['version'], '2.1.316 (Claude Code)')
         policy = current(policy={'settings': {'/home/settings.json': 'policy-b', '/home/settings.local.json': None}})
-        with mock.patch.object(berman_claude, 'configuration', return_value=policy), \
+        with mock.patch.object(claude, 'configuration', return_value=policy), \
              self.assertRaisesRegex(Decision, r'policy or hook template changed.*settings:/home/settings\.json'):
-            berman_claude.readiness(self.store, self.project)
-        template = current(policy={'template': dict(berman_claude.definition(), events=['Stop'])})
-        with mock.patch.object(berman_claude, 'configuration', return_value=template), \
+            claude.readiness(self.store, self.project)
+        template = current(policy={'template': dict(claude.definition(), events=['Stop'])})
+        with mock.patch.object(claude, 'configuration', return_value=template), \
              self.assertRaisesRegex(Decision, 'template'):
-            berman_claude.readiness(self.store, self.project)
+            claude.readiness(self.store, self.project)
         # Without a project (another workspace's verify) the policy is not compared and no warning is raised.
-        self.assertEqual(berman_claude.readiness(self.store)['warnings'], [])
+        self.assertEqual(claude.readiness(self.store)['warnings'], [])
 
     def test_readiness_stops_on_implementation_helpers_evidence_and_old_schema(self):
-        qualified = {'schema': berman_claude.CONFIGURATION, 'policy': {}, 'harness': {}, 'context': {}}
+        qualified = {'schema': claude.CONFIGURATION, 'policy': {}, 'harness': {}, 'context': {}}
         self.qualify(qualified, schema='berman.claude-verification/1', hook_review='fixture')
         with self.assertRaisesRegex(Decision, 'predates tiered receipts'):
-            berman_claude.readiness(self.store)
-        self.qualify(qualified, implementation_sha256={'tools/berman_claude_router.py': 'other'})
+            claude.readiness(self.store)
+        self.qualify(qualified, implementation_sha256={'capture/claude_router.py': 'other'})
         with self.assertRaisesRegex(Decision, 'in-session implementation changed'):
-            berman_claude.readiness(self.store)
-        self.qualify(qualified, helpers_sha256={'tools/development_launchers/launch.py:claude_sources': 'other'})
+            claude.readiness(self.store)
+        self.qualify(qualified, helpers_sha256={'harnesses/development/launch.py:claude_sources': 'other'})
         with self.assertRaisesRegex(Decision, 'helpers changed'):
-            berman_claude.readiness(self.store)
+            claude.readiness(self.store)
         evidence = self.root / 'experiments/fixture/evidence.txt'
         write(evidence, {'fixture': True})
         self.qualify(qualified, evidence_sha256={'experiments/fixture/evidence.txt': 'other'})
         with self.assertRaisesRegex(Decision, 'evidence changed'):
-            berman_claude.readiness(self.store)
+            claude.readiness(self.store)
         self.qualify(qualified, successful_capture=None)
         with self.assertRaisesRegex(Decision, 'native capture'):
-            berman_claude.readiness(self.store)
+            claude.readiness(self.store)
         self.qualify(qualified)
-        self.assertEqual(berman_claude.readiness(self.store)['tiers'], berman_claude.TIERS)
-        self.assertNotIn('tools/development_launchers/launch.py', berman_capture.ADAPTERS['berman-claude']['implementation'])
-        self.assertIn('tools/development_launchers/launch.py:allow_read_conflicts', berman_claude.helpers())
+        self.assertEqual(claude.readiness(self.store)['tiers'], claude.TIERS)
+        self.assertNotIn('harnesses/development/launch.py', adapters.ADAPTERS['berman-claude']['implementation'])
+        self.assertIn('harnesses/development/launch.py:allow_read_conflicts', claude.helpers())
 
 
 if __name__ == '__main__':

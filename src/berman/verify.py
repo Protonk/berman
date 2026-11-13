@@ -56,13 +56,13 @@ NOT_COVERED = [
     'Developer regression tests (run separately from the source checkout).',
     "The installed development launchers' --check (docs/development-launchers.md).",
     'The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their '
-    'recorded result. Claude needs no review (LIMITS.md).',
+    'recorded result. Claude needs no review (docs/limitations.md).',
     'A native support trial; verify reports only a recorded successful capture.',
 ]
 TRUST_NEXT = ("With the researcher's approval, review /hooks in the actual Codex CLI, then record it with "
               'berman capture record-trust --evidence FILE --attest')
 CLAUDE_TRUST_NEXT = ("With the researcher's approval, a new berman-claude support trial qualifies the current template, "
-                     'in-session bytes, helpers and settings policy; no CLI /hooks review is required (LIMITS.md)')
+                     'in-session bytes, helpers and settings policy; no CLI /hooks review is required (docs/limitations.md)')
 CLAUDE_TRIAL_NEXT = ("A native support trial for berman-claude, with the researcher's approval: "
                      'berman support-trial prepare --evidence experiments/NAME --adapter berman-claude; '
                      'berman support-trial launch --evidence experiments/NAME --model haiku --max-budget-usd 2 '
@@ -149,9 +149,6 @@ def unfinished(exc):
     return output.decode('utf-8', 'replace') if isinstance(output, bytes) else output
 
 
-
-
-
 def integrity(code=PACKAGE):
     """Check the frozen implementation without loading study-specific receipts."""
     try:
@@ -160,7 +157,6 @@ def integrity(code=PACKAGE):
         return row('failed', f'Frozen collector cannot be read: {exc}')
     return row('passed' if actual == FROZEN_SHA256 else 'failed',
                f'Frozen collector SHA-256 {actual}; expected {FROZEN_SHA256}', sha256=actual)
-
 
 
 def recorded_hashes(root):
@@ -607,8 +603,8 @@ def render(result):
     return '\n'.join(lines)
 
 
-def software(skip=(), run=subprocess.run, code=PACKAGE):
-    """Verify portable source only; never load a workspace or harness home."""
+def software(skip=(), code=PACKAGE):
+    """Verify installed package resources; never load a workspace or harness home."""
     if skip:
         raise Decision('Software verification has no skippable checks')
     try:

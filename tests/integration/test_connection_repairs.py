@@ -1,4 +1,5 @@
 """Regression cases from the independent repository-connections completion review."""
+from tests.support.paths import REPO
 import contextlib
 import io
 import json
@@ -8,14 +9,13 @@ import sys
 import threading
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_connections import Base
-from berman_files import Decision, read, write
-from berman_records import ROOT
-from berman_harness import Codex
-from berman_capture_router import route
-import berman_capture
-import berman_cli
+from tests.integration.test_connections import Base
+from berman.files import Decision, read, write
+from berman.installation import PACKAGE as ROOT
+from berman.harnesses.codex import Codex
+from berman.capture.router import route
+from berman.capture import adapters
+from berman import cli
 
 
 class ReviewRegressionTests(Base):
@@ -117,7 +117,7 @@ class ReviewRegressionTests(Base):
             self.workflow.new(connection='orchard')
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            self.assertEqual(berman_cli.main(['--root', str(self.root), 'status']), 0)
+            self.assertEqual(cli.main(['--root', str(self.root), 'status']), 0)
         self.assertIn(str(journal), output.getvalue())
         self.assertEqual(journal.read_text(), '{interrupted journal')
 
@@ -134,7 +134,7 @@ class ReviewRegressionTests(Base):
                     Codex(self.store).argv(one['run'])
                 with self.assertRaisesRegex(Decision, 'harness installation differs'):
                     self.workflow.new(connection='orchard')
-                with mock.patch('berman_workflow.os.execv') as execute:
+                with mock.patch('berman.workflow.os.execv') as execute:
                     with self.assertRaisesRegex(Decision, 'harness installation differs'):
                         self.workflow.launch(run=one['run'])
                     execute.assert_not_called()
@@ -177,7 +177,7 @@ class ReviewRegressionTests(Base):
                                          'content': [{'text': 'done'}]}}) + '\n')
             event = {'session_id': connection, 'transcript_path': str(source), 'turn_id': 'one'}
             for name in ('UserPromptSubmit', 'Stop', 'SessionEnd'):
-                result = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/berman_capture_router.py'), 'hook',
+                result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman.capture.router', 'hook',
                                          '--codex-home', str(self.home), '--analysis-root', str(self.root)],
                                         input=json.dumps(dict(event, hook_event_name=name, prompt=cls.marker + one['run'])),
                                         capture_output=True, text=True, check=True)
@@ -185,15 +185,15 @@ class ReviewRegressionTests(Base):
             self.assertEqual(read(Path(one['packet']) / 'session/capture.json')['event'], 'SessionEnd')
 
     def test_readiness_rejects_duplicate_direct_hooks(self):
-        template = berman_capture.definition(self.store, 'berman-codex')
+        template = adapters.definition(self.store, 'berman-codex')
         (self.root / 'hooks').mkdir()
         write(self.root / 'hooks/berman-capture.hooks.json', template)
         installed = json.loads(json.dumps(template))
-        old = __import__('test_berman').legacy_hooks()
+        old = __import__('tests.support.workspace', fromlist=['workspace']).legacy_hooks()
         installed['hooks']['Stop'] += old['hooks']['Stop']
         write(self.home / 'hooks.json', installed)
         with self.assertRaisesRegex(Decision, 'not exclusive'):
-            berman_capture.readiness(self.store, 'berman-codex')
+            adapters.readiness(self.store, 'berman-codex')
 
     def test_installed_router_warns_on_near_markers_without_registration(self):
         cases = [('**Stewart-Fieldwork-Run: run-001**', 'Stewart-Fieldwork-Run:'),
@@ -203,7 +203,7 @@ class ReviewRegressionTests(Base):
         for index, (opening, expected) in enumerate(cases):
             with self.subTest(opening=opening):
                 event = {'session_id': f'near-{index}', 'hook_event_name': 'UserPromptSubmit', 'prompt': opening}
-                result = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'tools/berman_capture_router.py'), 'hook',
+                result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman.capture.router', 'hook',
                                          '--codex-home', str(self.home), '--analysis-root', str(self.root)],
                                         input=json.dumps(event), capture_output=True, text=True, check=True)
                 self.assertIn(expected, json.loads(result.stdout)['systemMessage'])
@@ -217,16 +217,16 @@ class ReviewRegressionTests(Base):
 
     def test_moved_workspace_and_changed_profile_are_refused(self):
         import shutil
-        from berman_records import Store
-        from berman_workflow import Workflow
-        from test_berman import FixtureHarness
+        from berman.records import Store
+        from berman.workflow import Workflow
+        from tests.support.workspace import FixtureHarness
         one = self.workflow.new(connection='orchard')
         moved = self.base / 'moved-berman'
         shutil.copytree(self.root, moved)
         store = Store(moved)
         with self.assertRaisesRegex(Decision, 'workspace: recorded'):
             Codex(store).argv(one['run'])
-        with mock.patch('berman_workflow.os.execv') as execute:
+        with mock.patch('berman.workflow.os.execv') as execute:
             with self.assertRaisesRegex(Decision, 'workspace: recorded'):
                 Workflow(store, FixtureHarness(store)).launch(run=one['run'])
             execute.assert_not_called()
@@ -270,21 +270,21 @@ class ReviewRegressionTests(Base):
         self.assertEqual(row['lifecycle']['registered']['unknown'], row['problems'])
 
     def test_trust_renewal_does_not_carry_capture_evidence_across_code_changes(self):
-        template = berman_capture.definition(self.store, 'berman-codex')
+        template = adapters.definition(self.store, 'berman-codex')
         (self.root / 'hooks').mkdir()
         write(self.root / 'hooks/berman-capture.hooks.json', template)
         write(self.home / 'hooks.json', template)
         evidence = self.base / 'review.terminal'
         evidence.write_text('Fixture review, not a real trust observation.\n')
-        berman_capture.record_trust(self.store, evidence, 'fixture')
-        basis_path = self.root / berman_capture.ADAPTERS['legacy-codex']['basis']
+        adapters.record_trust(self.store, evidence, 'fixture')
+        basis_path = self.root / adapters.ADAPTERS['legacy-codex']['basis']
         basis = read(basis_path)
         successful = {'path': 'fixture-captures.jsonl', 'required_events': ['Stop', 'SessionEnd']}
         basis.update(successful_capture=successful, meaning='Fixture successful capture')
         write(basis_path, basis)
-        berman_capture.record_trust(self.store, evidence, 'fixture same implementation')
+        adapters.record_trust(self.store, evidence, 'fixture same implementation')
         self.assertEqual(read(basis_path)['successful_capture'], successful)
-        with mock.patch.object(berman_capture, 'implementation', return_value={'fixture.py': 'different-code'}):
-            berman_capture.record_trust(self.store, evidence, 'fixture changed implementation')
+        with mock.patch.object(adapters, 'implementation', return_value={'fixture.py': 'different-code'}):
+            adapters.record_trust(self.store, evidence, 'fixture changed implementation')
         self.assertIsNone(read(basis_path)['successful_capture'])
         self.assertIn('No successful capture', read(basis_path)['meaning'])

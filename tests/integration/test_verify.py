@@ -4,6 +4,7 @@ No test here starts Codex or a test suite, or reads the real Codex home or runs/
 disposable repositories, and native access runs against a simulated Codex. The recursion guard
 makes a test that forgot its fake runner fail instead of rerunning the suite that contains it.
 """
+from tests.support.paths import REPO
 from contextlib import redirect_stderr, redirect_stdout
 from functools import partial
 import io
@@ -17,21 +18,19 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from berman_files import Decision, digest, digest_json, json_bytes, read, write
-from berman_harness import COMMON_CHECKS, PROTECTED
-from berman_records import ROOT, Store
-import berman_capture
-import berman_cli
-import berman_verify
-from test_berman import workspace, legacy_hooks, legacy_basis
-from test_connections import Base
+from berman.files import Decision, digest, digest_json, json_bytes, read, write
+from berman.harnesses.codex import COMMON_CHECKS, PROTECTED
+from berman.records import Store
+from berman.installation import PACKAGE as ROOT
+from berman.capture import adapters
+from berman import cli
+from berman import verify
+from tests.support.workspace import workspace, legacy_hooks, legacy_basis
+from tests.integration.test_connections import Base
 
-SEPARATOR = '-' * 70
-OK = f'..........\n{SEPARATOR}\nRan 130 tests in 14.000s\n\nOK\n'
 BUILT = {'mode': 'verified', 'archive_path': 'archive/stewart-runs.zip', 'zip_members': 12, 'archive_sha256': '0' * 64}
 FROZEN = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
-ORDER = ['tests', 'launcher-tests', 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:legacy-codex',
+ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:legacy-codex',
          'native-capture:legacy-codex', 'hook-trust:berman-codex', 'native-capture:berman-codex',
          'hook-trust:berman-claude', 'native-capture:berman-claude', 'archive', 'native-access']
 
@@ -44,9 +43,8 @@ def passing(store, folder):
 class Runner:
     """A fake subprocess.run answering each kind of argv from its configured result."""
 
-    def __init__(self, tests=(0, OK), launcher=(0, OK.replace('130', '16')),
-                 archive=(0, json.dumps(BUILT, indent=2) + '\n', '')):
-        self.tests, self.launcher, self.archive = tests, launcher, archive
+    def __init__(self, archive=(0, json.dumps(BUILT, indent=2) + '\n', '')):
+        self.archive = archive
         self.calls = []
 
     def __call__(self, argv, **kwargs):
@@ -54,8 +52,7 @@ class Runner:
         if argv[1:] == ['--version']:
             return subprocess.CompletedProcess(argv, 0, 'Python 3.14.0\n', '')
         if 'unittest' in argv:
-            code, stderr = self.tests if argv[argv.index('-s') + 1] == 'tools' else self.launcher
-            return subprocess.CompletedProcess(argv, code, '', stderr)
+            raise AssertionError('Product verification must never run developer suites')
         code, stdout, stderr = self.archive
         return subprocess.CompletedProcess(argv, code, stdout, stderr)
 
@@ -64,28 +61,28 @@ class Fixture:
     """The fixture root doubles as the code root, with a recorded hook review written directly."""
 
     def code(self):
-        for rel in ('tools/capture_session.py', 'hooks/verification/legacy-codex.json', 'hooks/fieldwork.hooks.json'):
+        for rel in ('_legacy/capture_session.py', 'hooks/verification/legacy-codex.json', 'hooks/fieldwork.hooks.json'):
             (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
-            if rel.startswith('tools/'):
+            if rel.startswith('_legacy/'):
                 shutil.copy(ROOT / rel, self.root / rel)
             else:
                 write(self.root / rel, legacy_basis() if 'verification/' in rel else legacy_hooks())
 
     def trust(self, captures=('legacy-codex', 'berman-codex')):
         """Installed router hooks, a review observation and both bases; no Codex binary runs."""
-        template = berman_capture.definition(self.store, 'berman-codex')
+        template = adapters.definition(self.store, 'berman-codex')
         write(self.root / 'hooks/berman-capture.hooks.json', template)
         write(self.home / 'hooks.json', template)
         folder = self.root / 'hooks/verification/observations/fixture'
         write(folder / 'installed-hooks.json', template)
         (folder / 'hooks.terminal').write_text('Fixture /hooks review record\n')
         observed = {event: {'enabled': True, 'trust': 'Trusted', 'source': '~/.codex/hooks.json'}
-                    for event in berman_capture.EVENTS}
+                    for event in adapters.EVENTS}
         write(folder / 'hook-trust.json', {'schema': 'berman.hook-trust-observation/1', 'evidence': 'hooks.terminal',
                                            'evidence_sha256': digest(b'Fixture /hooks review record\n'),
                                            'observed': observed})
-        for name, adapter in berman_capture.ADAPTERS.items():
-            current = berman_capture.implementation(name)
+        for name, adapter in adapters.ADAPTERS.items():
+            current = adapters.implementation(name)
             successful = None
             if name in captures or name == 'berman-claude':
                 path = self.root / f'fixture-captures/{name}.jsonl'
@@ -95,10 +92,10 @@ class Fixture:
                               'run': 'run-900101', 'session_id': 'fixture-session',
                               'trial_receipt': 'experiments/fixture-trial/trial.json', 'implementation_sha256': current}
             if name == 'berman-claude':
-                import berman_claude
+                from berman.harnesses import claude
                 write(self.root / adapter['basis'], {
-                    'schema': berman_claude.SCHEMA, 'adapter': name, 'implementation_sha256': current,
-                    'helpers_sha256': berman_claude.helpers(), 'evidence_sha256': {}, 'hook_review': None,
+                    'schema': claude.SCHEMA, 'adapter': name, 'implementation_sha256': current,
+                    'helpers_sha256': claude.helpers(), 'evidence_sha256': {}, 'hook_review': None,
                     'configuration': {'policy': {}, 'harness': {}, 'context': {}},
                     'successful_capture': successful, 'meaning': 'Fixture Claude capture'})
                 continue
@@ -110,16 +107,16 @@ class Fixture:
                 'successful_capture': successful, 'meaning': 'Fixture basis'})
 
     def basis(self, name, **changes):
-        path = self.root / berman_capture.ADAPTERS[name]['basis']
+        path = self.root / adapters.ADAPTERS[name]['basis']
         write(path, dict(read(path), **changes))
 
     def verify(self, runner=None, **kwargs):
         self.runner = runner or Runner()
         kwargs.setdefault('code', self.root)
-        return berman_verify.verify(self.root, run=self.runner, **kwargs)
+        return verify.verify(self.root, run=self.runner, **kwargs)
 
 
-class Simulated(berman_verify.Disposable):
+class Simulated(verify.Disposable):
     """Answers the access check's Codex invocations as a native sandbox would; no binary runs.
 
     failing names probe checks reported false; during(harness, project) runs inside the sandbox call.
@@ -164,38 +161,32 @@ class VerifyTests(Fixture, Base):
         self.assertEqual(list(result['checks']), ORDER)
         self.assertEqual((result['verdict'], result['failed'], result['not_run'], result['not_established']),
                          ('incomplete', [], ['native-access'], []))
-        self.assertEqual(berman_verify.EXIT[result['verdict']], 3)
+        self.assertEqual(verify.EXIT[result['verdict']], 3)
         checks = result['checks']
-        self.assertEqual((checks['tests']['summary'], checks['tests']['details']['ran']), ('130 tests passed in 14.0s', 130))
-        self.assertEqual(checks['launcher-tests']['details']['ran'], 16)
         self.assertEqual(checks['hook-trust:legacy-codex']['details']['used_by'], ['stewart'])
         self.assertEqual(checks['hook-trust:berman-codex']['details']['used_by'], ['orchard'])
         self.assertEqual(checks['native-capture:legacy-codex']['details']['run'], 'run-900101')
         self.assertEqual(checks['native-capture:legacy-codex']['details']['events'], ['SessionEnd', 'Stop'])
         self.assertEqual(checks['archive']['details']['builder'], BUILT)
-        self.assertEqual(checks['native-access']['next'], berman_verify.NATIVE_NEXT)
-        self.assertEqual(berman_verify.NATIVE_NEXT, 'berman verify --native-access')
+        self.assertEqual(checks['native-access']['next'], verify.NATIVE_NEXT)
+        self.assertEqual(verify.NATIVE_NEXT, 'berman verify --native-access')
         self.assertTrue(all(c['meaning'] for c in checks.values()))
         self.assertTrue(all(c['required'] for name, c in checks.items() if not name.endswith(':berman-claude')))
         self.assertFalse(checks['hook-trust:berman-claude']['required'])
         self.assertEqual((result['python'], result['python_version']), (str(self.store.python), 'Python 3.14.0'))
-        self.assertEqual(len(result['not_covered']), 3)
+        self.assertEqual(len(result['not_covered']), 4)
         self.assertIsNone(result['record'])
-        suites = [(argv, kwargs) for argv, kwargs in self.runner.calls if 'unittest' in argv]
-        self.assertEqual([argv[argv.index('-s') + 1] for argv, _ in suites], ['tools', 'tools/development_launchers'])
-        for argv, kwargs in suites:
-            self.assertEqual(argv[:3], [str(self.store.python), '-I', '-B'])
-            self.assertEqual((kwargs['cwd'], kwargs['env']['BERMAN_VERIFYING']), (self.root, '1'))
+        self.assertFalse(any('unittest' in argv for argv, _ in self.runner.calls))
         self.assertFalse((self.root / '.berman-locks').exists())
-        text = berman_verify.render(result)
+        text = verify.render(result)
         self.assertTrue(text.startswith('Berman verification: INCOMPLETE'))
         self.assertIn('Not run: native-access', text)
-        self.assertIn('next: ' + berman_verify.NATIVE_NEXT, text)
+        self.assertIn('next: ' + verify.NATIVE_NEXT, text)
 
     def test_native_access_completes_verification_and_any_other_outcome_fails(self):
         seen = []
         result = self.verify(native=lambda store, folder: seen.append(folder) or passing(store, folder))
-        self.assertEqual((result['verdict'], berman_verify.EXIT[result['verdict']]), ('passed', 0))
+        self.assertEqual((result['verdict'], verify.EXIT[result['verdict']]), ('passed', 0))
         self.assertFalse(seen[0].is_relative_to(self.root))
         self.assertFalse(seen[0].exists())
         self.assertEqual(result['checks']['native-access']['details']['retained'], False)
@@ -215,7 +206,7 @@ class VerifyTests(Fixture, Base):
         trust, native = result['checks']['hook-trust:berman-codex'], result['checks']['native-capture:berman-codex']
         self.assertEqual((trust['status'], native['status'], native['required']), ('passed', 'not-established', True))
         self.assertIn('no native capture', native['summary'])
-        self.assertEqual(native['next'], berman_verify.TRIAL_NEXT.format(name='berman-codex', root=self.root))
+        self.assertEqual(native['next'], verify.TRIAL_NEXT.format(name='berman-codex', root=self.root))
         steps = ['berman support-trial prepare --evidence experiments/NAME --adapter berman-codex;',
                  'berman support-trial launch --evidence experiments/NAME ',
                  'berman support-trial collect --evidence experiments/NAME;',
@@ -230,32 +221,32 @@ class VerifyTests(Fixture, Base):
         self.assertEqual((result['verdict'], result['not_established']), ('incomplete', ['native-capture:berman-codex']))
 
     def test_implementation_change_names_files_and_invalidates_both_facts(self):
-        recorded = dict(berman_capture.implementation('legacy-codex'), **{'tools/berman_capture_runtime.py': '0' * 64})
+        recorded = dict(adapters.implementation('legacy-codex'), **{'capture/runtime.py': '0' * 64})
         self.basis('legacy-codex', implementation_sha256=recorded)
         result = self.verify(native=passing)
         trust, native = result['checks']['hook-trust:legacy-codex'], result['checks']['native-capture:legacy-codex']
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('implementation changed', trust['summary'])
-        self.assertEqual(trust['details']['changed_implementation'], ['tools/berman_capture_runtime.py'])
+        self.assertEqual(trust['details']['changed_implementation'], ['capture/runtime.py'])
         self.assertIn('berman capture record-trust', trust['next'])
         self.assertEqual((native['status'], native['summary']), ('not-established', 'Depends on hook-trust:legacy-codex'))
         self.assertEqual((result['verdict'], result['failed']), ('incomplete', []))
         self.assertEqual(result['checks']['hook-trust:berman-codex']['status'], 'passed')
-        self.assertIn('changed: tools/berman_capture_runtime.py', berman_verify.render(result))
+        self.assertIn('changed: capture/runtime.py', verify.render(result))
 
     def test_unreviewed_adapter_names_no_changed_files(self):
-        (self.root / berman_capture.ADAPTERS['berman-codex']['basis']).unlink()
-        self.assertIsNone(berman_capture.changed_implementation(self.store, 'berman-codex'))
+        (self.root / adapters.ADAPTERS['berman-codex']['basis']).unlink()
+        self.assertIsNone(adapters.changed_implementation(self.store, 'berman-codex'))
         result = self.verify(native=passing)
         trust = result['checks']['hook-trust:berman-codex']
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('no recorded CLI trust review', trust['summary'])
         self.assertIsNone(trust['details']['changed_implementation'])
-        self.assertNotIn('changed: ', berman_verify.render(result))
+        self.assertNotIn('changed: ', verify.render(result))
 
     def test_recorded_capture_must_name_these_bytes_and_keep_its_events(self):
-        successful = read(self.root / berman_capture.ADAPTERS['legacy-codex']['basis'])['successful_capture']
-        other = dict(successful['implementation_sha256'], **{'tools/capture_session.py': '0' * 64})
+        successful = read(self.root / adapters.ADAPTERS['legacy-codex']['basis'])['successful_capture']
+        other = dict(successful['implementation_sha256'], **{'_legacy/capture_session.py': '0' * 64})
         unpinned = {k: v for k, v in successful.items() if k != 'implementation_sha256'}
         for capture in (dict(successful, implementation_sha256=other), unpinned):
             self.basis('legacy-codex', successful_capture=capture)
@@ -269,76 +260,17 @@ class VerifyTests(Fixture, Base):
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('lacks its required terminal events', trust['summary'])
 
-    def test_failing_and_empty_suites_fail(self):
-        stderr = (f'F.E\n{"=" * 70}\nFAIL: test_a (test_x.Case.test_a)\n{SEPARATOR}\nAssertionError\n\n'
-                  f'{"=" * 70}\nERROR: test_b (test_x.Case.test_b)\n{SEPARATOR}\nKeyError\n\n'
-                  f'{SEPARATOR}\nRan 3 tests in 0.010s\n\nFAILED (failures=2, errors=1)\n')
-        result = self.verify(Runner(tests=(1, stderr)), native=passing)
-        tests = result['checks']['tests']
-        self.assertEqual((tests['status'], tests['details']['failures'], tests['details']['errors']), ('failed', 2, 1))
-        self.assertEqual(tests['details']['failing'], ['FAIL: test_a (test_x.Case.test_a)', 'ERROR: test_b (test_x.Case.test_b)'])
-        self.assertEqual((result['verdict'], berman_verify.EXIT[result['verdict']], result['failed']), ('failed', 1, ['tests']))
-        self.assertIn('FAIL: test_a', berman_verify.render(result))
-        for code, text in ((5, f'\n{SEPARATOR}\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n'), (0, 'NO TESTS RAN\n'),
-                           (0, ''), (0, 'Ran 3 tests in 0.100s\n'), (1, OK)):
-            check = self.verify(Runner(launcher=(code, text)))['checks']['launcher-tests']
-            self.assertEqual(check['status'], 'failed', (code, text))
-
-        def unavailable(argv, **kwargs):
-            raise FileNotFoundError(argv[0])
-        result = self.verify(unavailable, native=passing)
-        self.assertEqual(result['failed'], ['tests', 'launcher-tests', 'archive'])
-        self.assertIsNone(result['python_version'])
-
-    def test_unexpected_success_is_named_as_the_failure(self):
-        stderr = f'u\n{SEPARATOR}\nRan 1 test in 0.001s\n\nFAILED (unexpected successes=1)\n'
-        tests = self.verify(Runner(tests=(1, stderr)), native=passing)['checks']['tests']
-        self.assertEqual((tests['status'], tests['details']['unexpected_successes']), ('failed', 1))
-        self.assertEqual(tests['summary'], '1 tests ran: 0 failures, 0 errors, 1 unexpected successes')
-
-    def test_suites_run_uncoloured_and_coloured_summaries_still_parse(self):
-        with mock.patch.dict(os.environ, {'FORCE_COLOR': '1'}):
-            self.verify(skip=('archive',), native=passing)
-        for argv, kwargs in self.runner.calls:
-            if 'unittest' in argv:
-                self.assertEqual((kwargs['env']['NO_COLOR'], 'FORCE_COLOR' in kwargs['env']), ('1', False))
-        green, red, reset = '\x1b[32m', '\x1b[31m', '\x1b[0m'
-        coloured = OK.replace('\nOK\n', f'\n{green}OK{reset}\n')
-        failing = (f'{red}FAIL{reset}: test_a (test_x.Case.test_a)\n{SEPARATOR}\nRan 3 tests in 0.010s\n\n'
-                   f'{red}FAILED{reset} (failures={red}1{reset})\n')
-        result = self.verify(Runner(tests=(0, coloured), launcher=(1, failing)), record='experiments/colour', native=passing)
-        tests, launcher = result['checks']['tests'], result['checks']['launcher-tests']
-        self.assertEqual((tests['status'], tests['details']['ran']), ('passed', 130))
-        self.assertEqual((launcher['status'], launcher['details']['failures'], launcher['details']['failing']),
-                         ('failed', 1, ['FAIL: test_a (test_x.Case.test_a)']))
-        # The receipt keeps what the child wrote.
-        self.assertEqual((self.root / 'experiments/colour/tests.txt').read_text(), coloured)
-
-    def test_timed_out_suite_keeps_its_partial_output(self):
-        def slow(argv, **kwargs):
-            if 'unittest' in argv:
-                raise subprocess.TimeoutExpired(argv, kwargs['timeout'], output=b'', stderr=b'..F\nhalfway')
-            return Runner()(argv, **kwargs)
-        result = self.verify(slow, record='experiments/slow', skip=('archive',), native=passing)
-        tests = result['checks']['tests']
-        self.assertEqual(tests['status'], 'failed')
-        self.assertIn('did not finish', tests['summary'])
-        self.assertEqual((self.root / 'experiments/slow/tests.txt').read_text(), '..F\nhalfway')
 
     def test_frozen_collector_change_fails(self):
-        copy = self.root / 'tools/capture_session.py'
+        copy = self.root / '_legacy/capture_session.py'
         copy.write_bytes(copy.read_bytes() + b'# changed\n')
         check = self.verify(native=passing)['checks']['frozen-collector']
         self.assertEqual(check['status'], 'failed')
         self.assertIn(digest(copy.read_bytes()), check['summary'])
         self.assertIn(FROZEN, check['summary'])
-        self.assertEqual(digest((ROOT / 'tools/capture_session.py').read_bytes()), FROZEN)
-        shutil.copy(ROOT / 'tools/capture_session.py', copy)
-        definition = self.root / 'hooks/fieldwork.hooks.json'
-        write(definition, dict(read(definition), description='changed'))
-        result = self.verify(native=passing)
-        self.assertIn('hooks/fieldwork.hooks.json digest', result['checks']['frozen-collector']['summary'])
-        self.assertEqual(result['verdict'], 'failed')
+        self.assertEqual(digest((ROOT / '_legacy/capture_session.py').read_bytes()), FROZEN)
+        shutil.copy(ROOT / '_legacy/capture_session.py', copy)
+        self.assertEqual(self.verify(native=passing)['checks']['frozen-collector']['status'], 'passed')
 
     def test_recorded_hashes_cover_experiment_checksums_and_preparation_manifests(self):
         one, two, prep = self.root / 'experiments/one', self.root / 'experiments/two', self.root / 'inquiry/2026-prep'
@@ -351,7 +283,7 @@ class VerifyTests(Fixture, Base):
         write(prep / 'MANIFEST.json', {'files': [{'path': 'ASSIGNMENT.md', 'bytes': 11, 'sha256': digest(b'Assignment\n')}]})
         # A revision manifest describes files packed in a ZIP elsewhere; it is not checked against this folder.
         write(prep / 'revisions/001/MANIFEST.json', {'files': [{'path': 'packed-only.txt', 'sha256': '0' * 64}]})
-        skip = berman_verify.SKIPPABLE
+        skip = verify.SKIPPABLE
         check = self.verify(skip=skip)['checks']['recorded-hashes']
         self.assertEqual((check['status'], check['summary'], check['details']['hashes']), ('passed', '4 recorded hashes match', 4))
         (one / 'a.txt').write_text('changed\n')
@@ -366,14 +298,14 @@ class VerifyTests(Fixture, Base):
         self.assertIn('cannot be read', check['summary'])
 
     def test_archive_and_capture_checks_accept_an_external_workspace(self):
-        result = self.verify(code=ROOT, skip=('tests', 'launcher-tests'), native=passing)
+        result = self.verify(code=ROOT, native=passing)
         self.assertEqual(result['checks']['archive']['status'], 'passed')
         self.assertTrue(any('--root' in argv and str(self.root) in argv for argv, _ in self.runner.calls))
-        self.assertEqual(result['verdict'], 'incomplete')  # suites were explicitly skipped
-        for name in ORDER[5:9]:
+        self.assertEqual(result['verdict'], 'passed')
+        for name in ORDER[3:7]:
             self.assertEqual(result['checks'][name]['status'], 'passed', name)
         stale = 'Traceback (most recent call last):\n  File "build_archive.py"\nValueError: Generated file is missing or stale: review/x\n'
-        result = self.verify(Runner(archive=(1, '', stale)), skip=('tests', 'launcher-tests'), native=passing,
+        result = self.verify(Runner(archive=(1, '', stale)), native=passing,
                              record='experiments/stale')
         archive = result['checks']['archive']
         self.assertEqual((archive['status'], archive['summary']),
@@ -382,16 +314,16 @@ class VerifyTests(Fixture, Base):
         # The builder's whole message is kept; an empty stdout is not.
         self.assertEqual((self.root / 'experiments/stale/archive-verify.stderr.txt').read_text(), stale)
         self.assertEqual(result['record']['files'], ['verification.json', 'archive-verify.stderr.txt', 'native-access/'])
-        argv, kwargs = next(call for call in self.runner.calls if 'tools/build_archive.py' in call[0])
-        self.assertEqual((argv, kwargs['cwd']),([str(self.store.python), '-I', '-B', 'tools/build_archive.py', '--root', str(self.root), '--verify'], self.root))
+        argv, kwargs = next(call for call in self.runner.calls if 'archive' in call[0])
+        self.assertEqual((argv, kwargs['cwd']),([sys.executable, '-I', '-B', '-m', 'berman', '--root', str(self.root), 'archive', '--verify'], self.root))
         self.assertEqual(result['verdict'], 'failed')
-        archive = self.verify(Runner(archive=(0, 'not json', '')), skip=('tests', 'launcher-tests'))['checks']['archive']
+        archive = self.verify(Runner(archive=(0, 'not json', '')))['checks']['archive']
         self.assertEqual((archive['status'], archive['summary']), ('failed', 'The archive builder printed no JSON summary'))
 
     def test_skip_leaves_checks_unrun_without_subprocesses(self):
-        result = self.verify(skip=berman_verify.SKIPPABLE, native=passing)
+        result = self.verify(skip=verify.SKIPPABLE, native=passing)
         self.assertEqual([argv[1:] for argv, _ in self.runner.calls], [['--version']])
-        self.assertEqual((result['verdict'], result['not_run']), ('incomplete', ['tests', 'launcher-tests', 'archive']))
+        self.assertEqual((result['verdict'], result['not_run']), ('incomplete', ['archive']))
         self.assertEqual(result['checks']['archive']['next'], 'berman verify without --skip archive')
         with self.assertRaisesRegex(Decision, 'Only these checks can be skipped'):
             self.verify(skip=['workspace'])
@@ -399,11 +331,11 @@ class VerifyTests(Fixture, Base):
     def test_record_writes_receipts_once_and_refuses_preserved_locations(self):
         result = self.verify(record='experiments/check-1', native=passing)
         folder = self.root / 'experiments/check-1'
-        receipts = ['verification.json', 'tests.txt', 'development-launcher-tests.txt', 'archive-verify.json']
+        receipts = ['verification.json', 'archive-verify.json']
         self.assertEqual(result['record'], {'directory': str(folder), 'files': receipts + ['native-access/']})
         self.assertEqual(sorted(p.name for p in folder.iterdir()), sorted(receipts + ['native-access']))
         self.assertEqual((folder / 'verification.json').read_bytes(), json_bytes(result))
-        self.assertEqual(((folder / 'tests.txt').read_text(), read(folder / 'archive-verify.json')), (OK, BUILT))
+        self.assertEqual(read(folder / 'archive-verify.json'), BUILT)
         native = result['checks']['native-access']['details']
         self.assertEqual((native['evidence'], native['retained']), (str(folder / 'native-access'), True))
         self.assertTrue((folder / 'native-access/report.json').is_file())
@@ -414,22 +346,22 @@ class VerifyTests(Fixture, Base):
         for path in refused:
             runner = Runner()
             with self.assertRaises(Decision, msg=str(path)):
-                berman_verify.verify(self.root, record=path, run=runner, code=self.root)
+                verify.verify(self.root, record=path, run=runner, code=self.root)
             self.assertEqual(runner.calls, [], path)
         # A case variant names the preserved collection itself on a case-insensitive volume.
         (self.root / 'experiments/kept/collection').mkdir(parents=True)
         for variant in ('collection', 'Collection', 'cOLLECTION'):
             with self.assertRaisesRegex(Decision, 'preserved collection'):
-                berman_verify.evidence_folder(self.root, f'experiments/kept/{variant}/verify-new')
+                verify.evidence_folder(self.root, f'experiments/kept/{variant}/verify-new')
         self.assertEqual(list((self.root / 'experiments/kept/collection').iterdir()), [])
         # The shared policy admits an existing folder only through the resumable marker its caller names.
         trial = self.root / 'experiments/trial'
         trial.mkdir()
         with self.assertRaisesRegex(Decision, 'already exists'):
-            berman_verify.evidence_folder(self.root, 'experiments/trial', resume='trial.json')
+            verify.evidence_folder(self.root, 'experiments/trial', resume='trial.json')
         (trial / 'trial.json').write_text('{}\n')
-        self.assertEqual(berman_verify.evidence_folder(self.root, 'experiments/trial', resume='trial.json'), trial)
-        self.assertEqual(berman_verify.evidence_folder(self.root, trial / 'later'), trial / 'later')
+        self.assertEqual(verify.evidence_folder(self.root, 'experiments/trial', resume='trial.json'), trial)
+        self.assertEqual(verify.evidence_folder(self.root, trial / 'later'), trial / 'later')
 
     def test_verify_without_record_writes_nothing(self):
         self.workflow.new()
@@ -459,35 +391,28 @@ class VerifyTests(Fixture, Base):
             self.assertEqual(self.workflow.status()['connections'][connection]['blocked_by'], [])
             with self.assertRaisesRegex(Decision, 'Invalid operation record'):
                 self.workflow.new(connection=connection)
-        self.assertIn('every connection: Invalid operation record', berman_verify.render(result))
+        self.assertIn('every connection: Invalid operation record', verify.render(result))
 
-    def test_broken_workspace_still_runs_tests(self):
+    def test_broken_workspace_still_checks_the_installed_collector(self):
         (self.root / 'berman.json').write_text('{broken')
         result = self.verify(native=passing)
         checks = result['checks']
         self.assertEqual(checks['workspace']['status'], 'failed')
-        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[5:9] + ['native-access']))
-        self.assertEqual(sum('unittest' in argv for argv, _ in self.runner.calls), 2)
+        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[3:7] + ['native-access']))
+        self.assertEqual(sum('unittest' in argv for argv, _ in self.runner.calls), 0)
         self.assertEqual((result['python'], result['verdict']), (sys.executable, 'failed'))
-        self.assertEqual(checks['tests']['status'], 'passed')
+        self.assertEqual(checks['frozen-collector']['status'], 'passed')
 
-    def test_recursion_guard(self):
-        with mock.patch.dict(os.environ, {'BERMAN_VERIFYING': '1'}), \
-             mock.patch('subprocess.Popen', side_effect=AssertionError('a process was started')):
-            with self.assertRaisesRegex(Decision, 'already running'):
-                berman_verify.verify(self.root, code=self.root)
-            # An injected runner still works, so these tests behave the same inside a verification run.
-            self.assertEqual(self.verify(skip=berman_verify.SKIPPABLE)['checks']['workspace']['status'], 'passed')
 
     def test_cli_verify_json_text_and_exit_codes(self):
         def main(*argv):
             out, err = io.StringIO(), io.StringIO()
             with redirect_stdout(out), redirect_stderr(err):
-                code = berman_cli.main(['--root', str(self.root), *argv])
+                code = cli.main(['--root', str(self.root), *argv])
             return code, out.getvalue(), err.getvalue()
-        with mock.patch.object(berman_verify, 'verify', partial(berman_verify.verify, run=Runner(), code=self.root)):
-            code, out, _ = main('--json', 'verify', '--skip', 'tests')
-            self.assertEqual((code, json.loads(out)['not_run']), (3, ['tests', 'native-access']))
+        with mock.patch.object(verify, 'verify', partial(verify.verify, run=Runner(), code=self.root)):
+            code, out, _ = main('--json', 'verify', '--skip', 'archive')
+            self.assertEqual((code, json.loads(out)['not_run']), (3, ['archive', 'native-access']))
             code, out, _ = main('verify')
             self.assertEqual(code, 3)
             self.assertIn('Berman verification: INCOMPLETE', out)
@@ -500,7 +425,7 @@ class VerifyTests(Fixture, Base):
             code, out, _ = main('--json', 'verify')
             self.assertEqual((code, json.loads(out)['checks']['workspace']['status']), (1, 'failed'))
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            berman_cli.main(['verify', '--skip', 'workspace'])
+            cli.main(['verify', '--skip', 'workspace'])
 
 
 class NativeAccessTests(Fixture, Base):
@@ -533,7 +458,7 @@ class NativeAccessTests(Fixture, Base):
 
     def check(self, folder='experiments/native-1', **kwargs):
         kwargs.setdefault('harness', partial(Simulated, during=self.observe))
-        return berman_verify.native_access(self.store, self.root / folder, **kwargs)
+        return verify.native_access(self.store, self.root / folder, **kwargs)
 
     def tree(self, excluded):
         """Every path beneath the disposable base outside the evidence folder; files with size and time."""
@@ -543,12 +468,12 @@ class NativeAccessTests(Fixture, Base):
     def main(self, *argv):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            code = berman_cli.main(['--root', str(self.root), *argv])
+            code = cli.main(['--root', str(self.root), *argv])
         return code, out.getvalue(), err.getvalue()
 
     def test_access_passes_for_each_connection_and_the_synthetic_fixture(self):
         with self.assertRaises((OSError, ValueError)):
-            berman_capture.readiness(self.store, 'legacy-codex')  # No hook trust is recorded in this workspace.
+            adapters.readiness(self.store, 'legacy-codex')  # No hook trust is recorded in this workspace.
         folder = self.root / 'experiments/native-1'
         folder.parent.mkdir()
         before = self.tree(folder)
@@ -567,10 +492,10 @@ class NativeAccessTests(Fixture, Base):
         for name, entry in connections.items():
             self.assertEqual((entry['access_passed'], entry['checkout_unchanged'], entry['evidence']), (True, True, name + '/'))
             self.assertNotIn('error', entry)
-            self.assertEqual(sorted(p.name for p in (folder / name).iterdir()), sorted(berman_verify.ACCESS_EVIDENCE))
+            self.assertEqual(sorted(p.name for p in (folder / name).iterdir()), sorted(verify.ACCESS_EVIDENCE))
             receipt = read(folder / name / 'readiness.json')
             self.assertEqual((receipt['passed'], receipt['hooks']['established'], receipt['hooks']['meaning']),
-                             (True, False, berman_verify.ACCESS_ONLY))
+                             (True, False, verify.ACCESS_ONLY))
             (result,) = (folder / name / 'checks').glob('*/result.json')
             self.assertTrue(read(result)['passed'])
         self.assertTrue((folder / 'native-check-fixture/ASSIGNMENT.md').read_text().startswith('Berman-Fieldwork-Run: run-003\n'))
@@ -579,8 +504,8 @@ class NativeAccessTests(Fixture, Base):
         self.assertEqual((report['codex_version'], report['codex'], report['python']),
                          ('codex-cli 0.0.0-fixture', str(self.store.codex), str(self.store.python)))
         self.assertEqual(report['harness_sha256'], {rel: digest((ROOT / rel).read_bytes())
-                                                    for rel in ('tools/berman_harness.py', 'tools/berman_probe.py')})
-        self.assertEqual((report['not_established'], report['fulfilled_commitments']), (berman_verify.ACCESS_NOT_ESTABLISHED, []))
+                                                    for rel in ('harnesses/codex.py', 'harnesses/probe.py')})
+        self.assertEqual((report['not_established'], report['fulfilled_commitments']), (verify.ACCESS_NOT_ESTABLISHED, []))
         # The disposable workspace held researcher inputs and Codex configuration only, and is gone.
         self.assertEqual([s['project'] for s in self.seen][:2], [self.base / 'stewart', self.base / 'orchard'])
         self.assertEqual(self.seen[2]['project'], self.seen[2]['root'].parent / 'native-check-fixture')
@@ -650,8 +575,8 @@ class NativeAccessTests(Fixture, Base):
 
     def test_verify_keeps_native_evidence_only_with_record(self):
         self.code()
-        native = partial(berman_verify.native_access, harness=Simulated)
-        result = self.verify(native=native, record='experiments/verify-native', skip=berman_verify.SKIPPABLE)
+        native = partial(verify.native_access, harness=Simulated)
+        result = self.verify(native=native, record='experiments/verify-native', skip=verify.SKIPPABLE)
         check = result['checks']['native-access']
         folder = self.root / 'experiments/verify-native/native-access'
         self.assertEqual((check['status'], check['details']['evidence'], check['details']['retained']),
@@ -661,25 +586,25 @@ class NativeAccessTests(Fixture, Base):
         self.assertIn('native-access/', result['record']['files'])
         # Hook trust is not recorded here; native access is still its own passing fact.
         self.assertEqual(result['checks']['hook-trust:legacy-codex']['status'], 'not-established')
-        check = self.verify(native=native, skip=berman_verify.SKIPPABLE)['checks']['native-access']
+        check = self.verify(native=native, skip=verify.SKIPPABLE)['checks']['native-access']
         self.assertEqual((check['status'], check['details']['evidence'], check['details']['retained']), ('passed', None, False))
         self.assertIn('evidence not retained', check['summary'])
-        failing = partial(berman_verify.native_access, harness=partial(Simulated, failing={'git_read'}))
-        result = self.verify(native=failing, skip=berman_verify.SKIPPABLE)
+        failing = partial(verify.native_access, harness=partial(Simulated, failing={'git_read'}))
+        result = self.verify(native=failing, skip=verify.SKIPPABLE)
         check = result['checks']['native-access']
         self.assertEqual((check['status'], len(check['details']['problems'])), ('failed', 3))
         self.assertTrue(check['details']['problems'][0].startswith('stewart: Decision: Native access check did not pass'))
         self.assertEqual(check['next'], 'Keep the evidence with berman verify --native-access --record experiments/NAME')
-        self.assertIn('stewart: Decision: Native access check did not pass', berman_verify.render(result))
+        self.assertIn('stewart: Decision: Native access check did not pass', verify.render(result))
         problems = self.verify(native=failing, record='experiments/verify-failing',
-                               skip=berman_verify.SKIPPABLE)['checks']['native-access']['details']['problems']
+                               skip=verify.SKIPPABLE)['checks']['native-access']['details']['problems']
         self.assertTrue(all(Path(p.rpartition('Details: ')[2]).is_file() for p in problems))
 
     def test_cli_native_access_flag_runs_the_maintained_check(self):
         self.code()
         self.trust()
-        with mock.patch.object(berman_verify, 'verify', partial(berman_verify.verify, run=Runner(), code=self.root)), \
-             mock.patch.object(berman_verify, 'native_access', partial(berman_verify.native_access, harness=Simulated)):
+        with mock.patch.object(verify, 'verify', partial(verify.verify, run=Runner(), code=self.root)), \
+             mock.patch.object(verify, 'native_access', partial(verify.native_access, harness=Simulated)):
             code, out, _ = self.main('--json', 'verify', '--native-access', '--record', 'experiments/cli-native')
             result = json.loads(out)
             native = result['checks']['native-access']
@@ -715,7 +640,7 @@ class UnusedAdapterTests(Fixture, unittest.TestCase):
         self.assertEqual((native['status'], native['required'], native['details']['used_by']), ('not-established', False, []))
         self.assertEqual(result['checks']['hook-trust:berman-codex']['required'], False)
         self.assertEqual((result['verdict'], result['not_established']), ('passed', ['native-capture:berman-codex']))
-        text = berman_verify.render(result)
+        text = verify.render(result)
         self.assertIn('not established (optional)', text)
         self.assertIn('Not established: native-capture:berman-codex (optional)', text)
         self.assertEqual(self.verify()['verdict'], 'incomplete')

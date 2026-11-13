@@ -1,4 +1,5 @@
 """End-to-end regressions for the fieldworker-support audit's failure cases."""
+from tests.support.paths import REPO
 
 import importlib.util
 import json
@@ -9,13 +10,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-spec = importlib.util.spec_from_file_location('fieldwork_test_module', Path(__file__).with_name('fieldwork.py'))
-fieldwork = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(fieldwork)
-legacy_spec = importlib.util.spec_from_file_location('capture_session', Path(__file__).with_name('capture_session.py'))
-capture = importlib.util.module_from_spec(legacy_spec)  # The unrouted frozen collector under test.
-legacy_spec.loader.exec_module(capture)
-import berman_files
+from berman import recovery as fieldwork
+from berman._legacy import capture_session as capture
+from berman import files
 
 
 class LifecycleTests(unittest.TestCase):
@@ -134,9 +131,9 @@ class LifecycleTests(unittest.TestCase):
         self.answer(); self.stop()
         self.assertTrue(self.collector.status('run-900002')['snapshot_consistent'])
         self.collector.command('finalize', 'run-900002')
-        before = berman_files.inventory(root)
+        before = files.inventory(root)
         migrated = Path(fieldwork.migrate(self.collector, 'run-900002')['path'])
-        self.assertEqual(berman_files.inventory(migrated), before)
+        self.assertEqual(files.inventory(migrated), before)
         self.assertEqual((migrated / 'notes/first.md').read_text(), 'A participant account.\n')
 
     def test_notes_coverage_requires_its_own_instructions_and_rejects_stale_paths(self):
@@ -246,10 +243,10 @@ class LifecycleTests(unittest.TestCase):
         (self.root/'scratch/link').symlink_to('/historical/missing')
         (git/'empty').chmod(0o700)
         self.finish()
-        before=berman_files.inventory(self.root)
+        before=files.inventory(self.root)
         result=fieldwork.migrate(self.collector,self.run)
         destination=Path(result['path'])
-        self.assertEqual(berman_files.inventory(destination),before)
+        self.assertEqual(files.inventory(destination),before)
         self.assertFalse(self.root.exists())
         self.assertEqual(self.collector.status(self.run)['location'],'archived')
         layout=json.loads((self.analysis/'source-layout.json').read_text())
@@ -268,11 +265,11 @@ class LifecycleTests(unittest.TestCase):
 
     def test_migration_recovers_after_move_before_index_update(self):
         self.finish()
-        atomic=berman_files.atomic
+        atomic=files.atomic
         def fail_layout(path,data):
             if path.name=='source-layout.json': raise OSError('simulated interruption')
             return atomic(path,data)
-        with mock.patch.object(berman_files,'atomic',side_effect=fail_layout):
+        with mock.patch.object(files,'atomic',side_effect=fail_layout):
             with self.assertRaises(OSError): fieldwork.migrate(self.collector,self.run)
         self.assertFalse(self.root.exists())
         self.assertTrue((self.analysis/'runs'/self.run).exists())

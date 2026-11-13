@@ -1,4 +1,5 @@
 """Lifecycle facts: each stage is reported separately, with its evidence or the reason it is unknown."""
+from tests.support.paths import REPO
 import contextlib
 import io
 from pathlib import Path
@@ -6,18 +7,17 @@ import sys
 import unittest
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_connections import Base
-from berman_files import Decision, json_bytes, read, write
-from berman_legacy import MARKER
-import berman_capture
-import berman_cli
-import berman_collector
-import berman_legacy
-import berman_lifecycle as lifecycle
-import berman_preserve
-from berman_records import closed_by
-import fieldwork
+from tests.integration.test_connections import Base
+from berman.files import Decision, json_bytes, read, write
+from berman._legacy.api import MARKER
+from berman.capture import adapters
+from berman import cli
+from berman.capture import collector
+from berman._legacy import api
+from berman import lifecycle
+from berman import preserve
+from berman.records import closed_by
+from berman import recovery as fieldwork
 
 INFERRED = {'reason': 'Existing explicit finalization or migration authorizes completing preservation',
             'basis': lifecycle.INFERRED_ENDING}
@@ -284,7 +284,7 @@ class StatusLifecycleTests(Base):
     def status_text(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            self.assertEqual(berman_cli.main(['--root', str(self.root), 'status']), 0)
+            self.assertEqual(cli.main(['--root', str(self.root), 'status']), 0)
         return output.getvalue()
 
     def test_terminal_stop_and_session_end_without_declaration_is_not_ended(self):
@@ -369,7 +369,7 @@ class StatusLifecycleTests(Base):
     def test_migrated_but_not_packaged_reports_packaging_pending(self):
         one = self.workflow.new()
         self.start(one['run'], self.legacy)
-        with mock.patch.object(berman_preserve, 'package', side_effect=OSError('power loss')):
+        with mock.patch.object(preserve, 'package', side_effect=OSError('power loss')):
             with self.assertRaisesRegex(OSError, 'power loss'):
                 self.workflow.finish('The engagement ended')
         self.assertEqual(self.workflow.progress()[0]['state'], 'migrated; packaging pending')
@@ -529,23 +529,23 @@ class StatusLifecycleTests(Base):
 
     def test_damaged_registry_makes_cutover_state_unknown(self):
         (self.root / 'hooks').mkdir()
-        write(self.root / 'hooks/berman-capture.hooks.json', berman_capture.definition(self.store, 'berman-codex'))
+        write(self.root / 'hooks/berman-capture.hooks.json', adapters.definition(self.store, 'berman-codex'))
         path = self.home / 'stewart-fieldwork/damaged-session.json'
         path.parent.mkdir()
         path.write_text('{broken registry')
-        sessions = berman_capture.registrations(self.store)
+        sessions = adapters.registrations(self.store)
         self.assertEqual([(s['session_id'], s['open'], s['pending_callback']) for s in sessions],
                          [('damaged-session', None, None)])
         self.assertIn(str(path), sessions[0]['unknown'][0])
         with self.assertRaisesRegex(Decision, r'requires closed captures.*damaged-session \(legacy-codex: state unknown'):
-            berman_capture.install(self.store, 'berman-codex')
+            adapters.install(self.store, 'berman-codex')
         self.assertFalse((self.home / 'hooks.json').exists())
         self.assertFalse((self.root / 'hooks/installations').exists())
 
     def test_closure_matches_frozen_collectors(self):
-        self.assertIs(lifecycle.RUN, berman_legacy.RUN)
-        self.assertIs(lifecycle.SESSION, berman_legacy.SESSION)
-        frozen = berman_collector.Collector(self.store.field, self.home, self.root)
+        self.assertIs(lifecycle.RUN, api.RUN)
+        self.assertIs(lifecycle.SESSION, api.SESSION)
+        frozen = collector.Collector(self.store.field, self.home, self.root)
         packet = self.store.field / 'run-042'
         (packet / 'session').mkdir(parents=True)
         write(self.home / 'stewart-fieldwork/closure.json', {'run': 'run-042', 'session_id': 'closure'})
@@ -557,7 +557,7 @@ class StatusLifecycleTests(Base):
                     write(packet / 'session' / closing, {'fixture': True})
                 self.assertEqual(closed_by(packet), [closing] if closing else [])
                 self.assertEqual(frozen.legacy_claim('closure'), None if closing else 'run-042')
-                opened = [s['open'] for s in berman_capture.registrations(self.store) if s['session_id'] == 'closure']
+                opened = [s['open'] for s in adapters.registrations(self.store) if s['session_id'] == 'closure']
                 self.assertEqual(opened, [closing is None])
 
 

@@ -12,7 +12,7 @@ alter what the fieldworker can see or what gets recorded (researcher's decision,
 - context: whole settings files and the project's declared checks, retained and not compared.
 
 No interactive /hooks review is required: the installed CLI's browser omits flag-supplied hooks,
-so the trial's native hook events are the execution evidence (LIMITS.md).
+so the trial's native hook events are the execution evidence (docs/limitations.md).
 """
 from berman.installation import PACKAGE, command as module_command
 import inspect
@@ -40,7 +40,7 @@ TIERS = {'stop': 'hook template, in-session implementation bytes, readiness help
          'warn': 'Claude CLI binary path, version, size and modification time',
          'context': 'whole settings files and the declared project checks, recorded and not compared'}
 LIMITATION = ("The installed CLI's /hooks browser omits flag-supplied hooks, so no interactive review is required "
-              'or attested; the native hook events of the support trial are the execution evidence (LIMITS.md).')
+              'or attested; the native hook events of the support trial are the execution evidence (docs/limitations.md).')
 
 
 def definition():

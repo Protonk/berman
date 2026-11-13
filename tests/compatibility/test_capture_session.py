@@ -1,4 +1,5 @@
 """Exercise capture boundaries and preservation using isolated fixtures."""
+from tests.support.paths import REPO
 
 import importlib.util
 import json
@@ -11,9 +12,8 @@ import sys
 import tempfile
 import unittest
 
-spec = importlib.util.spec_from_file_location("capture_session", Path(__file__).with_name("capture_session.py"))
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from berman._legacy import capture_session as module
+from berman.installation import PACKAGE
 
 
 class CaptureTests(unittest.TestCase):
@@ -229,7 +229,7 @@ class CaptureTests(unittest.TestCase):
                                 prompt=module.MARKER + "run-004"))
 
     def test_hook_cli_ignores_unmarked_prompts_and_reports_errors_without_blocking(self):
-        executable = [sys.executable, "-I", "-B", str(Path(__file__).with_name("capture_session.py")), "hook",
+        executable = [sys.executable, "-I", "-B", str(PACKAGE / "_legacy/capture_session.py"), "hook",
                       '--codex-home', str(self.home), '--fieldwork-root', str(self.field), '--analysis-root', str(self.analysis)]
         for prompt, expected_error in [("An ordinary conversation.", False), (module.MARKER + "../bad", True)]:
             result = subprocess.run(executable, input=json.dumps(self.event("UserPromptSubmit", prompt=prompt)),
@@ -269,9 +269,7 @@ class CaptureTests(unittest.TestCase):
                            "entries": sorted(entries, key=lambda r: r["path"]),
                            "git_pointer": {"path": "scratch/manager-004/.git", "content": pointer.read_text()}}]}
         (self.analysis / "source-layout.json").write_text(json.dumps(layout))
-        builder_spec = importlib.util.spec_from_file_location("fixture_builder", Path(__file__).with_name("build_archive.py"))
-        builder = importlib.util.module_from_spec(builder_spec)
-        builder_spec.loader.exec_module(builder)
+        from berman.archive import builder
         for name in builder.CONTEXT_DOCUMENTS:
             path = self.analysis / name
             path.parent.mkdir(parents=True, exist_ok=True)
