@@ -218,8 +218,7 @@ def adapters(store, root, code):
     workspace both facts are reported as not run rather than as missing.
     """
     checks = {}
-    for name in capture_adapters.maintained(store):
-        adapter = capture_adapters.ADAPTERS[name]
+    for name, adapter in capture_adapters.ADAPTERS.items():
         trust, native = f'hook-trust:{name}', f'native-capture:{name}'
         if store is None:
             checks[trust], checks[native] = row('not-run', 'Depends on workspace'), row('not-run', 'Depends on workspace')
@@ -363,11 +362,9 @@ def disposable_workspace(store, base, names, synthetic, fulfilled=()):
     for name in names:
         conn = store.connections[name]
         shutil.copytree(conn.folder, root / conn.folder.relative_to(store.root), dirs_exist_ok=True)
-        plan = conn.plan.path.relative_to(store.root) if conn.plan.path else Path('plans', conn.plan.id, 'plan.json')
+        plan = conn.plan.path.relative_to(store.root)
         if conn.plan.id in fulfilled:
             write(root / plan, {k: v for k, v in conn.plan.data.items() if k != 'commitment'})
-        elif conn.plan.path is None:  # A legacy configuration synthesizes its plan in place.
-            write(root / plan, conn.plan.data)
         else:
             (root / plan).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(conn.plan.path, root / plan)

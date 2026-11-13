@@ -19,40 +19,38 @@ from berman import cli
 
 
 class ReviewRegressionTests(Base):
-    def test_reverse_registration_is_refused_before_any_second_binding(self):
-        old = self.workflow.new()
-        new = self.workflow.new(connection='orchard')
-        source, event = self.start(new['run'], self.berman, sid='shared-session')
-        with self.assertRaisesRegex(ValueError, 'already belongs to the other collector'):
-            route(dict(event, hook_event_name='UserPromptSubmit', prompt=self.legacy.marker + old['run']), self.home, self.root)
-        self.assertFalse((Path(old['packet']) / 'session/binding.json').exists())
-        self.assertEqual(route(dict(event, hook_event_name='Stop'), self.home, self.root), {})
-        self.assertEqual(read(Path(new['packet']) / 'session/capture.json')['session_id'], 'shared-session')
-
-    def test_simultaneous_registrations_have_one_winner(self):
+    def test_simultaneous_openings_in_one_session_are_serialized(self):
+        """Two openings race in one session: both bind in turn, and the first is closed by the switch."""
         packets = [self.workflow.new(), self.workflow.new(connection='orchard')]
+        source = self.home / 'sessions/racing.jsonl'
+        source.parent.mkdir(exist_ok=True)
+        source.write_text(json.dumps({'type': 'session_meta', 'payload': {'id': 'racing'}}) + '\n')
         barrier = threading.Barrier(2)
         outcomes = []
-        def register(cls, packet):
+        def register(packet):
             barrier.wait(timeout=3)
             try:
-                route({'session_id': 'racing', 'hook_event_name': 'UserPromptSubmit',
-                       'prompt': cls.marker + packet['run'], 'turn_id': 'one'}, self.home, self.root)
+                route({'session_id': 'racing', 'hook_event_name': 'UserPromptSubmit', 'transcript_path': str(source),
+                       'prompt': self.berman.marker + packet['run'], 'turn_id': 'one'}, self.home, self.root)
                 outcomes.append('registered')
             except ValueError as error:
                 outcomes.append(str(error))
-        threads = [threading.Thread(target=register, args=(cls, packet))
-                   for cls, packet in zip((self.legacy, self.berman), packets)]
+        threads = [threading.Thread(target=register, args=(packet,)) for packet in packets]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join(timeout=5)
             self.assertFalse(thread.is_alive())
-        self.assertEqual(outcomes.count('registered'), 1, outcomes)
-        self.assertEqual(sum((Path(p['packet']) / 'session/binding.json').exists() for p in packets), 1)
+        self.assertEqual(outcomes, ['registered', 'registered'])
+        self.assertEqual(sum((Path(p['packet']) / 'session/binding.json').exists() for p in packets), 2)
+        # Exactly one packet was closed by the other's registration; the registry names the one left open.
+        switched = [p for p in packets if (Path(p['packet']) / 'session/ended.json').exists()]
+        self.assertEqual(len(switched), 1)
+        current = read(self.berman.registry('racing'))['run']
+        self.assertEqual({current, switched[0]['run']}, {p['run'] for p in packets})
 
     def test_foreign_workspace_prompt_does_not_mutate_registration(self):
-        for connection, collector in [('stewart', self.legacy), ('orchard', self.berman)]:
+        for connection, collector in [('stewart', self.berman), ('orchard', self.berman)]:
             one = self.workflow.new(connection=connection)
             _, event = self.start(one['run'], collector)
             registry = collector.registry(event['session_id'])
@@ -96,10 +94,7 @@ class ReviewRegressionTests(Base):
         self.assertEqual(outcomes[0]['state'], 'archived')
         self.assertEqual(self.workflow.finish('Second engagement ended', run=two['run'])['state'], 'archived')
 
-    def test_legacy_finalize_does_not_skip_another_last_stop(self):
-        self.check_finalize_isolation('stewart', self.legacy)
-
-    def test_new_finalize_does_not_skip_another_last_stop(self):
+    def test_finalize_does_not_skip_another_last_stop(self):
         self.check_finalize_isolation('orchard', self.berman)
 
     def test_damaged_foreign_journal_is_scoped_and_status_still_works(self):
@@ -167,8 +162,8 @@ class ReviewRegressionTests(Base):
         with self.assertRaisesRegex(Decision, 'Unattributed damaged session registry'):
             self.workflow.new()
 
-    def test_router_entrypoint_captures_both_layouts_without_model_calls(self):
-        for connection, cls in [('stewart', self.legacy), ('orchard', self.berman)]:
+    def test_router_entrypoint_captures_each_connection_without_model_calls(self):
+        for connection, cls in [('stewart', self.berman), ('orchard', self.berman)]:
             one = self.workflow.new(connection=connection)
             source = self.home / 'sessions' / (connection + '.jsonl')
             source.parent.mkdir(exist_ok=True)
@@ -189,15 +184,17 @@ class ReviewRegressionTests(Base):
         (self.root / 'hooks').mkdir()
         write(self.root / 'hooks/berman-capture.hooks.json', template)
         installed = json.loads(json.dumps(template))
-        old = __import__('tests.support.workspace', fromlist=['workspace']).legacy_hooks()
+        old = __import__('tests.support.workspace', fromlist=['workspace']).direct_hooks()
         installed['hooks']['Stop'] += old['hooks']['Stop']
         write(self.home / 'hooks.json', installed)
         with self.assertRaisesRegex(Decision, 'not exclusive'):
             adapters.readiness(self.store, 'berman-codex')
 
     def test_installed_router_warns_on_near_markers_without_registration(self):
-        cases = [('**Stewart-Fieldwork-Run: run-001**', 'Stewart-Fieldwork-Run:'),
-                 ('Stewart-Fieldwork-Run : run-001', 'Stewart-Fieldwork-Run:'),
+        # The removed adapter's opening line, exact or near, registers nothing and says what replaced it.
+        cases = [('Stewart-Fieldwork-Run: run-001', 'belonged to a removed adapter'),
+                 ('**Stewart-Fieldwork-Run: run-001**', 'belonged to a removed adapter'),
+                 ('Stewart-Fieldwork-Run : run-001', 'Berman-Fieldwork-Run: run-NNN'),
                  ('`Berman-Fieldwork-Run: run-002`', 'Berman-Fieldwork-Run:'),
                  ('Do this first.\nBerman-Fieldwork-Run: run-002', 'Berman-Fieldwork-Run:')]
         for index, (opening, expected) in enumerate(cases):
@@ -207,13 +204,12 @@ class ReviewRegressionTests(Base):
                                          '--codex-home', str(self.home), '--analysis-root', str(self.root)],
                                         input=json.dumps(event), capture_output=True, text=True, check=True)
                 self.assertIn(expected, json.loads(result.stdout)['systemMessage'])
-                self.assertFalse(self.legacy.registry(event['session_id']).exists())
                 self.assertFalse(self.berman.registry(event['session_id']).exists())
+                self.assertFalse((self.home / 'stewart-fieldwork').exists())
         self.assertEqual(route({'session_id': 'ordinary', 'hook_event_name': 'UserPromptSubmit', 'prompt': 'Hello'},
                                self.home, self.root), {})
-        for collector in (self.legacy, self.berman):
-            self.assertIn('systemMessage', collector.hook({'session_id': 'direct-near', 'hook_event_name': 'UserPromptSubmit',
-                                                          'prompt': '**' + collector.marker + 'run-001**'}))
+        self.assertIn('systemMessage', self.berman.hook({'session_id': 'direct-near', 'hook_event_name': 'UserPromptSubmit',
+                                                         'prompt': '**' + self.berman.marker + 'run-001**'}))
 
     def test_moved_workspace_and_changed_profile_are_refused(self):
         import shutil
@@ -241,7 +237,7 @@ class ReviewRegressionTests(Base):
 
     def test_damaged_started_run_keeps_next_role_and_started_state(self):
         one = self.workflow.new()
-        _, event = self.start(one['run'], self.legacy)
+        _, event = self.start(one['run'], self.berman)
         self.assertNotIn('started_session', self.store.record(one['run']))
         journal = self.root / 'migrations' / (one['run'] + '.json')
         journal.parent.mkdir(exist_ok=True)
@@ -260,9 +256,9 @@ class ReviewRegressionTests(Base):
         self.assertEqual(status['next_recipe'], 'participant-inquiry')
         row = next(r for r in status['runs'] if r['run'] == one['run'])
         self.assertEqual(row['lifecycle']['registered']['evidence'],
-                         [f'registration stewart-fieldwork/{event["session_id"]}.json'])
+                         [f'registration berman-capture/{event["session_id"]}.json'])
         # With every start indicator unreadable, status reports uncertainty, not the repeat.
-        self.legacy.registry(event['session_id']).write_text('{broken registry')
+        self.berman.registry(event['session_id']).write_text('{broken registry')
         status = self.workflow.status()
         self.assertIn('starting state is unknown', status['next_recipe'])
         row = next(r for r in status['runs'] if r['run'] == one['run'])
@@ -277,7 +273,7 @@ class ReviewRegressionTests(Base):
         evidence = self.base / 'review.terminal'
         evidence.write_text('Fixture review, not a real trust observation.\n')
         adapters.record_trust(self.store, evidence, 'fixture')
-        basis_path = self.root / adapters.ADAPTERS['legacy-codex']['basis']
+        basis_path = self.root / adapters.ADAPTERS['berman-codex']['basis']
         basis = read(basis_path)
         successful = {'path': 'fixture-captures.jsonl', 'required_events': ['Stop', 'SessionEnd']}
         basis.update(successful_capture=successful, meaning='Fixture successful capture')

@@ -25,13 +25,12 @@ from berman.installation import PACKAGE as ROOT
 from berman.capture import adapters
 from berman import cli
 from berman import verify
-from tests.support.workspace import workspace, legacy_hooks, legacy_basis
+from tests.support.workspace import workspace
 from tests.integration.test_connections import Base
 
 BUILT = {'mode': 'verified', 'archive_path': 'archive/stewart-runs.zip', 'zip_members': 12, 'archive_sha256': '0' * 64}
 FROZEN = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
-ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:legacy-codex',
-         'native-capture:legacy-codex', 'hook-trust:berman-codex', 'native-capture:berman-codex',
+ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:berman-codex', 'native-capture:berman-codex',
          'hook-trust:berman-claude', 'native-capture:berman-claude', 'archive', 'native-access']
 
 
@@ -61,14 +60,11 @@ class Fixture:
     """The fixture root doubles as the code root, with a recorded hook review written directly."""
 
     def code(self):
-        for rel in ('_legacy/capture_session.py', 'hooks/verification/legacy-codex.json', 'hooks/fieldwork.hooks.json'):
-            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
-            if rel.startswith('_legacy/'):
-                shutil.copy(ROOT / rel, self.root / rel)
-            else:
-                write(self.root / rel, legacy_basis() if 'verification/' in rel else legacy_hooks())
+        rel = '_legacy/capture_session.py'
+        (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, self.root / rel)
 
-    def trust(self, captures=('legacy-codex', 'berman-codex')):
+    def trust(self, captures=('berman-codex',)):
         """Installed router hooks, a review observation and both bases; no Codex binary runs."""
         template = adapters.definition(self.store, 'berman-codex')
         write(self.root / 'hooks/berman-capture.hooks.json', template)
@@ -149,7 +145,7 @@ class Simulated(verify.Disposable):
 
 
 class VerifyTests(Fixture, Base):
-    """Stewart on legacy-codex and orchard on berman-codex, so both adapters are required."""
+    """Stewart and orchard on berman-codex, so that adapter is required and berman-claude is optional."""
 
     def setUp(self):
         super().setUp()
@@ -163,10 +159,10 @@ class VerifyTests(Fixture, Base):
                          ('incomplete', [], ['native-access'], []))
         self.assertEqual(verify.EXIT[result['verdict']], 3)
         checks = result['checks']
-        self.assertEqual(checks['hook-trust:legacy-codex']['details']['used_by'], ['stewart'])
-        self.assertEqual(checks['hook-trust:berman-codex']['details']['used_by'], ['orchard'])
-        self.assertEqual(checks['native-capture:legacy-codex']['details']['run'], 'run-900101')
-        self.assertEqual(checks['native-capture:legacy-codex']['details']['events'], ['SessionEnd', 'Stop'])
+        self.assertEqual(checks['hook-trust:berman-codex']['details']['used_by'], ['orchard', 'stewart'])
+        self.assertEqual(checks['hook-trust:berman-claude']['details']['used_by'], [])
+        self.assertEqual(checks['native-capture:berman-codex']['details']['run'], 'run-900101')
+        self.assertEqual(checks['native-capture:berman-codex']['details']['events'], ['SessionEnd', 'Stop'])
         self.assertEqual(checks['archive']['details']['builder'], BUILT)
         self.assertEqual(checks['native-access']['next'], verify.NATIVE_NEXT)
         self.assertEqual(verify.NATIVE_NEXT, 'berman verify --native-access')
@@ -221,17 +217,18 @@ class VerifyTests(Fixture, Base):
         self.assertEqual((result['verdict'], result['not_established']), ('incomplete', ['native-capture:berman-codex']))
 
     def test_implementation_change_names_files_and_invalidates_both_facts(self):
-        recorded = dict(adapters.implementation('legacy-codex'), **{'capture/runtime.py': '0' * 64})
-        self.basis('legacy-codex', implementation_sha256=recorded)
+        recorded = dict(adapters.implementation('berman-codex'), **{'capture/runtime.py': '0' * 64})
+        self.basis('berman-codex', implementation_sha256=recorded)
         result = self.verify(native=passing)
-        trust, native = result['checks']['hook-trust:legacy-codex'], result['checks']['native-capture:legacy-codex']
+        trust, native = result['checks']['hook-trust:berman-codex'], result['checks']['native-capture:berman-codex']
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('implementation changed', trust['summary'])
         self.assertEqual(trust['details']['changed_implementation'], ['capture/runtime.py'])
         self.assertIn('berman capture record-trust', trust['next'])
-        self.assertEqual((native['status'], native['summary']), ('not-established', 'Depends on hook-trust:legacy-codex'))
+        self.assertEqual((native['status'], native['summary']), ('not-established', 'Depends on hook-trust:berman-codex'))
         self.assertEqual((result['verdict'], result['failed']), ('incomplete', []))
-        self.assertEqual(result['checks']['hook-trust:berman-codex']['status'], 'passed')
+        # The other adapter's basis still names the current bytes.
+        self.assertEqual(result['checks']['hook-trust:berman-claude']['status'], 'passed')
         self.assertIn('changed: capture/runtime.py', verify.render(result))
 
     def test_unreviewed_adapter_names_no_changed_files(self):
@@ -245,18 +242,18 @@ class VerifyTests(Fixture, Base):
         self.assertNotIn('changed: ', verify.render(result))
 
     def test_recorded_capture_must_name_these_bytes_and_keep_its_events(self):
-        successful = read(self.root / adapters.ADAPTERS['legacy-codex']['basis'])['successful_capture']
+        successful = read(self.root / adapters.ADAPTERS['berman-codex']['basis'])['successful_capture']
         other = dict(successful['implementation_sha256'], **{'_legacy/capture_session.py': '0' * 64})
         unpinned = {k: v for k, v in successful.items() if k != 'implementation_sha256'}
         for capture in (dict(successful, implementation_sha256=other), unpinned):
-            self.basis('legacy-codex', successful_capture=capture)
+            self.basis('berman-codex', successful_capture=capture)
             checks = self.verify(native=passing)['checks']
-            self.assertEqual(checks['hook-trust:legacy-codex']['status'], 'passed')
-            self.assertEqual(checks['native-capture:legacy-codex']['status'], 'not-established')
+            self.assertEqual(checks['hook-trust:berman-codex']['status'], 'passed')
+            self.assertEqual(checks['native-capture:berman-codex']['status'], 'not-established')
         # A recorded capture lacking a terminal event still fails readiness itself, as before.
-        self.basis('legacy-codex', successful_capture=successful)
+        self.basis('berman-codex', successful_capture=successful)
         (self.root / successful['path']).write_text('{"event": "Stop"}\n')
-        trust = self.verify(native=passing)['checks']['hook-trust:legacy-codex']
+        trust = self.verify(native=passing)['checks']['hook-trust:berman-codex']
         self.assertEqual(trust['status'], 'not-established')
         self.assertIn('lacks its required terminal events', trust['summary'])
 
@@ -398,9 +395,7 @@ class VerifyTests(Fixture, Base):
         result = self.verify(native=passing)
         checks = result['checks']
         self.assertEqual(checks['workspace']['status'], 'failed')
-        # Which adapters a broken workspace selects is unknown, so only the standard pair is listed.
-        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[5:9] + ['native-access']))
-        self.assertFalse(any('legacy-codex' in name for name in checks))
+        self.assertTrue(all(checks[name]['status'] == 'not-run' for name in ORDER[3:7] + ['native-access']))
         self.assertEqual(sum('unittest' in argv for argv, _ in self.runner.calls), 0)
         self.assertEqual((result['python'], result['verdict']), (sys.executable, 'failed'))
         self.assertEqual(checks['frozen-collector']['status'], 'passed')
@@ -475,7 +470,7 @@ class NativeAccessTests(Fixture, Base):
 
     def test_access_passes_for_each_connection_and_the_synthetic_fixture(self):
         with self.assertRaises((OSError, ValueError)):
-            adapters.readiness(self.store, 'legacy-codex')  # No hook trust is recorded in this workspace.
+            adapters.readiness(self.store, 'berman-codex')  # No hook trust is recorded in this workspace.
         folder = self.root / 'experiments/native-1'
         folder.parent.mkdir()
         before = self.tree(folder)
@@ -486,7 +481,7 @@ class NativeAccessTests(Fixture, Base):
                          ('berman.native-access-check/1', True, True))
         connections = report['connections']
         self.assertEqual([(name, c['source'], c['capture_adapter'], c['run'], c['recipe']) for name, c in connections.items()],
-                         [('stewart', 'real', 'legacy-codex', 'run-001', 'work-accounts'),
+                         [('stewart', 'real', 'berman-codex', 'run-001', 'work-accounts'),
                           ('orchard', 'real', 'berman-codex', 'run-002', 'orchard-accounts'),
                           ('native-check-fixture', 'synthetic', 'berman-codex', 'run-003', 'native-check-fixture')])
         self.assertEqual((connections['stewart']['checkout'], connections['stewart']['project_checks']),
@@ -587,7 +582,7 @@ class NativeAccessTests(Fixture, Base):
         self.assertTrue((folder / 'stewart/readiness.json').is_file())
         self.assertIn('native-access/', result['record']['files'])
         # Hook trust is not recorded here; native access is still its own passing fact.
-        self.assertEqual(result['checks']['hook-trust:legacy-codex']['status'], 'not-established')
+        self.assertEqual(result['checks']['hook-trust:berman-codex']['status'], 'not-established')
         check = self.verify(native=native, skip=verify.SKIPPABLE)['checks']['native-access']
         self.assertEqual((check['status'], check['details']['evidence'], check['details']['retained']), ('passed', None, False))
         self.assertIn('evidence not retained', check['summary'])
@@ -622,7 +617,7 @@ class NativeAccessTests(Fixture, Base):
 
 
 class UnusedAdapterTests(Fixture, unittest.TestCase):
-    """Stewart alone: berman-codex serves no configured connection, so its gaps are optional."""
+    """Stewart alone on berman-codex: berman-claude serves no configured connection, so its gaps are optional."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -634,22 +629,25 @@ class UnusedAdapterTests(Fixture, unittest.TestCase):
         workspace(self.root, self.base, self.base / 'stewart')
         self.store = Store(self.root)
         self.code()
-        self.trust(captures=('legacy-codex',))
+        self.trust()
+        self.basis('berman-claude', successful_capture=None)
 
     def test_capture_gap_for_unused_adapter_is_optional(self):
         result = self.verify(native=passing)
-        native = result['checks']['native-capture:berman-codex']
-        self.assertEqual((native['status'], native['required'], native['details']['used_by']), ('not-established', False, []))
-        self.assertEqual(result['checks']['hook-trust:berman-codex']['required'], False)
-        self.assertEqual((result['verdict'], result['not_established']), ('passed', ['native-capture:berman-codex']))
+        trust = result['checks']['hook-trust:berman-claude']
+        self.assertEqual((trust['status'], trust['required'], trust['details']['used_by']), ('not-established', False, []))
+        self.assertEqual(result['checks']['native-capture:berman-claude']['required'], False)
+        self.assertEqual(result['checks']['hook-trust:berman-codex']['required'], True)
+        self.assertEqual((result['verdict'], result['not_established']),
+                         ('passed', ['hook-trust:berman-claude', 'native-capture:berman-claude']))
         text = verify.render(result)
         self.assertIn('not established (optional)', text)
-        self.assertIn('Not established: native-capture:berman-codex (optional)', text)
+        self.assertIn('Not established: hook-trust:berman-claude (optional), native-capture:berman-claude (optional)', text)
         self.assertEqual(self.verify()['verdict'], 'incomplete')
 
 
 class MaintainedAdapterTests(Fixture, unittest.TestCase):
-    """A workspace that selects berman-codex keeps one adapter per harness and nothing named legacy."""
+    """One adapter per harness, and the settings an adopted installation uses."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -659,7 +657,7 @@ class MaintainedAdapterTests(Fixture, unittest.TestCase):
         self.home.mkdir()
         (self.base / 'stewart').mkdir()
         workspace(self.root, self.base, self.base / 'stewart')
-        self.configure(lambda c: c['connections']['stewart'].update(capture='berman-codex'))
+        self.store = Store(self.root)
         self.code()
         self.trust(captures=('berman-codex',))
 
@@ -669,23 +667,20 @@ class MaintainedAdapterTests(Fixture, unittest.TestCase):
         write(self.root / 'berman.json', config)
         self.store = Store(self.root)
 
-    def test_compatibility_adapter_is_neither_reported_nor_renewed(self):
-        self.assertEqual(adapters.maintained(self.store), ['berman-codex', 'berman-claude'])
+    def test_only_the_two_adapters_are_reported_and_renewed(self):
+        self.assertEqual(list(adapters.ADAPTERS), ['berman-codex', 'berman-claude'])
         checks = self.verify(native=passing)['checks']
-        self.assertFalse(any('legacy-codex' in name for name in checks))
+        self.assertEqual([name for name in checks if ':' in name],
+                         ['hook-trust:berman-codex', 'native-capture:berman-codex',
+                          'hook-trust:berman-claude', 'native-capture:berman-claude'])
         self.assertEqual([checks[n]['required'] for n in ('hook-trust:berman-codex', 'hook-trust:berman-claude')],
                          [True, False])
-        legacy = self.root / 'hooks/verification/routed-legacy-codex.json'
-        legacy.unlink()
         evidence = self.base / 'hooks.terminal'
         evidence.write_text('Fixture /hooks review record\n')
         written = adapters.record_trust(self.store, evidence, 'fixture statement')['bases']
         self.assertEqual(written, [str(self.root / 'hooks/verification/berman-codex.json')])
-        self.assertFalse(legacy.exists())
-        # A connection that still selects it keeps both reported and renewed.
-        self.configure(lambda c: c['connections']['stewart'].update(capture='legacy-codex'))
-        self.assertEqual(adapters.maintained(self.store), ['legacy-codex', 'berman-codex', 'berman-claude'])
-        self.assertEqual(len(adapters.record_trust(self.store, evidence, 'fixture statement')['bases']), 2)
+        # The removed adapter's basis, where an older installation left one, is never written.
+        self.assertFalse((self.root / 'hooks/verification/routed-legacy-codex.json').exists())
 
     def test_declared_adapters_are_required_while_no_connection_selects_them(self):
         self.configure(lambda c: c.update(qualified_adapters=['berman-claude']))

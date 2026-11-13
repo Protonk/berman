@@ -8,7 +8,6 @@ import tempfile
 
 from berman import files
 from berman.files import Decision, keep, read, write
-from berman._legacy.api import MARKER
 from berman import recovery as fieldwork
 
 
@@ -118,7 +117,9 @@ def prepare(store, record):
         template = record['connection']['revision_template']
     else:
         template = store.connection(store.legacy_connection).definition['revision']
-    capture_record = record.get('capture') or {'marker': MARKER, 'layout': 'legacy'}
+    capture_record = record.get('capture')
+    if not capture_record:
+        raise Decision(f'{run}: the reservation names no capture adapter; it predates the current adapters and cannot be prepared')
     metadata = record['recipe']['metadata']
     protocol = metadata.get('recording_protocol')
     if protocol is None:

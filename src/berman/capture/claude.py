@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 
 from berman import files
-from berman.capture.runtime import LegacyCollector
+from berman.capture.runtime import Routed, capture as frozen
 from berman._legacy.api import RUN
 
 ADAPTER = 'berman-claude'
@@ -64,7 +64,7 @@ def render(data):
     return ('\n'.join(lines) + '\n').encode(), messages, malformed, identities
 
 
-class ClaudeCollector(LegacyCollector):
+class ClaudeCollector(Routed, frozen.Collector):
     adapter = ADAPTER
     marker = MARKER
 

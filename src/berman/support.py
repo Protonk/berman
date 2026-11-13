@@ -156,11 +156,9 @@ def installation(store, adapter, harness):
             'codex_config_sha256': codex_config(store), 'readiness_at_preparation': readiness}
 
 
-def instructions(packet, layout, token):
-    placeholders = (f'`{packet}/notes/` is an unused layout placeholder.' if layout == 'notes' else
-                    f'`{packet}/narrative.md` and `{packet}/scratch/` are unused layout placeholders.')
+def instructions(packet, token):
     return ('This is a one-response infrastructure support trial, not a research engagement.\n'
-            f'{placeholders}\n'
+            f'`{packet}/notes/` is an unused layout placeholder.\n'
             'No fieldwork notes, development, other file inspection or extra tool use is requested.\n'
             f'After reading these instructions, reply exactly {token} and stop.\n')
 
@@ -238,12 +236,10 @@ def prepare(store, path, adapter, harness=None):
         files.safe_directory(project)
         subprocess.run(['git', '-C', str(project), 'init', '-q'], check=True, capture_output=True)
         source = folder / 'SUPPORT-INSTRUCTIONS.txt'
-        keep(source, instructions(packet, a['layout'], trial['expected_reply']).encode())
+        keep(source, instructions(packet, trial['expected_reply']).encode())
         if not packet.exists():
-            notes = a['layout'] == 'notes'
             fieldwork.prepare(store.collector_for(record), run, ASSIGNMENT, project, REVISION.format(adapter=adapter),
-                              ['notes'] if notes else ['narrative', 'scratch'], source,
-                              recording_protocol=fieldwork.SUPPORT_PROTOCOL if notes else None, marker=a['marker'],
+                              ['notes'], source, recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=a['marker'],
                               layout=a['layout'], connection=fieldwork.SUPPORT_CONNECTION)
         harness.install_profile(run, project, folder)
         trial.update(phase='prepared', prepared_at_utc=files.now(), instructions=source.name, argv=command(store, record))

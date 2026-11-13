@@ -16,10 +16,10 @@ from berman.records import Decision, Store
 from berman.installation import PACKAGE as ROOT
 from berman import files
 from berman.files import read, write
-from berman._legacy.api import MARKER
+from berman.capture.collector import MARKER
 from berman.workflow import Workflow
 from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
-from tests.support.workspace import FixtureHarness, git_repository, workspace, legacy_hooks, legacy_basis
+from tests.support.workspace import FixtureHarness, git_repository, workspace, direct_hooks
 from berman.capture import adapters
 from berman.capture import collector as capture_collector
 from berman import recovery as fieldwork
@@ -74,7 +74,6 @@ class Base(unittest.TestCase):
         self.store = Store(self.root)
         self.harness = FixtureHarness(self.store)
         self.workflow = Workflow(self.store, self.harness)
-        self.legacy = self.store.collectors['legacy-codex']
         self.berman = self.store.collectors['berman-codex']
 
     def start(self, run, collector, prompt=None, stop=True, sid=None):
@@ -85,8 +84,7 @@ class Base(unittest.TestCase):
                 {'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'text': 'done'}]}}]
         source.write_text(''.join(json.dumps(r) + '\n' for r in rows))
         event = {'session_id': sid, 'transcript_path': str(source), 'turn_id': 'one'}
-        marker = MARKER if collector is self.legacy else capture_collector.MARKER
-        collector.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=prompt or marker + run))
+        collector.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=prompt or MARKER + run))
         if stop:
             collector.hook(dict(event, hook_event_name='Stop'))
         return source, event
@@ -99,9 +97,9 @@ class Base(unittest.TestCase):
 
 
 class RenderingBaselineTests(unittest.TestCase):
-    """Complete rendered packets match the pre-refactor baseline, except the fixture base path."""
+    """Complete rendered packets match the saved baseline, except the fixture base path."""
 
-    def render(self, legacy_input):
+    def render(self):
         inputs = read(BASELINE / 'inputs.json')
         with tempfile.TemporaryDirectory(prefix='berman-render-') as temporary:
             base = Path(temporary).resolve()
@@ -118,17 +116,7 @@ class RenderingBaselineTests(unittest.TestCase):
             (base / 'codex').mkdir()
             root = base / 'berman'
             workspace(root, base, project, documents=sorted(inputs['documents']))
-            # Both formats render the same synthetic connection and instructions.
-            if legacy_input:
-                real = read(root / 'berman.json')
-                plan = read(root / 'plans/stewart-fieldwork-roles/plan.json')
-                write(root / 'berman.json', {
-                    'schema': 'berman.configuration/1', 'project': str(project), 'fieldwork': str(base / 'fieldwork'),
-                    'codex_home': str(base / 'codex'), 'python': real['python'], 'codex': real['codex'],
-                    'sequence_after': 'run-000', 'support_collections': [], 'sequence': plan['steps'],
-                    'commitment': plan['commitment'], 'documents': sorted(inputs['documents'])})
             store = Store(root)
-            self.assertEqual(store.legacy_input, legacy_input)
             workflow = Workflow(store, FixtureHarness(store))
             rendered = {}
 
@@ -152,8 +140,8 @@ class RenderingBaselineTests(unittest.TestCase):
             keep(workflow.new())
             return inputs, rendered
 
-    def compare(self, legacy_input):
-        inputs, rendered = self.render(legacy_input)
+    def compare(self):
+        inputs, rendered = self.render()
         self.assertEqual(set(rendered), set(inputs['runs']))
         for name, files in rendered.items():
             self.assertEqual(files['run'], inputs['runs'][name])
@@ -163,10 +151,14 @@ class RenderingBaselineTests(unittest.TestCase):
                     self.assertEqual(files[f], (BASELINE / name / f).read_text())
 
     def test_workspace_configuration_renders_the_baseline_byte_for_byte(self):
-        self.compare(legacy_input=False)
+        self.compare()
 
-    def test_legacy_configuration_remains_a_supported_input(self):
-        self.compare(legacy_input=True)
+    def test_the_single_project_configuration_is_refused_with_its_replacement(self):
+        with tempfile.TemporaryDirectory(prefix='berman-old-format-') as temporary:
+            root = Path(temporary).resolve()
+            write(root / 'berman.json', {'schema': 'berman.configuration/1', 'project': str(root / 'project')})
+            with self.assertRaisesRegex(ValueError, 'berman.workspace/1'):
+                Store(root)
 
     def test_recipe_placeholder_is_resolved_in_the_saved_baseline(self):
         repeat = (BASELINE / 'work-accounts/INSTRUCTIONS.md').read_text()
@@ -177,7 +169,7 @@ class RenderingBaselineTests(unittest.TestCase):
 class SecondConnectionTests(Base):
     def test_lifecycle_keeps_documents_instructions_plans_and_sessions_separate(self):
         stewart = self.workflow.new()
-        stewart_source, stewart_event = self.start(stewart['run'], self.legacy)
+        stewart_source, stewart_event = self.start(stewart['run'], self.berman)
         self.assertEqual(stewart['connection'], 'stewart')
         one = self.workflow.new(connection='orchard')
         self.assertEqual((stewart['run'], one['run']), ('run-001', 'run-002'))
@@ -212,7 +204,7 @@ class SecondConnectionTests(Base):
                                                                            'content': [{'text': 'later'}]}}) + '\n')
         self.berman.hook(dict(orchard_event, hook_event_name='Stop'))
         self.assertEqual(read(packet / 'session/capture.json')['saved_bytes'], orchard_source.stat().st_size)
-        self.legacy.hook(dict(stewart_event, hook_event_name='Stop'))
+        self.berman.hook(dict(stewart_event, hook_event_name='Stop'))
         self.assertTrue((self.store.field / stewart['run'] / 'session/capture.json').exists())
         self.store.collectors['berman-codex'].command('finalize', one['run'])
         with orchard_source.open('a') as stream:
@@ -253,7 +245,7 @@ class SecondConnectionTests(Base):
         support = self.root / 'support-trial'
         write(support / 'source-layout.json', {'runs': [{'run': 'run-900101', 'current_root': 'runs/run-900101'}]})
         write(support / 'runs/run-900101/session/binding.json', {'run': 'run-900101', 'session_id': 'support-session'})
-        write(self.home / 'stewart-fieldwork/support-session.json', {'run': 'run-900101', 'session_id': 'support-session'})
+        write(self.home / 'berman-capture/support-session.json', {'run': 'run-900101', 'session_id': 'support-session'})
         self.store.catalogue.support = ['support-trial']
         for _ in range(2):
             row = self.workflow.new(connection='orchard')
@@ -264,9 +256,12 @@ class SecondConnectionTests(Base):
         self.assertIn('sequence is complete', status['connections']['orchard']['next_recipe'])
         self.assertEqual(self.workflow.new()['run'], 'run-003')
         # Within Stewart, a started run without a plan association still needs an explicit relationship.
-        fieldwork.prepare(self.legacy, 'run-010', 'Unplanned', self.store.connections['stewart'].checkout, 'fixture',
-                          ['narrative', 'scratch'])
-        self.start('run-010', self.legacy)
+        instructions = self.base / 'unplanned-instructions.md'
+        instructions.write_text(f'Write accounts in `{self.store.field}/run-010/notes/`.\n')
+        fieldwork.prepare(self.berman, 'run-010', 'Unplanned', self.store.connections['stewart'].checkout, 'fixture',
+                          ['notes'], instructions, marker=MARKER, connection='stewart')
+        # A session bound outside any reservation: the collector itself would refuse it without a record.
+        write(self.store.field / 'run-010/session/binding.json', {'run': 'run-010', 'session_id': 'unplanned-session'})
         with self.assertRaisesRegex(Decision, 'began outside the recorded research plan'):
             self.store.connections['stewart'].plan.next_step(self.store.discover())
 
@@ -414,11 +409,9 @@ class AccessTests(Base):
 
 
 class CollectorOwnershipTests(Base):
-    def test_legacy_collector_bytes_are_frozen_and_match_their_basis(self):
+    def test_frozen_collector_bytes_are_unchanged(self):
         digest = files.digest((ROOT / '_legacy/capture_session.py').read_bytes())
         self.assertEqual(digest, 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99')
-        self.assertEqual(legacy_basis()['implementation_sha256'],
-                         {'_legacy/capture_session.py': digest})
         self.assertEqual(read(BASELINE / 'inputs.json')['implementation_sha256']['capture_session.py'], digest)
         self.assertNotIn(b'berman_collector', (ROOT / '_legacy/capture_session.py').read_bytes())
 
@@ -426,16 +419,19 @@ class CollectorOwnershipTests(Base):
         one = self.workflow.new(connection='orchard')
         opening = (Path(one['packet']) / 'ASSIGNMENT.md').read_text()
         event = {'session_id': 'mixed-up', 'transcript_path': None, 'turn_id': 'one', 'hook_event_name': 'UserPromptSubmit'}
-        self.assertEqual(self.legacy.hook(dict(event, prompt=opening)), {})
+        # The frozen file is still shipped and can be run directly; it must never bind a current packet.
+        frozen = capture_collector.capture.Collector(self.store.field, self.home, self.root)
+        frozen_marker = capture_collector.capture.MARKER
+        self.assertEqual(frozen.hook(dict(event, prompt=opening)), {})
         self.assertFalse((self.home / 'stewart-fieldwork/mixed-up.json').exists())
         # The notes layout has no narrative.md, so the frozen run_path check refuses registration.
         with self.assertRaisesRegex(OSError, 'narrative.md'):
-            self.legacy.hook(dict(event, prompt=MARKER + one['run']))
+            frozen.hook(dict(event, prompt=frozen_marker + one['run']))
         # Through the installed hook command, that refusal becomes a message and never a binding.
         hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / '_legacy/capture_session.py'), 'hook',
                                '--fieldwork-root', str(self.store.field), '--analysis-root', str(self.root),
                                '--codex-home', str(self.home)],
-                              input=json.dumps(dict(event, prompt=MARKER + one['run'])),
+                              input=json.dumps(dict(event, prompt=frozen_marker + one['run'])),
                               capture_output=True, text=True, env=dict(os.environ, CODEX_HOME=str(self.home)))
         self.assertIn('narrative.md', json.loads(hook.stdout)['systemMessage'])
         hook = subprocess.run([sys.executable, '-I', '-B', str(ROOT / '_legacy/capture_session.py'), 'hook',
@@ -446,17 +442,37 @@ class CollectorOwnershipTests(Base):
         self.assertFalse((Path(one['packet']) / 'session').exists())
         self.assertFalse((self.home / 'stewart-fieldwork/mixed-up.json').exists())
 
-    def test_new_collector_refuses_legacy_packets_and_legacy_claimed_sessions(self):
+    def test_a_run_recorded_with_the_removed_adapter_is_never_captured_or_operated_on(self):
         stewart = self.workflow.new()
-        self.start(stewart['run'], self.legacy, sid='shared-session')
+        record = read(self.store.folder(stewart['run']) / 'operation.json')
+        record['capture']['adapter'] = 'legacy-codex'  # As runs reserved before 0.4 recorded it.
+        write(self.store.folder(stewart['run']) / 'operation.json', record)
         with self.assertRaisesRegex(ValueError, 'not assigned to the berman-collector/1 collector'):
             self.berman.hook({'session_id': 'other', 'turn_id': 'x', 'hook_event_name': 'UserPromptSubmit',
-                              'prompt': capture_collector.MARKER + stewart['run']})
-        one = self.workflow.new(connection='orchard')
-        with self.assertRaisesRegex(ValueError, 'already belongs to the other collector for run-001'):
-            self.berman.hook({'session_id': 'shared-session', 'turn_id': 'two', 'hook_event_name': 'UserPromptSubmit',
-                              'prompt': capture_collector.MARKER + one['run']})
-        self.assertFalse((Path(one['packet']) / 'session').exists())
+                              'prompt': MARKER + stewart['run']})
+        self.assertFalse((Path(stewart['packet']) / 'session').exists())
+        self.assertEqual(self.store.adapter(self.store.record(stewart['run'])), 'legacy-codex')
+        with self.assertRaisesRegex(Decision, 'removed legacy-codex adapter'):
+            self.store.collector_for(self.store.record(stewart['run']))
+        # Low-level recovery acts only through a record that names a current adapter.
+        def recover(run):
+            return subprocess.run([sys.executable, '-I', '-B', '-m', 'berman.recovery', '--fieldwork-root', str(self.store.field),
+                                   '--analysis-root', str(self.root), '--codex-home', str(self.home), 'status', run],
+                                  capture_output=True, text=True)
+        refused = recover(stewart['run'])
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('removed legacy-codex adapter', refused.stderr)
+        unrecorded = recover('run-777')
+        self.assertEqual(unrecorded.returncode, 1)
+        self.assertIn('run-777 has no operation record', unrecorded.stderr)
+        orchard_run = self.workflow.new(connection='orchard')
+        self.assertEqual(json.loads(recover(orchard_run['run']).stdout)['state'], 'prepared')
+        # A workspace that still selects it is told what to select instead.
+        config = read(self.root / 'berman.json')
+        config['connections']['stewart']['capture'] = 'legacy-codex'
+        write(self.root / 'berman.json', config)
+        with self.assertRaisesRegex(ValueError, 'removed; set the capture of connection stewart to berman-codex'):
+            Store(self.root)
 
     def test_new_collector_routes_through_records_and_ignores_other_workspaces(self):
         one = self.workflow.new(connection='orchard')
@@ -472,26 +488,26 @@ class CollectorOwnershipTests(Base):
 
     def test_installation_waits_for_closed_captures_and_trust_needs_a_recorded_review(self):
         (self.root / 'hooks').mkdir(exist_ok=True)
-        write(self.root / 'hooks/fieldwork.hooks.json', legacy_hooks())
         write(self.root / 'hooks/berman-capture.hooks.json', adapters.definition(self.store, 'berman-codex'))
-        legacy_definition = legacy_hooks()
-        original_hooks = json.loads(json.dumps(legacy_definition))
+        # Direct collector handlers left by an installation that predates the router.
+        direct_definition = direct_hooks()
+        original_hooks = json.loads(json.dumps(direct_definition))
         unrelated = {'type': 'command', 'command': '/bin/true', 'timeout': 1}
         original_hooks['hooks']['Stop'][0]['hooks'].append(unrelated)
         write(self.home / 'hooks.json', original_hooks)
         stewart = self.workflow.new()
-        source, event = self.start(stewart['run'], self.legacy, stop=False)
+        source, event = self.start(stewart['run'], self.berman, stop=False)
         with self.assertRaisesRegex(Decision, 'requires closed captures'):
             adapters.install(self.store, 'berman-codex')
-        self.legacy.hook(dict(event, hook_event_name='Stop'))
+        self.berman.hook(dict(event, hook_event_name='Stop'))
         with self.assertRaisesRegex(Decision, 'requires closed captures'):
             adapters.install(self.store, 'berman-codex')
         self.workflow.finish('Fixture session concluded', stewart['run'])
         receipt = adapters.install(self.store, 'berman-codex')
-        self.assertEqual(receipt['registrations_at_installation'][0]['collector'], 'legacy-codex')
+        self.assertEqual(receipt['registrations_at_installation'][0]['collector'], 'berman-codex')
         installed = read(self.home / 'hooks.json')
         self.assertIn({'hooks': [unrelated]}, installed['hooks']['Stop'])
-        for event_name, groups in legacy_definition['hooks'].items():
+        for event_name, groups in direct_definition['hooks'].items():
             self.assertTrue(all(g not in installed['hooks'][event_name] for g in groups))
         self.assertEqual(adapters.install(self.store, 'berman-codex')['state'], 'already-installed')
         with self.assertRaisesRegex(Decision, 'no recorded CLI trust review'):
@@ -499,9 +515,8 @@ class CollectorOwnershipTests(Base):
         evidence = self.base / 'hooks.terminal'
         evidence.write_text('Fixture /hooks review record\n')
         recorded = adapters.record_trust(self.store, evidence, 'fixture review')
-        self.assertEqual(len(recorded['bases']), 2)
+        self.assertEqual(recorded['bases'], [str(self.root / 'hooks/verification/berman-codex.json')])
         self.assertEqual(adapters.readiness(self.store, 'berman-codex')['adapter'], 'berman-codex')
-        self.assertEqual(adapters.readiness(self.store, 'legacy-codex')['adapter'], 'legacy-codex')
         # Any later change to the installed file needs another recorded review.
         installed['hooks']['Stop'].append({'hooks': [{'type': 'command', 'command': '/bin/true', 'timeout': 1}]})
         write(self.home / 'hooks.json', installed)
@@ -553,7 +568,7 @@ class ConcurrencyTests(Base):
         self.assertEqual({results['stewart']['run'], results['orchard']['run']}, {'run-001', 'run-002'})
 
     def test_simultaneous_finishes_retain_every_inventory_entry(self):
-        stewart = self.workflow.new(); self.start(stewart['run'], self.legacy)
+        stewart = self.workflow.new(); self.start(stewart['run'], self.berman)
         one = self.workflow.new(connection='orchard'); self.start(one['run'], self.berman)
         barrier = threading.Barrier(2, timeout=10)
         verify = fieldwork.verify_moved
@@ -579,20 +594,20 @@ class ConcurrencyTests(Base):
         self.assertEqual(sorted(r['run'] for r in read(self.root / 'source-layout.json')['runs']), ['run-001', 'run-002'])
 
     def test_preserving_one_run_does_not_skip_another_sessions_callbacks(self):
-        first = self.workflow.new(); self.start(first['run'], self.legacy)
+        first = self.workflow.new(); self.start(first['run'], self.berman)
         second = self.workflow.new(keep_open=True)
-        source, event = self.start(second['run'], self.legacy, stop=False)
+        source, event = self.start(second['run'], self.berman, stop=False)
         entry = fieldwork.migration_entry
         observed = {}
         def during_inventory(root, run, destination):
             # A live session's callback arrives while the other packet is inventoried and hashed.
-            observed['hook'] = self.legacy.hook(dict(event, hook_event_name='Stop'))
+            observed['hook'] = self.berman.hook(dict(event, hook_event_name='Stop'))
             return entry(root, run, destination)
         with mock.patch.object(fieldwork, 'migration_entry', side_effect=during_inventory):
             self.workflow.finish('First engagement ended', first['run'])
         self.assertEqual(observed['hook'], {})
         self.assertEqual(read(self.store.field / second['run'] / 'session/capture.json')['event'], 'Stop')
-        self.assertFalse(read(self.home / f'stewart-fieldwork/{event["session_id"]}.json')['active_turn'])
+        self.assertFalse(read(self.home / f'berman-capture/{event["session_id"]}.json')['active_turn'])
 
     def test_contention_names_the_occupied_run(self):
         one = self.workflow.new(connection='orchard')
@@ -623,7 +638,7 @@ class ArchiveEditionTests(Base):
             path.write_text(f'Fixture framing: {name}\n')
         for name in ('AGENTS.md', '.gitignore'):
             (self.root / name).write_text('Fixture support file.\n')
-        stewart = self.workflow.new(); self.start(stewart['run'], self.legacy)
+        stewart = self.workflow.new(); self.start(stewart['run'], self.berman)
         self.workflow.finish('Stewart engagement ended')
         one = self.workflow.new(connection='orchard')
         self.start(one['run'], self.berman, prompt=(Path(one['packet']) / 'ASSIGNMENT.md').read_text())

@@ -54,7 +54,7 @@ class Terminal(io.StringIO):
 
 
 class SupportBase(Fixture, Base):
-    """Stewart on legacy-codex and orchard on berman-codex, with the router installed and reviewed."""
+    """Stewart and orchard on berman-codex, with the router installed and reviewed."""
 
     def setUp(self):
         super().setUp()
@@ -67,7 +67,7 @@ class SupportBase(Fixture, Base):
     def folder(self, name='trial'):
         return self.root / 'experiments' / name
 
-    def prepare(self, name='trial', adapter='legacy-codex'):
+    def prepare(self, name='trial', adapter='berman-codex'):
         return support.prepare(self.store, f'experiments/{name}', adapter, FakeCodex(self.store))
 
     def launch(self, name='trial'):
@@ -96,7 +96,7 @@ class SupportBase(Fixture, Base):
             results.append(route(dict(event, hook_event_name=name, **extra), self.home, self.root))
         return event, results
 
-    def collected(self, name='trial', adapter='legacy-codex'):
+    def collected(self, name='trial', adapter='berman-codex'):
         trial = self.prepare(name, adapter)
         self.launch(name)
         self.session(trial)
@@ -112,14 +112,14 @@ class ReservationTests(SupportBase):
         marker = read(self.store.folder('run-900101') / 'operation.json')
         self.assertEqual(set(marker), MARKER_KEYS)
         self.assertEqual((marker['purpose'], marker['phase'], marker['support_trial'], marker['capture']['adapter']),
-                         ('support-trial', 'support-trial', 'experiments/trial/trial.json', 'legacy-codex'))
+                         ('support-trial', 'support-trial', 'experiments/trial/trial.json', 'berman-codex'))
         self.assertEqual(marker['harness']['profile'], trial['profile'])
         self.assertEqual(trial['codex_version'], 'codex-cli 0.0.0-fixture')
         self.assertTrue(trial['readiness_at_preparation']['ready'])
         packet = Path(trial['packet'])
         self.assertEqual(packet, self.store.field / 'run-900101')
-        self.assertEqual(read(packet / 'run.json')['schema'], 'stewart.run-preparation/1')
-        self.assertTrue((packet / 'ASSIGNMENT.md').read_text().startswith('Stewart-Fieldwork-Run: run-900101\n'))
+        self.assertEqual(read(packet / 'run.json')['schema'], 'berman.run-preparation/1')
+        self.assertTrue((packet / 'ASSIGNMENT.md').read_text().startswith('Berman-Fieldwork-Run: run-900101\n'))
         self.assertIn('reply exactly BERMAN_SUPPORT_TRIAL_OK_900101', (packet / 'INSTRUCTIONS.md').read_text())
         self.assertEqual((self.home / (trial['profile'] + '.config.toml')).read_bytes(),
                          (self.folder() / 'profile.config.toml').read_bytes())
@@ -172,9 +172,7 @@ class ReservationTests(SupportBase):
                 self.prepare()
         self.assertEqual(read(self.folder() / 'trial.json')['phase'], 'reserved')
         self.assertEqual(self.workflow.status()['support_trials'][0]['next'],
-                         'berman support-trial prepare --evidence experiments/trial --adapter legacy-codex')
-        with self.assertRaisesRegex(Decision, 'phase reserved'):
-            self.prepare(adapter='berman-codex')
+                         'berman support-trial prepare --evidence experiments/trial --adapter berman-codex')
         self.assertEqual(self.prepare()['run'], 'run-900101')
         with self.assertRaisesRegex(Decision, 'prepared once'):
             self.prepare()
@@ -191,10 +189,10 @@ class ReservationTests(SupportBase):
         self.assertEqual(list(self.folder('orphan').iterdir()), [])
         orphan = next(t for t in self.workflow.status()['support_trials'] if t['run'] == 'run-900102')
         self.assertIn('names experiments/orphan/trial.json, which was never written', orphan['problems'][0])
-        self.assertEqual(orphan['next'], 'berman support-trial prepare --evidence experiments/orphan --adapter legacy-codex, '
+        self.assertEqual(orphan['next'], 'berman support-trial prepare --evidence experiments/orphan --adapter berman-codex, '
                                          'which resumes run-900102')
-        with self.assertRaisesRegex(Decision, 'reserved for legacy-codex in this folder, not berman-codex'):
-            self.prepare('orphan', 'berman-codex')
+        with self.assertRaisesRegex(Decision, 'reserved for berman-codex in this folder, not berman-claude'):
+            support.prepare(self.store, 'experiments/orphan', 'berman-claude', FakeCodex(self.store))
         self.assertEqual(self.prepare('orphan')['run'], 'run-900102')
         self.assertEqual(self.prepare('another')['run'], 'run-900103')
         # A folder holding anything is never removed to resume a marker.
@@ -248,7 +246,7 @@ class ReservationTests(SupportBase):
                                 lambda: support.collect(self.store, rel, 'reason'),
                                 lambda: support.launch(self.store, rel),
                                 lambda: support.record_capture(self.store, rel),
-                                lambda: support.prepare(self.store, rel, 'legacy-codex', FakeCodex(self.store))):
+                                lambda: support.prepare(self.store, rel, 'berman-codex', FakeCodex(self.store))):
                     with self.subTest(message=message), self.assertRaisesRegex(Decision, re.escape(message)):
                         command()
             execv.assert_not_called()
@@ -265,7 +263,7 @@ class ReservationTests(SupportBase):
         for path in ('runs/x', 'experiments', 'experiments/x/collection/y', '../outside', 'experiments/collection',
                      'experiments/older/again', 'experiments/older/control-scripts/x', 'experiments/T/unused-packet/x'):
             with self.subTest(path=path), self.assertRaises(Decision):
-                support.prepare(self.store, path, 'legacy-codex', FakeCodex(self.store))
+                support.prepare(self.store, path, 'berman-codex', FakeCodex(self.store))
         self.assertEqual([p.name for p in self.folder('older').iterdir()], ['control-scripts'])
         self.folder('taken').mkdir(parents=True)
         with self.assertRaisesRegex(Decision, 'already exists'):
@@ -413,7 +411,7 @@ class LaunchTests(SupportBase):
 
 
 class CollectionTests(SupportBase):
-    def test_both_adapters_register_through_the_router_and_collect_into_the_trial_folder(self):
+    def test_the_codex_adapter_registers_through_the_router_and_collects_into_the_trial_folder(self):
         catalogue = self.root / 'connections/catalogue.json'
         for number, adapter in enumerate((n for n, a in adapters.ADAPTERS.items() if a['harness'] == 'codex'), 1):
             with self.subTest(adapter=adapter):
@@ -423,8 +421,7 @@ class CollectionTests(SupportBase):
                 self.launch(name)
                 event, results = self.session(trial)
                 self.assertEqual(results, [{}, {}, {}])
-                state = read(self.home / ('stewart-fieldwork' if adapter == 'legacy-codex' else 'berman-capture')
-                             / (event['session_id'] + '.json'))
+                state = read(self.home / 'berman-capture' / (event['session_id'] + '.json'))
                 self.assertEqual((state['run'], state['workspace']), (run, str(self.root)))
                 collected = support.collect(self.store, f'experiments/{name}')
                 folder = self.folder(name)
@@ -607,7 +604,7 @@ class CollectionTests(SupportBase):
 
 
 class CleanupTests(SupportBase):
-    STATE = {'legacy-codex': 'stewart-fieldwork', 'berman-codex': 'berman-capture'}
+    STATE = {'berman-codex': 'berman-capture'}
 
     def test_cleanup_retires_the_registration_keeps_the_profile_and_removes_an_empty_project(self):
         for adapter in (n for n, a in adapters.ADAPTERS.items() if a['harness'] == 'codex'):
@@ -694,7 +691,7 @@ class CleanupTests(SupportBase):
         self.assertEqual((result['phase'], result['open_turn_at_retirement'], result['empty_disposable_project_removed']),
                          ('cleaned', support.OPEN_TURN, trial['project']))
         self.assertEqual(read(self.folder() / 'cleanup.json')['open_turn_at_retirement'], support.OPEN_TURN)
-        self.assertTrue(read(self.home / self.STATE['legacy-codex'] / (event['session_id'] + '.json'))['retired'])
+        self.assertTrue(read(self.home / self.STATE['berman-codex'] / (event['session_id'] + '.json'))['retired'])
         self.assertFalse(Path(trial['project']).exists())
         self.assertEqual(self.workflow.status()['support_trials'], [])
         self.assertEqual(route(dict(event, hook_event_name='SessionEnd'), self.home, self.root), {})
@@ -721,32 +718,32 @@ class CleanupTests(SupportBase):
 
 
 class RecordCaptureTests(SupportBase):
-    def basis_path(self, adapter='legacy-codex'):
+    def basis_path(self, adapter='berman-codex'):
         return self.root / adapters.ADAPTERS[adapter]['basis']
 
     def test_record_capture_links_a_verified_trial_for_the_same_bytes(self):
         collected = self.collected()
         path = self.basis_path()
-        before, other = path.read_bytes(), self.basis_path('berman-codex').read_bytes()
-        self.assertIsNone(adapters.native_capture(self.store, 'legacy-codex'))
-        ready = adapters.readiness(self.store, 'legacy-codex')
+        before, other = path.read_bytes(), self.basis_path('berman-claude').read_bytes()
+        self.assertIsNone(adapters.native_capture(self.store, 'berman-codex'))
+        ready = adapters.readiness(self.store, 'berman-codex')
         result = support.record_capture(self.store, 'experiments/trial')
         self.assertEqual(result['state'], 'recorded')
         expected = {'path': 'experiments/trial/collection/runs/run-900101/session/captures.jsonl',
                     'required_events': ['Stop', 'SessionEnd'], 'run': 'run-900101', 'session_id': collected['session_id'],
                     'trial_receipt': 'experiments/trial/trial.json',
-                    'implementation_sha256': adapters.implementation('legacy-codex'),
+                    'implementation_sha256': adapters.implementation('berman-codex'),
                     'basis': support.CAPTURE_BASIS}
         basis = read(path)
         self.assertEqual(basis['successful_capture'], expected)
         self.assertIn('support run-900101', basis['meaning'])
         self.assertEqual(list(basis), list(json.loads(before)))
-        history = sorted((path.parent / 'history').glob('routed-legacy-codex-before-capture-*.json'))
+        history = sorted((path.parent / 'history').glob('berman-codex-before-capture-*.json'))
         self.assertEqual([p.read_bytes() for p in history], [before])
-        self.assertEqual(adapters.native_capture(self.store, 'legacy-codex')['run'], 'run-900101')
+        self.assertEqual(adapters.native_capture(self.store, 'berman-codex')['run'], 'run-900101')
         self.assertEqual(result['native_capture']['trial_receipt'], 'experiments/trial/trial.json')
-        self.assertEqual(adapters.readiness(self.store, 'legacy-codex'), dict(ready, meaning=basis['meaning']))
-        self.assertEqual(self.basis_path('berman-codex').read_bytes(), other)
+        self.assertEqual(adapters.readiness(self.store, 'berman-codex'), dict(ready, meaning=basis['meaning']))
+        self.assertEqual(self.basis_path('berman-claude').read_bytes(), other)
         self.assertEqual(support.record_capture(self.store, 'experiments/trial')['state'], 'already-recorded')
         self.assertEqual(len(list((path.parent / 'history').glob('*-before-capture-*.json'))), 1)
         self.assertEqual(self.workflow.status()['support_trials'][0]['next'],
@@ -764,7 +761,7 @@ class RecordCaptureTests(SupportBase):
         self.collected()
         path, folder = self.basis_path(), self.folder()
         original = read(path)
-        self.basis('legacy-codex', implementation_sha256=dict(original['implementation_sha256'],
+        self.basis('berman-codex', implementation_sha256=dict(original['implementation_sha256'],
                                                               **{'_legacy/capture_session.py': '0' * 64}))
         with self.assertRaisesRegex(Decision, 'with berman capture record-trust first'):
             support.record_capture(self.store, 'experiments/trial')
@@ -783,7 +780,7 @@ class RecordCaptureTests(SupportBase):
         self.trust()  # Now another run's capture is linked for these same bytes.
         with self.assertRaisesRegex(Decision, 'already records a native capture.*run-900101.*not replaced'):
             support.record_capture(self.store, 'experiments/trial')
-        self.assertEqual(read(path)['successful_capture']['path'], 'fixture-captures/legacy-codex.jsonl')
+        self.assertEqual(read(path)['successful_capture']['path'], 'fixture-captures/berman-codex.jsonl')
         # So status names no record-capture that would refuse; the trial goes straight to cleanup.
         self.assertEqual(self.workflow.status()['support_trials'][0]['next'],
                          'berman support-trial cleanup --evidence experiments/trial --reason TEXT; run-900101 already '
@@ -811,7 +808,7 @@ class RecordCaptureTests(SupportBase):
                     write(self.home / 'hooks.json', renewed)
                     write(self.root / 'hooks/verification/observations/fixture/installed-hooks.json', renewed)
                 yield
-        self.assertEqual(adapters.readiness(self.store, 'legacy-codex')['adapter'], 'legacy-codex')
+        self.assertEqual(adapters.readiness(self.store, 'berman-codex')['adapter'], 'berman-codex')
         with mock.patch.object(self.store, 'lock', renewing), self.assertRaisesRegex(Decision, 'review of other hooks'):
             support.record_capture(self.store, 'experiments/trial')
         self.assertIsNone(read(path)['successful_capture'])
@@ -830,7 +827,7 @@ class StatusTests(SupportBase):
                 out = io.StringIO()
                 with redirect_stdout(out):
                     self.assertEqual(cli.main(['--root', str(self.root), 'status']), 0)
-                self.assertIn(f'{trial["run"]} (support trial, legacy-codex; not research): None', out.getvalue())
+                self.assertIn(f'{trial["run"]} (support trial, berman-codex; not research): None', out.getvalue())
                 check = verify.workspace(self.store, None)
                 self.assertEqual(check['status'], 'failed')
                 self.assertEqual(check['details']['problems'], ['support trial: ' + listed[0]['problems'][0]])
@@ -849,15 +846,15 @@ class ReadinessMessageTests(Fixture, Base):
             for check in (adapters.installed, adapters.readiness):
                 with self.subTest(check=check.__name__, message=message), \
                      self.assertRaisesRegex(Decision, '^' + re.escape(message) + '$'):
-                    check(self.store, 'legacy-codex')
+                    check(self.store, 'berman-codex')
         hooks.unlink()
-        refused(f'No Codex hooks are installed at {hooks}; legacy-codex capture is unavailable')
+        refused(f'No Codex hooks are installed at {hooks}; berman-codex capture is unavailable')
         write(hooks, template)
         definition.unlink()
-        refused(f'The legacy-codex hook definition is missing from this workspace: {definition}')
+        refused(f'The berman-codex hook definition is missing from this workspace: {definition}')
         write(definition, template)
         write(hooks, {'hooks': {}})
-        refused('Installed UserPromptSubmit legacy-codex capture hook differs; inspect it before launching. '
+        refused('Installed UserPromptSubmit berman-codex capture hook differs; inspect it before launching. '
                 'To install the router, use berman capture install --adapter berman-codex')
         broken = json.loads(json.dumps(template))
         broken['hooks']['UserPromptSubmit'][0]['hooks'][0]['command'] = f'"{python}" -I -B "/nowhere/router.py" hook'
@@ -871,10 +868,10 @@ class ReadinessMessageTests(Fixture, Base):
         write(hooks, direct)
         refused('Stop: capture routing is not exclusive; install the reviewed single-router definition')
         write(hooks, template)
-        found = adapters.installed(self.store, 'legacy-codex')
-        self.assertEqual(found, {'adapter': 'legacy-codex', 'config_path': str(hooks), 'installed': template,
+        found = adapters.installed(self.store, 'berman-codex')
+        self.assertEqual(found, {'adapter': 'berman-codex', 'config_path': str(hooks), 'installed': template,
                                  'definition': template})
-        self.assertEqual(set(adapters.readiness(self.store, 'legacy-codex')), {'adapter', 'events', 'basis', 'meaning'})
+        self.assertEqual(set(adapters.readiness(self.store, 'berman-codex')), {'adapter', 'events', 'basis', 'meaning'})
 
 
 class CommandLineTests(SupportBase):
@@ -905,7 +902,7 @@ class CommandLineTests(SupportBase):
         self.assertEqual((code, json.loads(out)['phase']), (0, 'cleaned'))
         code, out, err = self.main('--json', 'support-trial', 'launch', '--evidence', 'experiments/cli')
         self.assertEqual((code, out, json.loads(err)['state']), (2, '', 'needs-attention'))
-        code, out, err = self.main('--json', 'support-trial', 'prepare', '--evidence', 'runs/x', '--adapter', 'legacy-codex')
+        code, out, err = self.main('--json', 'support-trial', 'prepare', '--evidence', 'runs/x', '--adapter', 'berman-codex')
         self.assertEqual((code, json.loads(err)['state']), (2, 'needs-attention'))
         self.assertFalse((self.root / 'runs/x').exists())
 

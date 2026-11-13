@@ -14,7 +14,7 @@ import subprocess
 from berman.capture import collector
 from berman import files
 from berman.files import Decision, digest_json, keep, read, write
-from berman._legacy.api import MARKER, RUN
+from berman._legacy.api import RUN
 from berman.installation import PACKAGE, command as module_command
 from berman.records import closed_by
 
@@ -22,11 +22,9 @@ EVENTS = ('UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd')
 PACKAGE_IMPLEMENTATION = ('__init__.py', 'capture/__init__.py', '_legacy/__init__.py', 'installation.py')
 ROUTER_IMPLEMENTATION = PACKAGE_IMPLEMENTATION + ('capture/router.py', 'capture/runtime.py',
                                                 'capture/collector.py', '_legacy/capture_session.py')
+# One adapter per harness. Runs recorded before 0.4 may name the removed legacy-codex adapter
+# (config.REMOVED_ADAPTERS); their preserved packets are read in place and never operated on.
 ADAPTERS = {
-    'legacy-codex': {
-        'harness': 'codex', 'collector': 'capture_session', 'marker': MARKER, 'layout': 'legacy',
-        'entry': 'capture/router.py', 'definition': 'hooks/berman-capture.hooks.json',
-        'basis': 'hooks/verification/routed-legacy-codex.json', 'implementation': ROUTER_IMPLEMENTATION},
     'berman-codex': {
         'harness': 'codex', 'collector': collector.OWNER, 'marker': collector.MARKER, 'layout': 'notes',
         'entry': 'capture/router.py', 'definition': 'hooks/berman-capture.hooks.json',
@@ -46,21 +44,6 @@ ADAPTERS = {
 }
 
 
-# Kept so that workspaces which already select it, and the runs they recorded, keep working. An
-# installation that does not select it neither reports nor renews it: new studies use one adapter
-# per harness, berman-codex and berman-claude.
-COMPATIBILITY = ('legacy-codex',)
-
-
-def maintained(store):
-    """The adapters this installation qualifies and verifies.
-
-    A compatibility adapter is included only while a configured connection selects it.
-    """
-    used = {c.capture for c in store.connections.values()} if store is not None else set()
-    return [name for name in ADAPTERS if name not in COMPATIBILITY or name in used]
-
-
 def implementation(name):
     return {rel: files.digest((PACKAGE / rel).read_bytes()) for rel in ADAPTERS[name]['implementation']}
 
@@ -76,12 +59,12 @@ def definition(store, name):
     if name == 'berman-claude':
         from berman.harnesses.claude import definition as claude_definition
         return claude_definition()
-    # The established quoting and timeouts of the legacy definition.
+    # The established quoting and timeouts of the hook definition.
     command = shlex.join(module_command('hook', '--analysis-root', store.root, '--codex-home', store.home,
                                         python=store.runtime_python, module='berman.capture.router'))
     timeouts = {'UserPromptSubmit': 3, 'Stop': 10, 'Interrupt': 3, 'SessionEnd': 3}
-    return {'description': 'Berman exclusive capture router. Routes Stewart-Fieldwork-Run and Berman-Fieldwork-Run '
-                           'to their respective collectors; one owner per session.',
+    return {'description': 'Berman exclusive capture router. Delivers Berman-Fieldwork-Run sessions to their '
+                           'collector; one owner per session.',
             'hooks': {event: [{'hooks': [{'type': 'command', 'command': command, 'timeout': timeouts[event]}]}]
                       for event in EVENTS}}
 
@@ -273,8 +256,8 @@ def install(store, name):
                    'config_path': str(path), 'previous_sha256': files.digest(previous) if previous else None,
                    'installed_sha256': files.digest(path.read_bytes()), 'definition': ADAPTERS[name]['definition'],
                    'registrations_at_installation': sessions,
-                   'ownership': 'One installed router owns both markers; direct legacy and new hooks were removed. '
-                                'Exclusive session registration and per-session/per-packet locks apply to both collectors.',
+                   'ownership': 'One installed router owns the fieldwork marker; earlier direct handlers were removed. '
+                                'Exclusive session registration and per-session/per-packet locks apply.',
                    'trust': 'Not granted by installer. Review /hooks in the actual Codex CLI, then run berman capture record-trust.'}
         write(folder / 'receipt.json', receipt)
         return dict(receipt, receipt=str(folder / 'receipt.json'))
@@ -300,8 +283,7 @@ def record_trust(store, evidence, statement):
                        'observed': {event: {'enabled': True, 'trust': 'Trusted', 'source': '~/.codex/hooks.json'} for event in EVENTS}}
         write(folder / 'hook-trust.json', observation)
         written = []
-        for name in maintained(store):
-            a = ADAPTERS[name]
+        for name, a in ADAPTERS.items():
             if a['harness'] != 'codex':
                 continue
             template = read(store.root / a['definition'])

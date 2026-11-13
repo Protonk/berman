@@ -3,7 +3,8 @@
 Use [the operator workflow](usage.md) for preparation, endings, supplements and
 migration. Inspect low-level recovery options with
 `python -I -m berman.recovery --help`. Recovery requires explicit workspace and
-packet roots; preserve the reason and resulting receipts.
+packet roots and acts only on a run that has an operation record naming a
+current adapter; preserve the reason and resulting receipts.
 
 Live Codex hooks enter through `python -I -B -m berman.capture.router`.
 Claude uses `berman.capture.claude_router` with per-launch settings. Generated

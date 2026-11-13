@@ -40,93 +40,63 @@ def workspace_lock(analysis, wait=30):
 
 
 def prepare(collector, run, assignment, manager_cwd, revision, coverage, instructions_from=None, recording_protocol=None,
-            marker=None, layout='legacy', connection=None, harness='Codex CLI'):
-    """The legacy layout keeps narrative.md and scratch/ placeholders for the frozen collector.
+            marker=None, layout='notes', connection=None, harness='Codex CLI'):
+    """Prepare a notes packet: INSTRUCTIONS.md, ASSIGNMENT.md, run.json and an empty notes/ directory.
 
-    The notes layout omits them, so the frozen collector cannot register such a packet.
+    Packets of the removed legacy-codex adapter also carried narrative.md and scratch/ placeholders;
+    those are no longer prepared.
     """
     if not legacy.RUN.fullmatch(run):
         raise ValueError('Run must have 3 to 6 digits')
     if not assignment.strip() or not revision.strip():
         raise ValueError('Assignment and revision are required; use an explicit description such as not-applicable for a support trial')
     files.safe_directory(manager_cwd)
-    notes_only = set(coverage) == {'notes'}
-    if recording_protocol is not None and (not notes_only or recording_protocol not in ('work-accounts/1', 'participant-inquiry/1', SUPPORT_PROTOCOL)):
-        raise ValueError('The selected recording protocol requires notes coverage and a supported protocol identity')
+    if layout != 'notes' or set(coverage) != {'notes'}:
+        raise ValueError('Packets use the notes layout with notes coverage; the narrative and scratch layout was removed')
+    if recording_protocol is not None and recording_protocol not in ('work-accounts/1', 'participant-inquiry/1', SUPPORT_PROTOCOL):
+        raise ValueError('The selected recording protocol requires a supported protocol identity')
     if recording_protocol == SUPPORT_PROTOCOL and connection != SUPPORT_CONNECTION:
         raise ValueError(f'{SUPPORT_PROTOCOL} is reserved for native support-trial packets')
-    allowed = {'narrative', 'scratch', 'git-log', 'auditor-streams', 'narrative-timestamps', 'full-command-outputs'}
-    if not notes_only and (not {'narrative', 'scratch'} <= set(coverage) or set(coverage) - allowed):
-        raise ValueError('Coverage must be notes alone, or include narrative,scratch with optional git-log,auditor-streams,narrative-timestamps,full-command-outputs')
-    if notes_only and not instructions_from:
+    if not instructions_from:
         raise ValueError('Notes coverage requires explicit researcher-authored --instructions-from')
-    if layout not in ('legacy', 'notes') or (layout == 'notes' and (not notes_only or not marker or not connection)):
-        raise ValueError('The notes layout needs notes coverage, its collector marker, and a connection identity')
+    if not marker or not connection:
+        raise ValueError('The notes layout needs its collector marker and a connection identity')
     collector.fieldwork.mkdir(parents=True, exist_ok=True)
     files.safe_directory(collector.fieldwork)
     root = collector.fieldwork / run
     with collector.locked():
         if root.exists() or root.is_symlink() or collector.archived(run):
             raise ValueError('Run number or destination already exists; preparation never overwrites a packet')
-        source = None
-        if instructions_from:
-            source = files.regular(Path(instructions_from))
-            text = source.read_text()
-            # Adapt explicit recording locations without executing the source.
-            import re
-            text = re.sub(r'(?:~|/)[^`\n]*?/run-[0-9]{3,6}(?=/(?:narrative\.md|scratch(?:/|`)|notes(?:/|`)|git-commands\.log))', lambda _: str(root), text)
-            expected = ('notes',) if notes_only else ('narrative.md', 'scratch')
-            if any(str(root / name) not in text for name in expected):
-                raise ValueError('Could not identify the recording paths in the supplied instructions; supply a source with explicit paths')
-            if notes_only and ('narrative.md' in text or str(root / 'scratch') in text):
-                raise ValueError('Notes instructions must not carry the old narrative or scratch destinations')
-            if 'git-commands.log' in text and 'git-log' not in coverage:
-                raise ValueError('Source instructions require a Git log but coverage does not; choose compatible instructions or coverage')
-        else:
-            text = (f'# Stewart Fieldwork — Recording Instructions\n\nMaintain a running narrative in `{root}/narrative.md`.\n'
-                    'In ordinary prose, record what you did, what happened, and what you did next. Update it periodically.\n\n'
-                    f'Keep scratch probes, temporary code, and saved outputs under `{root}/scratch/`.\n'
-                    'Organize them as convenient.\n')
-        additions = {
-            'git-log': f'Append direct Git invocations to `{root}/git-commands.log` with recorded times.',
-            'auditor-streams': 'Save each available auditor stream separately under scratch/ with a filename beginning auditor and ending .jsonl; subdirectories are supported. Record any unavailable stream.',
-            'narrative-timestamps': 'Give narrative entries their recorded UTC time on a separate line in YYYY-MM-DDTHH:MM:SSZ form; do not infer missing times.',
-            'full-command-outputs': 'Save full stdout/stderr for commands whose outputs would otherwise be truncated; note anything unavailable.'}
-        extra = [additions[key] for key in coverage if key in additions]
-        if extra:
-            text += '\n## Additional requested coverage\n\n' + '\n\n'.join(extra) + '\n'
-        opening = ((marker or legacy.MARKER) + run + '\n\n'
+        source = files.regular(Path(instructions_from))
+        text = source.read_text()
+        # Adapt explicit recording locations without executing the source.
+        import re
+        text = re.sub(r'(?:~|/)[^`\n]*?/run-[0-9]{3,6}(?=/(?:narrative\.md|scratch(?:/|`)|notes(?:/|`)|git-commands\.log))', lambda _: str(root), text)
+        if str(root / 'notes') not in text:
+            raise ValueError('Could not identify the recording paths in the supplied instructions; supply a source with explicit paths')
+        if 'narrative.md' in text or str(root / 'scratch') in text:
+            raise ValueError('Notes instructions must not carry the old narrative or scratch destinations')
+        if 'git-commands.log' in text:
+            raise ValueError('Source instructions require a Git log, which notes coverage does not provide')
+        opening = (marker + run + '\n\n'
                    f'Your working directory is `{manager_cwd}`. The revision or study target is: {revision}.\n'
                    f'Read `{root}/INSTRUCTIONS.md` before beginning and follow its recording requirements.\n\n'
                    + assignment.rstrip() + '\n')
-        metadata = {'schema': 'stewart.run-preparation/1', 'run': run, 'prepared_at_utc': files.now(),
+        metadata = {'schema': 'berman.run-preparation/1', 'run': run, 'prepared_at_utc': files.now(),
                     'manager': {'cwd': str(manager_cwd), 'revision': revision, 'harness': harness,
                                 'model': 'selected by operator; not set by this packet'},
-                    'coverage': coverage, 'instructions_from': str(source) if source else None,
-                    'source_instructions_sha256': files.digest(source.read_bytes()) if source else None,
-                    'assignment_sha256': files.digest(assignment.encode())}
-        if notes_only:
-            metadata['recording_protocol'] = recording_protocol or 'work-accounts/1'
-            metadata['collector_layout'] = {
-                'notes/': 'Requested participant accounts and selected supporting copies.',
-                'narrative.md': 'Empty collector-layout placeholder; no narrative requested.',
-                'scratch/': 'Collector-layout placeholder; no general scratch collection requested.'}
-        if layout == 'notes':
-            metadata['schema'] = 'berman.run-preparation/1'
-            metadata.update(connection=connection, capture_marker=marker.strip())
-            metadata['collector_layout'] = {'notes/': 'Requested participant accounts and selected supporting copies.'}
+                    'coverage': coverage, 'instructions_from': str(source),
+                    'source_instructions_sha256': files.digest(source.read_bytes()),
+                    'assignment_sha256': files.digest(assignment.encode()),
+                    'recording_protocol': recording_protocol or 'work-accounts/1',
+                    'collector_layout': {'notes/': 'Requested participant accounts and selected supporting copies.'},
+                    'connection': connection, 'capture_marker': marker.strip()}
         staging = Path(tempfile.mkdtemp(prefix='.' + run + '-prepare-', dir=collector.fieldwork))
         try:
-            if layout == 'legacy':
-                (staging / 'scratch').mkdir()
-                (staging / 'narrative.md').write_text('')
-            if notes_only:
-                (staging / 'notes').mkdir()
+            (staging / 'notes').mkdir()
             (staging / 'INSTRUCTIONS.md').write_text(text)
             (staging / 'ASSIGNMENT.md').write_text(opening)
             (staging / 'run.json').write_bytes(files.json_bytes(metadata))
-            if 'git-log' in coverage:
-                (staging / 'git-commands.log').write_text('')
             staging.rename(root)
         finally:
             if staging.exists():
@@ -229,17 +199,11 @@ def migrate(collector, run, plan=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'status', 'refresh', 'finalize', 'replace', 'supplement', 'adopt', 'migrate', 'doctor'))
+    parser.add_argument('command', choices=('status', 'refresh', 'finalize', 'replace', 'supplement', 'adopt', 'migrate', 'doctor'))
     parser.add_argument('run', nargs='?')
     parser.add_argument('--fieldwork-root', type=Path, required=True)
     parser.add_argument('--analysis-root', type=Path, required=True)
     parser.add_argument('--codex-home', type=Path, default=legacy.CODEX_HOME)
-    parser.add_argument('--assignment-file', type=Path)
-    parser.add_argument('--manager-cwd', type=Path)
-    parser.add_argument('--revision')
-    parser.add_argument('--coverage', help='notes with explicit instructions, or narrative,scratch and optional coverage')
-    parser.add_argument('--instructions-from', type=Path)
-    parser.add_argument('--recording-protocol', choices=('work-accounts/1', 'participant-inquiry/1'))
     parser.add_argument('--reason')
     parser.add_argument('--relationship', choices=('continuation', 'new-encounter'))
     parser.add_argument('--allow-incomplete', metavar='REASON')
@@ -247,33 +211,26 @@ def main():
     parser.add_argument('--session-id')
     parser.add_argument('--plan', action='store_true', help='Inspect migration without moving or indexing')
     args = parser.parse_args()
-    from berman.capture.runtime import LegacyCollector
-    collector = LegacyCollector(args.fieldwork_root, args.codex_home, args.analysis_root)
-    if args.run:
-        collector = collector.for_run(args.run)
     try:
-        if args.run and (args.analysis_root / 'operations' / args.run / 'operation.json').exists():
-            from berman.records import Store
-            store = Store(args.analysis_root)
-            collector = store.collector_for(store.record(args.run))
+        from berman.records import Store
+        store = Store(args.analysis_root)
         if args.command == 'doctor':
-            from berman.records import Store
             from berman.capture.adapters import readiness
-            store = Store(args.analysis_root)
             result = {adapter: readiness(store, adapter) for adapter in store.collectors}
         elif not args.run:
             parser.error('run is required')
-        elif args.command == 'prepare':
-            if not all((args.assignment_file, args.manager_cwd, args.revision, args.coverage)):
-                parser.error('prepare requires --assignment-file, --manager-cwd, --revision and --coverage')
-            result = prepare(collector, args.run, files.regular(args.assignment_file).read_text(),
-                             args.manager_cwd.expanduser().absolute(), args.revision,
-                             [item.strip() for item in args.coverage.split(',')], args.instructions_from, args.recording_protocol)
-        elif args.command == 'migrate':
-            result = migrate(collector, args.run, args.plan)
         else:
-            result = collector.command(args.command, args.run, reason=args.allow_incomplete or args.reason,
-                                       transcript_path=args.transcript_path, relationship=args.relationship, session_id=args.session_id)
+            # A run is operated on only through its operation record, which names its adapter and installation.
+            record = store.record(args.run)
+            if record is None:
+                raise ValueError(f'{args.run} has no operation record. Packets are prepared by berman new; a preserved '
+                                 'run without a record is read in place beneath runs/')
+            collector = store.collector_for(record)
+            if args.command == 'migrate':
+                result = migrate(collector, args.run, args.plan)
+            else:
+                result = collector.command(args.command, args.run, reason=args.allow_incomplete or args.reason,
+                                           transcript_path=args.transcript_path, relationship=args.relationship, session_id=args.session_id)
         print(json.dumps(result, indent=2))
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, str(error) + '\n')

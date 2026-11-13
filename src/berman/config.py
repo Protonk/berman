@@ -12,7 +12,9 @@ from berman.files import Decision, digest, digest_json, read, regular
 from berman._legacy.api import RUN
 
 IDENTITY = re.compile(r'[a-z][a-z0-9-]{0,62}')
-CAPTURE_ADAPTERS = ('legacy-codex', 'berman-codex', 'berman-claude')
+CAPTURE_ADAPTERS = ('berman-codex', 'berman-claude')
+# Selected by workspaces before 0.4; recorded runs may still name it.
+REMOVED_ADAPTERS = {'legacy-codex': 'berman-codex'}
 # Keys that would let a connection or installation entry place packets elsewhere.
 PACKET_ROOT_KEYS = ('packet_root', 'fieldwork', 'packets')
 
@@ -32,21 +34,6 @@ def inside(base, relative, kind):
     if path.is_absolute() or '..' in path.parts:
         raise ValueError(f'{kind} must stay within its directory: {relative}')
     return base / path
-
-
-def legacy_workspace(config):
-    """Interpret the single-project berman.configuration/1 file as one Stewart connection."""
-    plan = {'schema': 'berman.research-plan/1', 'id': 'legacy-sequence', 'connection': 'stewart',
-            'steps': config['sequence'], 'commitment': config.get('commitment'),
-            'meaning': 'Synthesized from a berman.configuration/1 sequence during migration.'}
-    return {'schema': 'berman.workspace/1', 'packet_root': config['fieldwork'],
-            'codex_home': config['codex_home'], 'python': config['python'], 'codex': config['codex'],
-            'default_connection': 'stewart', 'legacy_connection': 'stewart',
-            'support_collections': config.get('support_collections', []),
-            'legacy_sequence_after': config['sequence_after'],
-            'connections': {'stewart': {'definition': 'connections/stewart/connection.json',
-                                        'checkout': config['project'], 'plan': plan,
-                                        'capture': 'legacy-codex', 'documents': config['documents']}}}
 
 
 class Connection:
@@ -70,6 +57,9 @@ class Connection:
             raise Decision(f'Connection {ident} definition names a packet location; it must use the shared packet root')
         self.checkout = store.path(entry['checkout'])
         self.capture = entry.get('capture', 'berman-codex')
+        if self.capture in REMOVED_ADAPTERS:
+            raise ValueError(f'The {self.capture} capture adapter was removed; set the capture of connection {ident} '
+                             f'to {REMOVED_ADAPTERS[self.capture]} in berman.json. Recorded runs keep their packets')
         if self.capture not in CAPTURE_ADAPTERS:
             raise ValueError(f'Unknown capture adapter for {ident}: {self.capture}')
         self.name = self.definition.get('name', self.id)
@@ -79,8 +69,7 @@ class Connection:
             raise ValueError(f'Research plan {self.plan.id} belongs to {self.plan.connection}, not {self.id}')
 
     def documents(self):
-        # A legacy configuration supplied its own document selection.
-        return list(self.entry.get('documents', self.definition['documents']))
+        return list(self.definition['documents'])
 
     def commission(self):
         return regular(inside(self.folder, self.definition['commission'], 'Commission')).read_text()
@@ -116,14 +105,10 @@ class Plan:
     """Which engagements are wanted for one connection, and in what order."""
 
     def __init__(self, store, value):
-        if isinstance(value, dict):
-            # Only a legacy configuration synthesizes its plan in place.
-            self.path, self.data = None, value
-        else:
-            self.path = store.path(value)
-            if not self.path.is_relative_to(store.root):
-                raise ValueError(f'Research plans are researcher inputs held in Berman: {self.path}')
-            self.data = read(self.path)
+        self.path = store.path(value)
+        if not self.path.is_relative_to(store.root):
+            raise ValueError(f'Research plans are researcher inputs held in Berman: {self.path}')
+        self.data = read(self.path)
         if self.data.get('schema') != 'berman.research-plan/1':
             raise ValueError(f'Invalid research plan: {self.path or value}')
         self.store = store
@@ -204,8 +189,6 @@ class Catalogue:
                 raise ValueError(f'Invalid or duplicate catalogued run: {row["run"]}')
             self.runs[row['run']] = row
         self.support = list(data.get('support_collections', [])) + list(workspace.get('support_collections', []))
-        anchor = workspace.get('legacy_sequence_after')
-        self.legacy_anchor = int(anchor[4:]) if anchor else None
 
     def connection(self, run):
         row = self.runs.get(run)
@@ -213,7 +196,4 @@ class Catalogue:
 
     def predates_plans(self, run, connection):
         row = self.runs.get(run)
-        if row:
-            return row['connection'] == connection and row.get('relationship') == 'predates research plans'
-        # Only the migrated single-project configuration still uses its numeric anchor.
-        return self.legacy_anchor is not None and int(run[4:]) <= self.legacy_anchor
+        return bool(row) and row['connection'] == connection and row.get('relationship') == 'predates research plans'

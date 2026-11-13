@@ -19,7 +19,7 @@ from berman.records import Decision, Store
 from berman.installation import PACKAGE as ROOT
 from berman import files
 from berman.files import read, write
-from berman._legacy.api import MARKER
+from berman.capture.collector import MARKER
 from berman.workflow import Workflow
 from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
 from berman.capture import collector
@@ -28,7 +28,7 @@ from berman import cli
 from berman import recovery as fieldwork
 
 
-from tests.support.workspace import FixtureHarness, workspace, git_repository, legacy_hooks, legacy_basis
+from tests.support.workspace import FixtureHarness, workspace, git_repository
 
 
 class WorkflowTests(unittest.TestCase):
@@ -252,10 +252,10 @@ class WorkflowTests(unittest.TestCase):
         support = self.root / 'support-trial'
         write(support / 'source-layout.json', {'runs': [{'run': 'run-900101', 'current_root': 'runs/run-900101'}]})
         write(support / 'runs/run-900101/session/binding.json', {'run': 'run-900101', 'session_id': 'support-session'})
-        write(self.home / 'stewart-fieldwork/support-session.json', {'run': 'run-900101', 'session_id': 'support-session'})
+        write(self.home / 'berman-capture/support-session.json', {'run': 'run-900101', 'session_id': 'support-session'})
         self.store.catalogue.support = ['support-trial']
         self.assertEqual(self.workflow.new()['run'], 'run-001')
-        write(self.home / 'stewart-fieldwork/missing-session.json', {'run': 'run-900102', 'session_id': 'missing-session'})
+        write(self.home / 'berman-capture/missing-session.json', {'run': 'run-900102', 'session_id': 'missing-session'})
         # Status reports the problem; operations on its connection refuse to proceed.
         status = self.workflow.status()
         self.assertIn('packet is missing', status['connections']['stewart']['blocked_by'][0])

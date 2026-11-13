@@ -13,6 +13,7 @@ from unittest import mock
 from berman import recovery as fieldwork
 from berman._legacy import capture_session as capture
 from berman import files
+from tests.support.frozen_packets import frozen_packet
 
 
 class LifecycleTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class LifecycleTests(unittest.TestCase):
         self.prepare()
 
     def prepare(self):
-        return fieldwork.prepare(self.collector, self.run, 'Describe these recording locations and stop.',
+        return frozen_packet(self.collector, self.run, 'Describe these recording locations and stop.',
                                  self.base, 'not-applicable: support trial', ['narrative', 'scratch', 'auditor-streams'])
 
     def save(self):
@@ -100,7 +101,7 @@ class LifecycleTests(unittest.TestCase):
     def test_adapting_instructions_and_coverage(self):
         source=self.base/'INSTRUCTIONS.md'
         source.write_text('Narrative: `~/Desktop/Experiments/stewart-fieldwork/run-005/narrative.md`\nScratch: `~/Desktop/Experiments/stewart-fieldwork/run-005/scratch/`\n')
-        result=fieldwork.prepare(self.collector,'run-900002','assignment',self.base,'revision',
+        result=frozen_packet(self.collector,'run-900002','assignment',self.base,'revision',
                                 ['narrative','scratch','full-command-outputs'],source)
         text=(Path(result['path'])/'INSTRUCTIONS.md').read_text()
         self.assertNotIn('run-005',text)
@@ -117,7 +118,7 @@ class LifecycleTests(unittest.TestCase):
     def test_notes_packet_captures_and_migrates_without_old_recording_requests(self):
         source = self.base / 'notes-instructions.md'
         source.write_text('Write two accounts in `/old/run-007/notes/`.\n')
-        result = fieldwork.prepare(self.collector, 'run-900002', 'Discuss the plans.', self.base,
+        result = frozen_packet(self.collector, 'run-900002', 'Discuss the plans.', self.base,
                                   'continuing development', ['notes'], source)
         root = Path(result['path'])
         instructions = (root / 'INSTRUCTIONS.md').read_text()
@@ -138,17 +139,17 @@ class LifecycleTests(unittest.TestCase):
 
     def test_notes_coverage_requires_its_own_instructions_and_rejects_stale_paths(self):
         with self.assertRaisesRegex(ValueError, 'explicit researcher-authored'):
-            fieldwork.prepare(self.collector, 'run-900002', 'assignment', self.base, 'revision', ['notes'])
+            frozen_packet(self.collector, 'run-900002', 'assignment', self.base, 'revision', ['notes'])
         source = self.base / 'notes-instructions.md'
         source.write_text('Write in `/old/run-007/notes/`.\n')
-        fieldwork.prepare(self.collector, 'run-900002', 'assignment', self.base, 'revision', ['notes'], source)
+        frozen_packet(self.collector, 'run-900002', 'assignment', self.base, 'revision', ['notes'], source)
         root = self.field / 'run-900002'
         (root / 'INSTRUCTIONS.md').write_text('Write in `/old/run-007/notes/`.\n')
         with self.assertRaisesRegex(ValueError, 'another run'):
             self.collector.hook(self.event('UserPromptSubmit', prompt=capture.MARKER+'run-900002'))
         self.assertFalse((root / 'session').exists())
         with self.assertRaisesRegex(ValueError, 'Coverage must'):
-            fieldwork.prepare(self.collector, 'run-900003', 'assignment', self.base, 'revision',
+            frozen_packet(self.collector, 'run-900003', 'assignment', self.base, 'revision',
                               ['notes', 'narrative', 'scratch'], source)
 
     def test_near_markers_warn_without_binding_and_missing_status_names_both_roots(self):
@@ -290,6 +291,51 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Cross-filesystem'): fieldwork.migrate(self.collector,self.run)
         self.assertTrue(self.root.exists())
         self.assertFalse((self.analysis/'runs'/self.run).exists())
+
+
+class ProductPreparationTests(unittest.TestCase):
+    """The package itself prepares only the notes layout that the current collectors register."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name).resolve()
+        (self.base / 'analysis/runs').mkdir(parents=True)
+        self.collector = capture.Collector(self.base / 'packets', self.base / 'codex', self.base / 'analysis')
+        self.source = self.base / 'instructions.md'
+        self.source.write_text('Write accounts in `/elsewhere/run-007/notes/`.\n')
+
+    def prepare(self, run='run-900002', coverage=('notes',), **kwargs):
+        options = dict(marker='Berman-Fieldwork-Run: ', connection='orchard')
+        options.update(kwargs)
+        return fieldwork.prepare(self.collector, run, 'Discuss the plans.', self.base, 'fixture revision',
+                                 list(coverage), self.source, **options)
+
+    def test_a_notes_packet_names_its_marker_connection_and_destination(self):
+        root = Path(self.prepare()['path'])
+        self.assertEqual(sorted(p.name for p in root.iterdir()), ['ASSIGNMENT.md', 'INSTRUCTIONS.md', 'notes', 'run.json'])
+        self.assertEqual((root / 'ASSIGNMENT.md').read_text().splitlines()[0], 'Berman-Fieldwork-Run: run-900002')
+        self.assertIn(str(root / 'notes'), (root / 'INSTRUCTIONS.md').read_text())
+        meta = json.loads((root / 'run.json').read_text())
+        self.assertEqual((meta['schema'], meta['connection'], meta['capture_marker'], meta['coverage'], meta['recording_protocol']),
+                         ('berman.run-preparation/1', 'orchard', 'Berman-Fieldwork-Run:', ['notes'], 'work-accounts/1'))
+        self.assertEqual(meta['collector_layout'], {'notes/': 'Requested participant accounts and selected supporting copies.'})
+        with self.assertRaisesRegex(ValueError, 'never overwrites'):
+            self.prepare()
+
+    def test_the_removed_layout_and_incomplete_requests_are_refused(self):
+        for coverage in (('narrative', 'scratch'), ('notes', 'narrative', 'scratch')):
+            with self.assertRaisesRegex(ValueError, 'narrative and scratch layout was removed'):
+                self.prepare(coverage=coverage)
+        with self.assertRaisesRegex(ValueError, 'narrative and scratch layout was removed'):
+            self.prepare(layout='legacy')
+        for missing in ('marker', 'connection'):
+            with self.assertRaisesRegex(ValueError, 'collector marker and a connection identity'):
+                self.prepare(**{missing: None})
+        self.source.write_text('Keep a narrative in `/elsewhere/run-007/narrative.md` and notes in `/elsewhere/run-007/notes/`.\n')
+        with self.assertRaisesRegex(ValueError, 'old narrative or scratch destinations'):
+            self.prepare()
+        self.assertFalse((self.base / 'packets/run-900002').exists())
 
 
 if __name__=='__main__':

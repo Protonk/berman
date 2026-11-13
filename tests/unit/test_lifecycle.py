@@ -9,7 +9,7 @@ from unittest import mock
 
 from tests.integration.test_connections import Base
 from berman.files import Decision, json_bytes, read, write
-from berman._legacy.api import MARKER
+from berman.capture.collector import MARKER
 from berman.capture import adapters
 from berman import cli
 from berman.capture import collector
@@ -289,8 +289,8 @@ class StatusLifecycleTests(Base):
 
     def test_terminal_stop_and_session_end_without_declaration_is_not_ended(self):
         one = self.workflow.new()
-        _, event = self.start(one['run'], self.legacy)
-        self.legacy.hook(dict(event, hook_event_name='SessionEnd'))
+        _, event = self.start(one['run'], self.berman)
+        self.berman.hook(dict(event, hook_event_name='SessionEnd'))
         status = self.status_row(one['run'])
         capture = status['lifecycle']['capture']
         self.assertEqual((capture['value'], capture['last_event'], capture['closed_by']), ('open', 'SessionEnd', []))
@@ -303,8 +303,8 @@ class StatusLifecycleTests(Base):
 
     def test_finalized_but_undeclared_engagement_stays_open(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
-        self.legacy.command('finalize', one['run'])
+        self.start(one['run'], self.berman)
+        self.berman.command('finalize', one['run'])
         status = self.status_row(one['run'])
         facts = status['lifecycle']
         self.assertIs(facts['finalized']['value'], True)
@@ -318,9 +318,9 @@ class StatusLifecycleTests(Base):
 
     def test_run_switch_closes_capture_without_ending(self):
         one = self.workflow.new()
-        source, event = self.start(one['run'], self.legacy)
+        source, event = self.start(one['run'], self.berman)
         two = self.workflow.new(keep_open=True)
-        self.legacy.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=MARKER + two['run'], turn_id='two'))
+        self.berman.hook(dict(event, hook_event_name='UserPromptSubmit', prompt=MARKER + two['run'], turn_id='two'))
         status = self.status_row(one['run'])
         self.assertEqual(status['state'], 'ended')  # The collector's word, kept for compatibility.
         facts = status['lifecycle']
@@ -332,13 +332,13 @@ class StatusLifecycleTests(Base):
 
     def test_damaged_binding_and_registry_yield_unknown(self):
         one = self.workflow.new()
-        _, event = self.start(one['run'], self.legacy)
+        _, event = self.start(one['run'], self.berman)
         (Path(one['packet']) / 'session/binding.json').write_text('{broken binding')
         facts = self.discovered(one['run'])['lifecycle']
         self.assertIs(facts['registered']['value'], True)
-        self.assertIn(f'registration stewart-fieldwork/{event["session_id"]}.json', facts['registered']['evidence'])
+        self.assertIn(f'registration berman-capture/{event["session_id"]}.json', facts['registered']['evidence'])
         self.assertEqual(facts['unknown'], ['capture', 'finalized'])
-        self.legacy.registry(event['session_id']).write_text('{broken registry')
+        self.berman.registry(event['session_id']).write_text('{broken registry')
         status = self.workflow.status()
         row = next(r for r in status['runs'] if r['run'] == one['run'])
         self.assertIsNone(row['started'])
@@ -352,7 +352,7 @@ class StatusLifecycleTests(Base):
 
     def test_declared_but_not_migrated_reports_preservation_pending(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy, stop=False)
+        self.start(one['run'], self.berman, stop=False)
         with self.assertRaisesRegex(ValueError, 'Not finalized'):
             self.workflow.finish('Session was lost', allow_incomplete='  ')
         ending = self.store.record(one['run'])['ending']
@@ -368,7 +368,7 @@ class StatusLifecycleTests(Base):
 
     def test_migrated_but_not_packaged_reports_packaging_pending(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
+        self.start(one['run'], self.berman)
         with mock.patch.object(preserve, 'package', side_effect=OSError('power loss')):
             with self.assertRaisesRegex(OSError, 'power loss'):
                 self.workflow.finish('The engagement ended')
@@ -382,7 +382,7 @@ class StatusLifecycleTests(Base):
 
     def test_problem_row_leaves_unsupported_facts_unknown(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
+        self.start(one['run'], self.berman)
         self.workflow.finish('The engagement ended')
         layout_path = self.root / 'source-layout.json'
         layout = read(layout_path)
@@ -411,8 +411,8 @@ class StatusLifecycleTests(Base):
 
     def test_low_level_migration_without_declaration_stays_visible(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
-        self.legacy.command('finalize', one['run'])
+        self.start(one['run'], self.berman)
+        self.berman.command('finalize', one['run'])
         fieldwork.migrate(self.store.collector_for(self.store.record(one['run'])), one['run'])
         status = self.status_row(one['run'])
         self.assertEqual(status['state'], 'archived')
@@ -430,7 +430,7 @@ class StatusLifecycleTests(Base):
 
     def test_replaced_session_is_neither_unused_nor_retirable(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
+        self.start(one['run'], self.berman)
         self.store.collector_for(self.store.record(one['run'])).command(
             'replace', one['run'], reason='Fixture displacement', relationship='continuation')
         status = self.status_row(one['run'])
@@ -455,7 +455,7 @@ class StatusLifecycleTests(Base):
 
     def test_unfinishable_previous_engagement_leaves_no_request(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
+        self.start(one['run'], self.berman)
         self.store.collector_for(self.store.record(one['run'])).command(
             'replace', one['run'], reason='Fixture displacement', relationship='continuation')
         with self.assertRaisesRegex(Decision, 'has no declared ending') as refused:
@@ -470,7 +470,7 @@ class StatusLifecycleTests(Base):
         two = self.workflow.new(keep_open=True)
         self.assertEqual((two['run'], two['preserved'], two['retained_open_runs']), ('run-002', [], [one['run']]))
         # Once the replacement session registers, the engagement continues and nothing stale ends it.
-        self.start(one['run'], self.legacy, sid='replacement-session')
+        self.start(one['run'], self.berman, sid='replacement-session')
         self.assertNotIn('ending', self.store.record(one['run']))
         self.assertEqual(self.discovered(one['run'])['location'], 'active')
 
@@ -504,7 +504,7 @@ class StatusLifecycleTests(Base):
 
     def test_invalid_request_names_its_problem(self):
         one = self.workflow.new()
-        self.start(one['run'], self.legacy)
+        self.start(one['run'], self.berman)
         path = self.store.operations / 'new-requests/fixture.json'
         write(path, {'schema': 'berman.new-request/1', 'state': 'pending', 'previous_run': 'run-001',
                      'finish_reason': 'ended', 'step': 'repeat', 'result_run': 'nowhere'})
@@ -530,25 +530,24 @@ class StatusLifecycleTests(Base):
     def test_damaged_registry_makes_cutover_state_unknown(self):
         (self.root / 'hooks').mkdir()
         write(self.root / 'hooks/berman-capture.hooks.json', adapters.definition(self.store, 'berman-codex'))
-        path = self.home / 'stewart-fieldwork/damaged-session.json'
+        path = self.home / 'berman-capture/damaged-session.json'
         path.parent.mkdir()
         path.write_text('{broken registry')
         sessions = adapters.registrations(self.store)
         self.assertEqual([(s['session_id'], s['open'], s['pending_callback']) for s in sessions],
                          [('damaged-session', None, None)])
         self.assertIn(str(path), sessions[0]['unknown'][0])
-        with self.assertRaisesRegex(Decision, r'requires closed captures.*damaged-session \(legacy-codex: state unknown'):
+        with self.assertRaisesRegex(Decision, r'requires closed captures.*damaged-session \(berman-codex: state unknown'):
             adapters.install(self.store, 'berman-codex')
         self.assertFalse((self.home / 'hooks.json').exists())
         self.assertFalse((self.root / 'hooks/installations').exists())
 
-    def test_closure_matches_frozen_collectors(self):
+    def test_closure_is_read_the_same_way_by_status_and_registrations(self):
         self.assertIs(lifecycle.RUN, api.RUN)
         self.assertIs(lifecycle.SESSION, api.SESSION)
-        frozen = collector.Collector(self.store.field, self.home, self.root)
         packet = self.store.field / 'run-042'
         (packet / 'session').mkdir(parents=True)
-        write(self.home / 'stewart-fieldwork/closure.json', {'run': 'run-042', 'session_id': 'closure'})
+        write(self.home / 'berman-capture/closure.json', {'run': 'run-042', 'session_id': 'closure'})
         for closing in (None, 'finalized.json', 'ended.json'):
             with self.subTest(closing=closing):
                 if closing:
@@ -556,7 +555,6 @@ class StatusLifecycleTests(Base):
                         (packet / 'session' / name).unlink(missing_ok=True)
                     write(packet / 'session' / closing, {'fixture': True})
                 self.assertEqual(closed_by(packet), [closing] if closing else [])
-                self.assertEqual(frozen.legacy_claim('closure'), None if closing else 'run-042')
                 opened = [s['open'] for s in adapters.registrations(self.store) if s['session_id'] == 'closure']
                 self.assertEqual(opened, [closing is None])
 

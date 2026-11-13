@@ -1,7 +1,7 @@
 """Routed collectors with exclusive session ownership and independent packet locks.
 
-The historical collector remains unchanged. Only the router installs these adapters;
-raw legacy hooks must be removed at a quiescent cutover before they are used live.
+The frozen collector they build on remains unchanged. Only the router installs the Codex
+collector; no direct collector handler is installed alongside it.
 """
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
@@ -21,14 +21,16 @@ def marker_warning(prompt, marker=None):
     """Warn about near markers without registering or opening a packet."""
     if not isinstance(prompt, str):
         return {}
-    variants = ((capture.MARKER, r'(?:Stewart-Fieldwork-Run|Fieldwork-Run)'),
-                (collector.MARKER, r'Berman-Fieldwork-Run'))
-    for expected, pattern in variants:
-        if marker is not None and marker != expected:
-            continue
-        if re.search(r'(?im)^\s*(?:[*_>`~]+\s*)?' + pattern + r'\s*:', prompt):
-            return {'systemMessage': 'Berman fieldwork capture: no new registration. Use exactly '
-                    + expected + 'run-NNN as the complete first nonblank line, without formatting.'}
+    expected = collector.MARKER
+    if marker is not None and marker != expected:
+        return {}
+    if re.search(r'(?im)^\s*(?:[*_>`~]+\s*)?Berman-Fieldwork-Run\s*:', prompt):
+        return {'systemMessage': 'Berman fieldwork capture: no new registration. Use exactly '
+                + expected + 'run-NNN as the complete first nonblank line, without formatting.'}
+    # The opening line of the removed legacy-codex adapter registers nothing; say so rather than stay silent.
+    if re.search(r'(?im)^\s*(?:[*_>`~]+\s*)?Stewart-Fieldwork-Run\s*:', prompt):
+        return {'systemMessage': 'Berman fieldwork capture: no registration. The Stewart-Fieldwork-Run opening line '
+                'belonged to a removed adapter; fieldwork packets now open with ' + expected + 'run-NNN.'}
     return {}
 
 
@@ -86,12 +88,7 @@ class Routed:
         return file_lock(self.codex_home / 'berman-session-locks' / (sid + '.lock'))
 
     def check_owner(self, sid):
-        other = 'berman-capture' if self.adapter == 'legacy-codex' else 'stewart-fieldwork'
-        path = self.codex_home / other / (sid + '.json')
-        if path.exists():
-            state = capture.read_json(path)
-            if not state.get('retired'):
-                raise ValueError(f'Session {sid} already belongs to the other collector for {state.get("run")}; start a fresh session')
+        self.registry(sid)  # Validate the identity; each adapter has its own registry namespace.
 
     def register(self, event, run):
         self.check_owner(event['session_id'])
@@ -134,11 +131,6 @@ class Routed:
                 self.check_owner(sid)
             with self.run_scope(run):
                 return super().command(name, run, **kwargs)
-
-
-class LegacyCollector(Routed, capture.Collector):
-    adapter = 'legacy-codex'
-    marker = capture.MARKER
 
 
 class Collector(Routed, collector.Collector):

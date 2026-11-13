@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Connection-aware Codex capture through a separately verified hook entry point.
 
-The legacy collector (capture_session.py) stays byte-for-byte unchanged and keeps the
-Stewart-Fieldwork-Run marker. This collector claims only the Berman-Fieldwork-Run marker,
-keeps its own registry, and registers a session only for a packet whose operation record names
-this collector. Its packets carry no narrative.md placeholder, so the legacy collector refuses
-them even if a session submits the legacy marker.
+Built on the frozen capture_session.py, which stays byte-for-byte unchanged. This collector
+claims only the Berman-Fieldwork-Run marker, keeps its own registry, and registers a session
+only for a packet whose operation record names this collector.
 """
 import argparse
 import json
@@ -27,7 +25,6 @@ class Collector(capture.Collector):
     def __init__(self, fieldwork, codex_home, analysis):
         super().__init__(fieldwork, codex_home, analysis)
         self.state = self.codex_home / 'berman-capture'
-        self.legacy_state = self.codex_home / 'stewart-fieldwork'
 
     def run_path(self, run, readonly=False):
         if not capture.RUN.fullmatch(run):
@@ -53,20 +50,6 @@ class Collector(capture.Collector):
         if record.get('packet') != str(self.fieldwork / run):
             raise ValueError(f'{run} is recorded at another packet location; registration refused')
         return record
-
-    def legacy_claim(self, sid):
-        """An open legacy registration for the same session excludes this collector."""
-        path = self.legacy_state / (sid + '.json')
-        if not path.exists():
-            return None
-        state = capture.read_json(path)
-        run = state.get('run')
-        if state.get('retired') or not run:
-            return None
-        root = self.fieldwork / run
-        if not root.is_dir() or (root / 'session/finalized.json').exists() or (root / 'session/ended.json').exists():
-            return None
-        return run
 
     def remember(self, sid, run, root, turn):
         capture.atomic(self.registry(sid), capture.json_bytes({
@@ -98,9 +81,6 @@ class Collector(capture.Collector):
             return
         if folder.exists() and any(folder.iterdir()):
             raise ValueError('Session destination contains files without a collector binding')
-        claimed = self.legacy_claim(sid)
-        if claimed:
-            raise ValueError(f'This session is already captured by the legacy collector for {claimed}; start a fresh session')
         old = capture.read_json(state_path) if state_path.exists() else None
         if old and old['run'] != run:
             old_root = Path(old.get('packet', self.fieldwork / old['run']))
@@ -178,9 +158,6 @@ class Collector(capture.Collector):
             record = collector.capture(root, event)
             state.update(active_turn=False, last_terminal_event=name)
             capture.atomic(state_path, capture.json_bytes(state))
-            claimed = collector.legacy_claim(event.get('session_id'))
-            if claimed:
-                return {'systemMessage': f'Berman fieldwork capture: this session is also registered by the legacy collector for {claimed}; inspect both runs.'}
             if record.get('last_assistant_message_present') is False:
                 return {'systemMessage': 'Berman capture saved, but the final assistant message was not yet found. Refresh before migration.'}
         return {}

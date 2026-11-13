@@ -58,9 +58,18 @@ setting remains the interpreter for native harness callbacks and must have the
 chosen package installed. `berman verify --skip archive` remains available;
 the former test-suite skip options are removed.
 
-Version 0.3 adds what adopting the package in an existing study needed. An
-installation maintains one adapter per harness; `legacy-codex` is compatibility
-code, reported and renewed only where a connection still selects it. berman.json
+Version 0.4 removes the `legacy-codex` adapter: its routing, its packet layout
+with `narrative.md` and `scratch/` placeholders, its registry handling, the
+`berman.configuration/1` input format and the low-level `prepare` command that
+produced its packets. The frozen collector file stays, because both current
+collectors are built on it; `tests/support/frozen_packets.py` builds its own
+packet layout so that its capture, finalization, supplement and migration
+behavior is still exercised directly. The router, runtime and collector bytes
+changed, so an installation that adopts 0.4 renews hook trust and native
+capture.
+
+Version 0.3 added what adopting the package in an existing study needed. An
+installation maintains one adapter per harness. berman.json
 gains `runtime_python` (the interpreter generated hook commands name),
 `qualified_adapters` (adapters verification requires whether or not a connection
 selects them) and `edition` (the reading edition the workspace maintains).

@@ -10,20 +10,12 @@ from berman.files import Decision, read, write
 from berman.installation import PACKAGE as ROOT
 from tests.support.paths import REPO
 
-def legacy_hooks():
+def direct_hooks():
+    """Direct collector handlers as an installation that predates the router left them; never installed outside tests."""
     command = f'"{sys.executable}" -I -B "{ROOT / "_legacy/capture_session.py"}" hook'
-    return {'description': 'Synthetic legacy hook fixture; never installed outside tests.',
+    return {'description': 'Synthetic direct-handler fixture; never installed outside tests.',
             'hooks': {event: [{'hooks': [{'type': 'command', 'command': command, 'timeout': timeout}]}]
                       for event, timeout in [('UserPromptSubmit', 3), ('Stop', 10), ('Interrupt', 3), ('SessionEnd', 3)]}}
-
-
-def legacy_basis():
-    return {'schema': 'berman.capture-verification/1', 'adapter': 'legacy-codex',
-            'definition': 'hooks/fieldwork.hooks.json',
-            'definition_sha256': files.digest_json(legacy_hooks()),
-            'implementation_sha256': {'_legacy/capture_session.py':
-                'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'},
-            'meaning': 'Synthetic integrity fixture, not evidence of native capture or trust.'}
 
 
 def workspace(root, base, project, documents=None, catalogue_runs=()):
@@ -56,7 +48,7 @@ def workspace(root, base, project, documents=None, catalogue_runs=()):
         'python': real['python'], 'codex': real['codex'], 'default_connection': 'stewart', 'legacy_connection': 'stewart',
         'catalogue': 'connections/catalogue.json',
         'connections': {'stewart': {'definition': 'connections/stewart/connection.json', 'checkout': str(project),
-                                    'plan': 'plans/stewart-fieldwork-roles/plan.json', 'capture': 'legacy-codex'}}})
+                                    'plan': 'plans/stewart-fieldwork-roles/plan.json', 'capture': 'berman-codex'}}})
 
 
 def git_repository(path, files, env=None):

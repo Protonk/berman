@@ -34,9 +34,12 @@ engagements use. List both under `qualified_adapters` to make verification
 require hook trust and native capture for each, including the one no connection
 currently selects.
 
-`legacy-codex` remains as compatibility code for workspaces that already select
-it and for the runs they recorded. A workspace that does not select it neither
-reports nor renews it.
+The earlier `legacy-codex` adapter was removed in 0.4. A workspace that still
+selects it is told to select `berman-codex`. Runs it recorded keep their
+preserved packets, which are read in place and no longer captured,
+supplemented or migrated; the opening line it used registers nothing and
+answers with a notice. The single-project `berman.configuration/1` file it
+belonged to is no longer read.
 
 berman.json names two interpreters. `python` runs access probes and a
 connection's project checks inside the fieldworker's sandbox, where the

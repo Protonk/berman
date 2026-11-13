@@ -14,7 +14,7 @@ from berman._legacy import api
 from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256
 
 frozen = collector.capture
-LEGACY = {'MARKER', 'RUN', 'SESSION', 'CODEX_HOME'}
+LEGACY = {'RUN', 'SESSION', 'CODEX_HOME'}
 
 
 def imports(path):
@@ -68,7 +68,7 @@ class CompatibilityTests(unittest.TestCase):
                          frozen.digest(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()))
 
 
-    def test_legacy_interface_is_narrow_and_shares_one_instance(self):
+    def test_frozen_interface_is_narrow_and_shares_one_instance(self):
         public = {k for k in vars(api) if not k.startswith('_')}
         self.assertEqual(public, LEGACY)
         for name in public:

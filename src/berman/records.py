@@ -8,7 +8,7 @@ import uuid
 
 from berman.capture import runtime
 from berman.capture.claude import ClaudeCollector
-from berman.config import Catalogue, Connection, legacy_workspace
+from berman.config import Catalogue, Connection
 from berman.files import Decision, digest, read, safe_directory, write
 from berman._legacy.api import RUN
 from berman.lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record
@@ -41,12 +41,11 @@ class Store:
         safe_directory(self.root)
         raw = read(self.root / 'berman.json')
         if raw.get('schema') == 'berman.configuration/1':
-            # The single-project configuration remains a supported input during migration.
-            self.legacy_input, workspace = True, legacy_workspace(raw)
-        elif raw.get('schema') == 'berman.workspace/1':
-            self.legacy_input, workspace = False, raw
-        else:
+            raise ValueError('The single-project berman.configuration/1 format is no longer read; describe the '
+                             'project as a connection in a berman.workspace/1 file')
+        if raw.get('schema') != 'berman.workspace/1':
             raise ValueError('Unsupported berman.json schema')
+        workspace = raw
         self.workspace = workspace
         self.field = self.path(workspace['packet_root'])
         self.home = self.path(workspace['codex_home'])
@@ -61,10 +60,9 @@ class Store:
         self.operations = self.root / 'operations'
         self.lock_dir = self.root / '.berman-locks'
         self.tag = digest(str(self.root).encode())[:8]
-        self.collectors = {'legacy-codex': runtime.LegacyCollector(self.field, self.home, self.root),
-                           'berman-codex': runtime.Collector(self.field, self.home, self.root),
+        self.collectors = {'berman-codex': runtime.Collector(self.field, self.home, self.root),
                            'berman-claude': ClaudeCollector(self.field, self.claude_home, self.root)}
-        self.collector = self.collectors['legacy-codex']
+        self.collector = self.collectors['berman-codex']
         self.catalogue = Catalogue(self, workspace)
         self.connections = {ident: Connection(self, ident, entry) for ident, entry in workspace['connections'].items()}
         self.default_connection = workspace.get('default_connection')
@@ -130,11 +128,18 @@ class Store:
         write(path, record)
 
     def adapter(self, record):
-        return ((record or {}).get('capture') or {}).get('adapter', 'legacy-codex')
+        """The adapter a run was reserved with. Records made before adapters were named used legacy-codex."""
+        if record is None:
+            return 'berman-codex'
+        return (record.get('capture') or {}).get('adapter', 'legacy-codex')
 
     def collector_for(self, record):
         self.check_installation(record)
-        collector = self.collectors[self.adapter(record)]
+        name = self.adapter(record)
+        if name not in self.collectors:
+            raise Decision(f'{record["run"]} was recorded with the removed {name} adapter. Its preserved packet is '
+                           'read in place; it can no longer be captured, supplemented or migrated')
+        collector = self.collectors[name]
         return collector.for_run(record['run']) if record else collector
 
     def check_installation(self, record):

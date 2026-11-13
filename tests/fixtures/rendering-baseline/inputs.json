@@ -1,6 +1,6 @@
 {
   "schema": "berman.rendering-baseline/1",
-  "rendered_by_commit": "Synthetic fixtures established during source separation",
+  "rendered_by_commit": "Synthetic fixtures established during source separation; opening line re-rendered for berman-codex in 0.4",
   "implementation_sha256": {
     "capture_session.py": "f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99"
   },
