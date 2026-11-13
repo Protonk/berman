@@ -360,6 +360,22 @@ How these stand at the close is recorded in the last entries of the log.
     setting away, but is not what an operator sees unasked.
   - What remains different from 0.4.1 for a user is listed in the development
     guide under version 0.4.2, so that each item can be accepted or reversed.
+- **13 November 2026, verification of the final tree** (`0.4.2.dev0`, Python
+  3.14.9, macOS arm64). It supersedes the numbers in the entry headed "close".
+  - *Locked uv environment:* `ruff check`, `ruff format --check` and
+    `lint-imports` (8 contracts) pass; 368 tests pass, against 289 at the
+    start; `berman verify --software` passes.
+  - *A clean clone with pip alone:* the same checks and the same 368 tests.
+  - *The wheel, installed with pip in a fresh environment and run outside the
+    checkout:* the smoke test passes, with software verification passed,
+    workspace verification incomplete as it should be, and no third-party
+    module loaded by a hook process.
+  - *Property tests under the randomized profile:* all 26 pass with ten times
+    the default examples.
+  - *Against 0.4.1:* all 24 byte-sensitive files are identical to `018fec4`,
+    and the nine plain-text fixtures are reproduced byte for byte.
+  - Nothing was tagged, pushed or published, no study's runtime was touched,
+    and no native installation was qualified.
 
 ## Recommendations for the researcher
 
