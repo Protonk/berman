@@ -4,13 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "berman"
-version = "0.4.1"
+version = "0.5.0.dev0"
 description = "Prepare, capture, and preserve research alongside software development."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.11"
-dependencies = []
+requires-python = ">=3.14"
+dependencies = [
+    "jsonschema>=4.26,<5",
+    "rich>=15,<16",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170",
+    "import-linter>=2.16",
+    "ruff>=0.17.5,<0.18",
+]
 
 [project.scripts]
 berman = "berman.cli:main"
