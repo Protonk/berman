@@ -8,10 +8,12 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 
-from berman import cli, schemas, verify
+from berman import cli, files, preserve, schemas, verify
 from berman.files import Decision, json_bytes, read, write
 from berman.records import Store
 from berman.workflow import Workflow
@@ -128,6 +130,55 @@ class OperationRecordTests(RecordTests):
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, message):
                 self.store.save(dict(self.store.record(run), **change))
             self.assertEqual(state(path), before)
+
+    def test_a_reservation_whose_record_never_landed_reserves_nothing(self):
+        # Found by tests/properties/test_workflow_sequences.py. The folder is made before the record's
+        # atomic write; a full disk, or a stop inside the write, leaves it empty or with a temporary file.
+        for debris in ((), ('.capture-interrupted',)):
+            with self.subTest(debris=debris):
+                with mock.patch.object(files, 'atomic', side_effect=OSError('No space left on device')):
+                    with self.assertRaisesRegex(OSError, 'No space left'):
+                        self.workflow.new()
+                folder = self.store.operations / 'run-001'
+                self.assertEqual(list(folder.iterdir()), [])
+                for name in debris:
+                    (folder / name).write_bytes(b'{"schema": "berman.oper')
+                self.assertEqual(self.store.discover(), [])
+                status = self.workflow.status()
+                self.assertEqual((status['runs'], status['workspace_problems']), ([], []))
+                self.assertEqual(self.workflow.new()['run'], 'run-001')  # The retry reserves the same identity.
+                self.workflow.cancel('Fixture only.', 'run-001')
+                shutil.rmtree(folder)
+        # Anything else in such a folder is still a run that needs attention, not debris to pass over.
+        (self.store.operations / 'run-007').mkdir()
+        (self.store.operations / 'run-007/notes.txt').write_text('Kept by an operator.\n')
+        row = self.store.discover()[0]
+        self.assertEqual(row['run'], 'run-007')
+        self.assertIn('run-007 is recorded but its packet is missing', row['problems'][0])
+
+    def test_an_interrupted_finish_is_retried_by_name_while_another_engagement_is_open(self):
+        # Found by tests/properties/test_workflow_sequences.py: with another engagement open, the
+        # retry was refused with "Expected one open engagement; found none".
+        first = self.workflow.new()['run']
+        start(self.store, first)
+        second = self.workflow.new(keep_open=True)['run']
+        start(self.store, second)
+        with mock.patch.object(preserve, 'package', side_effect=OSError('interrupted before packaging')):
+            with self.assertRaisesRegex(OSError, 'interrupted before packaging'):
+                self.workflow.finish('The second encounter ended.', second)
+        declared_at = self.store.record(second)['ending']['declared_at_utc']
+        self.assertTrue((self.root / 'runs' / second).is_dir())
+        self.assertEqual(self.store.record(second)['phase'], 'closing')
+        retried = self.workflow.finish('The second encounter ended.', second)
+        self.assertEqual((retried['run'], retried['state']), (second, 'archived'))
+        self.assertEqual(self.store.record(second)['ending']['declared_at_utc'], declared_at)
+        # Asked again, with other words, it is answered and nothing is declared twice.
+        again = self.workflow.finish('Said differently.', second)
+        self.assertEqual((again['state'], again['package']), ('already-archived', retried['package']))
+        self.assertEqual(self.store.record(second)['ending']['reason'], 'The second encounter ended.')
+        # The other engagement is untouched, and an unnamed finish still selects it.
+        self.assertNotIn('ending', self.store.record(first))
+        self.assertEqual(self.workflow.finish('The first encounter ended.')['run'], first)
 
     def test_a_combined_request_is_validated_when_read(self):
         path = self.store.operations / 'new-requests/fixture.json'

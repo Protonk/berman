@@ -243,3 +243,32 @@ separately, in the development guide.
     `berman verify --software` gains `dependencies` and `schemas` checks.
     Versions are recorded context. Nothing fingerprints them, and the contracts
     keep them out of everything qualification does fingerprint.
+- **13 November 2026, Hypothesis.** Properties live in `tests/properties/` and
+  run with the suite, under `unittest`. The default profile is derandomized and
+  keeps no example database, so every run tests the same examples;
+  `BERMAN_HYPOTHESIS_PROFILE=explore` randomizes and multiplies them.
+  - *What is covered:* lifecycle facts over generated records and evidence
+    (unknown is never a negative, only a declaration is an ending, what a packet
+    shows and what a record says never change each other); the next plan step
+    and run identities over generated histories; preservation primitives under
+    interrupted writes; records with any field replaced by any JSON value; and a
+    state machine that drives the real workflow through preparation, sessions,
+    callbacks, finalization, endings, cancellation, lock contention and
+    interruptions at every durable write, each followed by a retry.
+  - *Each property was checked against a deliberately broken implementation*
+    (twenty mutations, run by hand; nineteen are caught by the properties they
+    target, and the twentieth, an overwriting `keep`, is caught at the
+    primitive, not by the state machine).
+  - *The state machine found two defects, both fixed here with a plain
+    regression test.* A reservation whose first write failed left an empty
+    `operations/run-NNN/` folder that discovery reported as a recorded run with
+    a missing packet, blocking every later preparation; discovery now passes
+    over a folder holding nothing but an interrupted write. And
+    `berman finish --run RUN`, interrupted after the packet had migrated, could
+    not be retried while another engagement was open; it is now resumed, or
+    answered if already archived.
+  - *One limitation it found is kept and recorded:* once a cancelled packet has
+    been moved aside, repeating `cancel` is refused; `status` lists the run and
+    the next `berman new` finishes its retirement.
+  - *Not modelled:* a process killed outright, which also skips the cleanup an
+    exception still runs. None of this is native qualification.

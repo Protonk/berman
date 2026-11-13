@@ -31,6 +31,23 @@ def packet_evidence(root):
             'session_material': any((root / name).exists() for name in SESSION_MATERIAL)}
 
 
+def unpublished(folder):
+    """Whether an operations folder is only what a reservation left when its record never landed.
+
+    A reservation is published by the atomic write of operation.json. If that write fails, or the
+    process stops inside it, the folder made to hold it stays behind, empty or with the write's
+    temporary file. Nothing else exists for that identity yet, so it is not a run: discovery passes
+    over it and the retried command reserves the same identity. A folder with anything else in it,
+    or one that cannot be listed, is still reported.
+    """
+    try:
+        return folder.is_dir() and not folder.is_symlink() and all(
+            entry.name.startswith('.capture-') and entry.is_file() and not entry.is_symlink()
+            for entry in folder.iterdir())
+    except OSError:
+        return False
+
+
 def checked(value, run):
     """An operation record unchanged, or ValueError saying why it is not one.
 
@@ -285,6 +302,8 @@ class Store:
                 safe_directory(base)
                 for p in base.iterdir():
                     if RUN.fullmatch(p.name):
+                        if base == self.operations and unpublished(p):
+                            continue
                         identities.add(p.name)
                         try:
                             safe_directory(p)

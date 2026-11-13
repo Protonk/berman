@@ -143,7 +143,9 @@ class Workflow:
         with self.store.lock('connection', conn.id):
             scoped = self.within(self.rows(), conn)
             self.synchronize(scoped)
-            if not any(open_engagement(r) for r in scoped):
+            # A named run that has already left the packet root is resumed or answered even while
+            # another engagement is open: retrying an interrupted finish is the same command.
+            if not any(open_engagement(r) and (not run or r['run'] == run) for r in scoped):
                 pending = [r for r in scoped if declared(r['record']) and r['record'].get('phase') == 'closing'
                            and (not run or r['run'] == run)]
                 if len(pending) == 1:
