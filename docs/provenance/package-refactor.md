@@ -30,3 +30,17 @@ including complete fingerprint coverage of code imported by live hook modules.
 Shared fixtures live in tests/support. The synthetic example is exercised through
 preparation, generated hook callbacks, preservation, archive building and installed
 diagnostics. Its simulated access receipt and callbacks establish no native trust.
+
+Final validation on Python 3.14 passed all 282 tests. Both source distribution and
+wheel built successfully; the wheel contains 39 runtime Python files, matching
+the source hashes, and no tests, examples or research data. A clean environment
+ran the installed console command and generated module hooks from an unrelated
+directory while macOS denied reads of the source/research repositories and native
+harness homes. The example's capture, preservation and archive verification passed.
+
+[The validation receipt](package-verification.json) records the runtime identity
+and scope. Package verification passed. Synthetic workspace verification remained
+incomplete as intended: native access was not run, and hook trust and native
+capture were not established. Actual CLI trust review, native support trials and
+installed development-launcher checks were not performed. All 31 pinned fieldwork
+runtime files and the existing installed command were unchanged.
