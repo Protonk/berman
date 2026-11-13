@@ -4,7 +4,6 @@ Sessions arrive through the installed router's own entry (route()) for both adap
 fake harness that answers --version and never runs; os.execv is mocked; every root is disposable.
 No test reads or writes the real Codex home, the real packet root or runs/.
 """
-from tests.support.paths import REPO
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import io
 import json
@@ -285,7 +284,9 @@ class ReservationTests(SupportBase):
         path = self.store.folder(trial['run']) / 'operation.json'
         marker = read(path)
         self.assertIs(lifecycle.validate_record(marker, trial['run']), marker)
-        without = lambda key: {k: v for k, v in marker.items() if k != key}
+
+        def without(key):
+            return {k: v for k, v in marker.items() if k != key}
         refused = {'unknown support phase': dict(marker, phase='reserved'),
                    'packet is missing': without('packet'),
                    'workspace.root is missing': dict(marker, workspace=['not', 'a', 'mapping']),

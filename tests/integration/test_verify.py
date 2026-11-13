@@ -4,12 +4,10 @@ No test here starts Codex or a test suite, or reads the real Codex home or runs/
 disposable repositories, and native access runs against a simulated Codex. The recursion guard
 makes a test that forgot its fake runner fail instead of rerunning the suite that contains it.
 """
-from tests.support.paths import REPO
 from contextlib import redirect_stderr, redirect_stdout
 from functools import partial
 import io
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,6 +27,7 @@ from tests.support.workspace import workspace
 from tests.integration.test_connections import Base
 
 BUILT = {'mode': 'verified', 'archive_path': 'archive/stewart-runs.zip', 'zip_members': 12, 'archive_sha256': '0' * 64}
+PASSING_ARCHIVE = (0, json.dumps(BUILT, indent=2) + '\n', '')
 FROZEN = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
 ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:berman-codex', 'native-capture:berman-codex',
          'hook-trust:berman-claude', 'native-capture:berman-claude', 'archive', 'native-access']
@@ -42,7 +41,7 @@ def passing(store, folder):
 class Runner:
     """A fake subprocess.run answering each kind of argv from its configured result."""
 
-    def __init__(self, archive=(0, json.dumps(BUILT, indent=2) + '\n', '')):
+    def __init__(self, archive=PASSING_ARCHIVE):
         self.archive = archive
         self.calls = []
 

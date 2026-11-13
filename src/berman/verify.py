@@ -11,7 +11,6 @@ and the real checkouts, as a preparation does; nothing outside its evidence fold
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +18,7 @@ import tempfile
 
 from berman.capture import adapters as capture_adapters
 from berman import files
-from berman.files import Decision, digest_json, keep, read, write
+from berman.files import Decision, keep, read, write
 from berman.harnesses.codex import Codex
 from berman.recipes import git_state
 from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256, command as module_command

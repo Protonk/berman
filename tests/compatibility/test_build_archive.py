@@ -1,16 +1,13 @@
 """Check command recording layouts and preservation of original evidence."""
-from tests.support.paths import REPO
 
 import copy
 import csv
 import dataclasses
 import hashlib
-import importlib.util
 import io
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys

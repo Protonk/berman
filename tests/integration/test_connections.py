@@ -144,12 +144,12 @@ class RenderingBaselineTests(unittest.TestCase):
     def compare(self):
         inputs, rendered = self.render()
         self.assertEqual(set(rendered), set(inputs['runs']))
-        for name, files in rendered.items():
-            self.assertEqual(files['run'], inputs['runs'][name])
-            self.assertEqual(files['protocol'], inputs['recording_protocols'][name])
+        for name, packet in rendered.items():
+            self.assertEqual(packet['run'], inputs['runs'][name])
+            self.assertEqual(packet['protocol'], inputs['recording_protocols'][name])
             for f in ('ASSIGNMENT.md', 'INSTRUCTIONS.md'):
                 with self.subTest(recipe=name, file=f):
-                    self.assertEqual(files[f], (BASELINE / name / f).read_text())
+                    self.assertEqual(packet[f], (BASELINE / name / f).read_text())
 
     def test_workspace_configuration_renders_the_baseline_byte_for_byte(self):
         self.compare()
@@ -621,7 +621,6 @@ class ConcurrencyTests(Base):
 
 class ArchiveEditionTests(Base):
     def builder(self):
-        import importlib.util
         from berman.archive import builder
         return builder
 

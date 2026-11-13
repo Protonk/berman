@@ -21,7 +21,7 @@ import uuid
 from berman.capture import adapters
 from berman import files
 from berman.files import Decision, digest_json, keep, read, write
-from berman.harnesses.codex import Codex, profile_name
+from berman.harnesses.codex import Codex
 from berman.lifecycle import SESSION_MATERIAL, validate_record
 from berman.verify import evidence_folder
 from berman import recovery as fieldwork

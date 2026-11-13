@@ -5,3 +5,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+.ruff_cache/
+.import_linter_cache/
+.grimp_cache/
+.hypothesis/

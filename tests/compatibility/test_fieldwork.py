@@ -1,11 +1,8 @@
 """End-to-end regressions for the fieldworker-support audit's failure cases."""
-from tests.support.paths import REPO
 
-import importlib.util
 import json
 import os
 from pathlib import Path
-import stat
 import tempfile
 import unittest
 from unittest import mock

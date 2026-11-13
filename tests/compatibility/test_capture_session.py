@@ -1,7 +1,5 @@
 """Exercise capture boundaries and preservation using isolated fixtures."""
-from tests.support.paths import REPO
 
-import importlib.util
 import json
 from pathlib import Path
 import shutil

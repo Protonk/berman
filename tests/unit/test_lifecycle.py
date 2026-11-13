@@ -1,9 +1,7 @@
 """Lifecycle facts: each stage is reported separately, with its evidence or the reason it is unknown."""
-from tests.support.paths import REPO
 import contextlib
 import io
 from pathlib import Path
-import sys
 import unittest
 from unittest import mock
 
@@ -12,7 +10,6 @@ from berman.files import Decision, json_bytes, read, write
 from berman.capture.collector import MARKER
 from berman.capture import adapters
 from berman import cli
-from berman.capture import collector
 from berman._legacy import api
 from berman import lifecycle
 from berman import preserve

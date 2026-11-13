@@ -186,10 +186,10 @@ def registrations(store):
     A damaged registry leaves both unknown (None), which never counts as closed.
     """
     rows = []
-    for name, collector in store.collectors.items():
-        if not collector.state.exists():
+    for name, routed in store.collectors.items():
+        if not routed.state.exists():
             continue
-        for path in sorted(collector.state.glob('*.json')):
+        for path in sorted(routed.state.glob('*.json')):
             try:
                 state = read(path)
                 run = state.get('run')

@@ -41,13 +41,13 @@ def render_cheatsheet(result):
             lines.append('    an operation is in progress on this connection; wait for it, then ' + commands['status'])
         for item in fieldwork['attention']:
             lines.append(f'    {item["run"]} needs attention: {item["problem"]}; see ' + commands['status'])
-        for run, command in zip(fieldwork['ready'], commands['launch']):
+        for run, command in zip(fieldwork['ready'], commands['launch'], strict=True):
             lines.append(f'    {run} is prepared and unstarted; start it with:')
             lines.append('      ' + command)
         for run in fieldwork['incomplete']:
             lines.append(f'    {run} has an incomplete preparation; complete it with:')
             lines.append('      ' + commands['new'])
-        for run, finish, supplement in zip(fieldwork['open'], commands['finish'], commands['supplement']):
+        for run, finish, supplement in zip(fieldwork['open'], commands['finish'], commands['supplement'], strict=True):
             lines.append(f'    {run} is an open engagement. When the researcher says it has ended:')
             lines.append('      ' + finish)
             lines.append('    or end it while preparing the next fieldworker:')

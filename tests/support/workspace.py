@@ -1,11 +1,9 @@
 """Disposable projects, synthetic workspaces and simulated access checks."""
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 
-from berman import files
 from berman.files import Decision, read, write
 from berman.installation import PACKAGE as ROOT
 from tests.support.paths import REPO

@@ -1,7 +1,5 @@
 """Standalone source, workspace routing and generic editions without native harness sessions."""
-from tests.support.paths import REPO
 import json
-import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -15,7 +13,6 @@ from berman import workspace as workspaces
 from berman import verify
 from berman.files import Decision, read, write
 from berman.records import Store
-from berman.installation import PACKAGE as ROOT
 from berman.workflow import Workflow
 from tests.support.workspace import FixtureHarness, workspace, git_repository
 from tests.integration.test_connections import orchard

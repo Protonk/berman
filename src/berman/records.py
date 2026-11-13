@@ -194,7 +194,8 @@ class Store:
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
-                        raise Decision(f'Another Berman operation is using {label}; retry this same command when it finishes')
+                        raise Decision(f'Another Berman operation is using {label}; retry this same command '
+                                       'when it finishes') from None
                     time.sleep(0.02)
             yield
         finally:

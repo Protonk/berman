@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 import re
 import shlex
-import sys
 import unittest
 
 from berman import cli

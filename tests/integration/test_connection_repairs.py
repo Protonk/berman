@@ -1,5 +1,4 @@
 """Regression cases from the independent repository-connections completion review."""
-from tests.support.paths import REPO
 import contextlib
 import io
 import json
@@ -11,7 +10,6 @@ from unittest import mock
 
 from tests.integration.test_connections import Base
 from berman.files import Decision, read, write
-from berman.installation import PACKAGE as ROOT
 from berman.harnesses.codex import Codex
 from berman.capture.router import route
 from berman.capture import adapters

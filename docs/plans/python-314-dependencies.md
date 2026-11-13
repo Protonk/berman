@@ -195,3 +195,23 @@ separately, in the development guide.
   [compatibility commitments](#compatibility-commitments). The 3.11 launcher
   defect found in the baseline is left as it is: it does not occur on 3.14 and
   the file is otherwise untouched.
+- **13 November 2026, Ruff.** Lint runs on everything except the frozen
+  collector, with the rule families E4, E7, E9, F and B. Of 151 findings none
+  was a behavioral defect. Unused imports, shadowed names and unchained
+  re-raises were fixed in ordinary files. The eleven findings in byte-sensitive
+  files are ignored per file and per rule, so a new kind of finding there still
+  surfaces. The formatter governs new files; the 51 files it would rewrite are
+  listed as exempt in `pyproject.toml`, and a test keeps every byte-sensitive
+  file on that list.
+- **13 November 2026, Import Linter.** Seven contracts. One `layers` contract
+  carries the internal structure; the operator side is two layers, orchestration
+  (`workflow`, `verify`, `support`, `harnesses.claude_support`, which import
+  each other) above operations, because that split is real in the import graph
+  and a finer one would be asserted rather than observed. Five `forbidden`
+  contracts keep third-party packages out of hooks, the archive builder, copied
+  scripts and lifecycle evaluation, and confine them elsewhere; one `protected`
+  contract keeps the frozen collector to its single importer. Three assertions
+  in `test_boundaries.py` that the contracts now state were removed from it.
+  Its fingerprint-coverage, single-load and frozen-byte tests stay. New
+  specialized tests cover what a contract cannot name: any third-party import in
+  a hook or copied script, undeclared dependencies, and unlayered modules.

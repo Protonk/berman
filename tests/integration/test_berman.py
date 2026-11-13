@@ -1,6 +1,5 @@
 """Exercise the operator workflow against isolated repositories and real capture records."""
 from tests.support.paths import REPO
-import importlib.util
 import io
 import json
 import os
@@ -17,16 +16,13 @@ from contextlib import redirect_stdout, redirect_stderr
 from contextlib import contextmanager
 
 from berman.records import Decision, Store
-from berman.installation import PACKAGE as ROOT
 from berman import files
 from berman.files import read, write
 from berman.capture.collector import MARKER
 from berman.workflow import Workflow
 from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
-from berman.capture import collector
 from berman import preserve
 from berman import cli
-from berman import recovery as fieldwork
 
 
 from tests.support.workspace import FixtureHarness, workspace, git_repository
@@ -178,7 +174,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.workflow.new()['run'], 'run-001')
 
     def test_sequence_exhaustion_does_not_invent_another_commission(self):
-        for number in (1, 2):
+        for _ in (1, 2):
             result = self.workflow.new(); self.start(result['run']); self.workflow.finish('finished')
         with self.assertRaisesRegex(Decision, 'sequence is complete'):
             self.workflow.new()

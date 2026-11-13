@@ -1,5 +1,4 @@
 """Claude-specific boundaries and native-format preservation, without model calls."""
-from tests.support.paths import REPO
 import copy
 import json
 import os

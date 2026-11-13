@@ -111,16 +111,11 @@ class ImportBoundaryTests(unittest.TestCase):
             dependencies(adapter['entry'], reached)
             self.assertLessEqual(reached, set(adapter['implementation']), name)
 
-    def test_package_boundaries(self):
+    def test_runtime_modules_never_reach_the_test_suite_or_edit_the_import_path(self):
+        # Which module may import which is stated by the Import Linter contracts in pyproject.toml;
+        # tests/unit/test_architecture.py shows that each of them can fail.
         for path in PACKAGE.rglob('*.py'):
             relative = path.relative_to(PACKAGE).as_posix()
-            reached = imports(path)
-            if 'berman._legacy.capture_session' in reached:
-                self.assertEqual(relative, 'capture/collector.py')
-            if relative.startswith('archive/'):
-                self.assertTrue(all(m.startswith('berman.archive') for m in reached), relative)
-            if relative in ('files.py', 'harnesses/probe.py', 'harnesses/development/probe.py'):
-                self.assertFalse(reached, relative)
             if relative != FROZEN:
                 self.assertNotIn('sys.path.insert', path.read_text(), relative)
                 for node in ast.walk(ast.parse(path.read_text())):

@@ -34,3 +34,206 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["src"]
 
+
+# Ruff. Lint applies to everything but the frozen collector. The formatter
+# governs new files only: docs/development.md explains the exemptions.
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+src = ["src"]
+extend-exclude = ["src/berman/_legacy/capture_session.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Byte-sensitive files. Each finding here is style, and fixing it would change
+# bytes that qualification receipts or edition identities name.
+"src/berman/archive/builder.py" = ["B007", "E731", "F401"]
+"src/berman/archive/select.py" = ["E731"]
+"src/berman/capture/claude_router.py" = ["F401"]
+"src/berman/capture/collector.py" = ["F401"]
+"src/berman/capture/runtime.py" = ["B904"]
+"src/berman/harnesses/claude.py" = ["F401"]
+"src/berman/harnesses/codex.py" = ["B023"]
+"src/berman/harnesses/development/launch.py" = ["B904"]
+# Closures made and called within one loop iteration, as mock side effects.
+"tests/compatibility/test_launchers.py" = ["B023"]
+"tests/integration/test_support.py" = ["B023"]
+# Tests written before the formatter, which join short statements on one line.
+"tests/compatibility/test_fieldwork.py" = ["E701", "E702"]
+"tests/integration/test_berman.py" = ["E701", "E702"]
+"tests/integration/test_connections.py" = ["E701", "E702"]
+
+[tool.ruff.format]
+quote-style = "single"
+exclude = [
+    # Byte-sensitive: never a formatter target (tests/unit/test_boundaries.py checks this list).
+    "src/berman/__init__.py",
+    "src/berman/_legacy/__init__.py",
+    "src/berman/_legacy/api.py",
+    "src/berman/archive/builder.py",
+    "src/berman/archive/package.py",
+    "src/berman/archive/select.py",
+    "src/berman/archive/stewart.py",
+    "src/berman/capture/__init__.py",
+    "src/berman/capture/claude.py",
+    "src/berman/capture/claude_router.py",
+    "src/berman/capture/collector.py",
+    "src/berman/capture/router.py",
+    "src/berman/capture/runtime.py",
+    "src/berman/files.py",
+    "src/berman/harnesses/__init__.py",
+    "src/berman/harnesses/claude.py",
+    "src/berman/harnesses/codex.py",
+    "src/berman/harnesses/development/__init__.py",
+    "src/berman/harnesses/development/launch.py",
+    "src/berman/harnesses/development/probe.py",
+    "src/berman/harnesses/probe.py",
+    "src/berman/installation.py",
+    # Written before the formatter. Remove a file from this list when formatting it.
+    "src/berman/__main__.py",
+    "src/berman/capture/adapters.py",
+    "src/berman/cli.py",
+    "src/berman/config.py",
+    "src/berman/harnesses/claude_support.py",
+    "src/berman/harnesses/development/install.py",
+    "src/berman/lifecycle.py",
+    "src/berman/preserve.py",
+    "src/berman/recipes.py",
+    "src/berman/records.py",
+    "src/berman/recovery.py",
+    "src/berman/support.py",
+    "src/berman/verify.py",
+    "src/berman/workflow.py",
+    "src/berman/workspace.py",
+    "tests/compatibility/test_build_archive.py",
+    "tests/compatibility/test_capture_session.py",
+    "tests/compatibility/test_fieldwork.py",
+    "tests/compatibility/test_launchers.py",
+    "tests/integration/test_berman.py",
+    "tests/integration/test_claude.py",
+    "tests/integration/test_connection_repairs.py",
+    "tests/integration/test_connections.py",
+    "tests/integration/test_installation.py",
+    "tests/integration/test_source.py",
+    "tests/integration/test_support.py",
+    "tests/integration/test_verify.py",
+    "tests/support/frozen_packets.py",
+    "tests/support/paths.py",
+    "tests/support/wheel_smoke.py",
+    "tests/support/workspace.py",
+    "tests/unit/test_boundaries.py",
+    "tests/unit/test_guidance.py",
+    "tests/unit/test_lifecycle.py",
+]
+
+# Import Linter. Each contract has a test in tests/unit/test_architecture.py
+# that injects a violation and expects that contract, by id, to break.
+[tool.importlinter]
+root_package = "berman"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "Layers: command line, orchestration, operations, records, definitions, capture, foundations"
+type = "layers"
+layers = [
+    "berman.__main__",
+    "berman.cli",
+    "berman.workflow : berman.verify : berman.support : berman.harnesses.claude_support",
+    "berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
+    "berman.records",
+    "berman.config | berman.lifecycle",
+    "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.collector : berman.capture.claude : berman._legacy",
+    "berman.files | berman.installation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
+]
+broken_contract_guidance = """
+A lower layer may not import a higher one. Modules joined by ':' may import each
+other; modules joined by '|' may not. The lowest layer imports nothing else in
+the package. Pass what the lower module needs as an argument instead."""
+
+[[tool.importlinter.contracts]]
+id = "hooks"
+name = "Hook entry points and what they import load no third-party package"
+type = "forbidden"
+source_modules = [
+    "berman.capture.router",
+    "berman.capture.claude_router",
+    "berman.capture.runtime",
+    "berman.capture.collector",
+    "berman.capture.claude",
+    "berman._legacy",
+    "berman.files",
+    "berman.installation",
+]
+forbidden_modules = ["jsonschema", "rich"]
+broken_contract_guidance = """
+Hooks run on every turn of a fieldworker's session, and their bytes are what
+hook trust and native capture qualify. They use the standard library and the
+fingerprinted capture modules only, directly and indirectly."""
+
+[[tool.importlinter.contracts]]
+id = "archive"
+name = "The archive builder uses the standard library only"
+type = "forbidden"
+source_modules = ["berman.archive"]
+forbidden_modules = ["jsonschema", "rich"]
+broken_contract_guidance = """
+A reading edition is deterministic and its builder's bytes are its identity.
+Presentation and validation libraries stay out of selection, rendering and
+packaging."""
+
+[[tool.importlinter.contracts]]
+id = "scripts"
+name = "Sandbox probes and development launcher scripts are self-contained"
+type = "forbidden"
+source_modules = ["berman.harnesses.probe", "berman.harnesses.development"]
+forbidden_modules = ["jsonschema", "rich"]
+broken_contract_guidance = """
+These files are copied out of the package and run as scripts, by an interpreter
+that need not have Berman or its dependencies installed."""
+
+[[tool.importlinter.contracts]]
+id = "lifecycle"
+name = "Lifecycle facts are evaluated without filesystem or process access"
+type = "forbidden"
+source_modules = ["berman.lifecycle"]
+forbidden_modules = [
+    "berman.files",
+    "berman.installation",
+    "berman.archive",
+    "berman.harnesses",
+    "fcntl",
+    "os",
+    "shutil",
+    "subprocess",
+    "tempfile",
+    "jsonschema",
+    "rich",
+]
+# Run and session identity patterns come from the single loaded frozen collector.
+ignore_imports = ["berman.lifecycle -> berman._legacy.api"]
+broken_contract_guidance = """
+berman.lifecycle decides what the evidence establishes; it does not gather it.
+Discovery (berman.records) reads files and passes what it observed in."""
+
+[[tool.importlinter.contracts]]
+id = "frozen"
+name = "Only the collector loads the frozen capture_session module"
+type = "protected"
+protected_modules = ["berman._legacy.capture_session"]
+allowed_importers = ["berman.capture.collector"]
+broken_contract_guidance = """
+Other modules take RUN, SESSION and CODEX_HOME from berman._legacy.api, so one
+process never executes the frozen file twice."""
+
+[[tool.importlinter.contracts]]
+id = "confined"
+name = "No module imports a third-party package except the one that confines it"
+type = "forbidden"
+source_modules = ["berman"]
+forbidden_modules = ["jsonschema", "rich"]
+broken_contract_guidance = """
+jsonschema and rich each have one importing module. Call that module instead of
+importing the library, so its use stays in one reviewable place."""

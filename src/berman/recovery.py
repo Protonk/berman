@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import shutil
 import stat
-import sys
 import tempfile
 import time
 
@@ -32,7 +31,8 @@ def workspace_lock(analysis, wait=30):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise ValueError('Another operation holds the Berman workspace allocation and index; retry when it finishes')
+                    raise ValueError('Another operation holds the Berman workspace allocation and index; retry '
+                                     'when it finishes') from None
                 time.sleep(0.02)
         yield
     finally:

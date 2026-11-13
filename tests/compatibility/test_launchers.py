@@ -1,6 +1,4 @@
 """Offline regression tests; native harness checks are separate."""
-from tests.support.paths import REPO
-import importlib.util
 import json
 from pathlib import Path
 import tomllib
