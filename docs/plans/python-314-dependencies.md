@@ -189,6 +189,8 @@ separately, in the development guide.
 - An adopting study's restore procedure that installs one wheel with
   `--no-index` will not work for a version with dependencies.
 
+How these stand at the close is recorded in the last entries of the log.
+
 ## Decision log
 
 - **13 November 2026.** Python 3.14 only, by the researcher's decision; see

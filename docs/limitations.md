@@ -1,7 +1,8 @@
 # Current limits
 
-The standalone software is experimental. Its portable tests establish simulated
-workflow, preservation and rendering behavior. A fresh installation still needs
+The standalone software is experimental and supports Python 3.14 only. Its
+portable tests establish simulated workflow, preservation and rendering
+behavior. A fresh installation still needs
 native access and capture qualification for its actual CLI versions and platform.
 The separated source has not inherited another installation's trust.
 
@@ -29,3 +30,14 @@ Context snapshots contain selected project documents and observed Git state,
 not a full backup of every dependency or service. A stored symlink or Git pointer
 does not preserve its destination. Preserved originals keep their historical
 paths; do not repair them into runnable checkouts.
+
+Installation needs the runtime dependencies, one of which (`rpds-py`, required
+by `jsonschema`) is a compiled wheel for one platform and Python version. Their
+installed versions are recorded beside the software identity as context. Nothing
+fingerprints them; a study that needs the environment's bytes keeps the wheels.
+
+Repeating an interrupted command completes it, with one exception. Once
+`berman cancel` has moved an unused packet aside, repeating `cancel` is refused;
+`berman status` lists the run as being retired and the next `berman new`
+finishes its retirement. The property tests interrupt commands by raising an
+error at a durable write. A process killed outright is not modelled.

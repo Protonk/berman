@@ -16,19 +16,25 @@ You can develop and test Berman using the included synthetic examples.
 
 ## Getting started
 
-Python 3.11 or later and Git are required. The implementation uses the Python
-standard library. Native access and capture depend on separately installed Codex
-or Claude CLIs and their sandbox facilities; see [current limits](docs/limitations.md).
+Python 3.14 and Git are required. Berman has two runtime dependencies, which
+pip installs with it: `jsonschema` checks the structure of the records it reads
+and writes, and `rich` lays out its output on a terminal. Capture hooks, sandbox
+probes and the archive builder use the standard library only. Native access and
+capture depend on separately installed Codex or Claude CLIs and their sandbox
+facilities; see [current limits](docs/limitations.md).
 
 Install from this checkout in a virtual environment:
 
 ```sh
-python3 -m venv .venv
+python3.14 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
 berman version
 berman verify
 ```
+
+To work on Berman itself, use the locked environment the
+[development guide](docs/development.md) describes instead.
 
 Create a workspace for a study and connect it to a project:
 
@@ -47,6 +53,10 @@ assigning a plan or qualifying an installation.
 study, use `berman --root /path/to/study verify`. Developer tests run separately;
 neither software verification nor tests establish native access or capture.
 
+On an interactive terminal, `status`, `verify` and `cheatsheet` are laid out for
+reading. Redirected to a file or a pipe they print the same plain text as
+before, and `--json` gives each command's result for programs.
+
 Both `berman` and `python -m berman` work outside the checkout. Workspace selection
 uses `--root` or the nearest `berman.json` in the current repository; it stops at
 Git boundaries. Keep the environment installed while a study uses it.
@@ -62,7 +72,8 @@ manageable:
 | Fieldwork | Assignments, project connections, original recordings, inventories and installation evidence. |
 | Analysis | Questions, excerpts, comparisons and findings, linked to their fieldwork sources. |
 
-New operations record the software version and source digests. Existing studies
+New operations record the software version, its source digests and the
+interpreter and dependency versions it ran with. Existing studies
 can retain a pinned runtime until an explicitly qualified upgrade. A separate
 analysis repository must remain within a denied research root or be covered by
 an equivalent qualified access policy.

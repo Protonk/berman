@@ -44,8 +44,9 @@ belonged to is no longer read.
 berman.json names two interpreters. `python` runs access probes and a
 connection's project checks inside the fieldworker's sandbox, where the
 workspace is denied, so it must lie outside the workspace and packet root.
-`runtime_python` is the interpreter that has this package installed; generated
-hook commands name it and run in isolated mode. `init` records the active package
+`runtime_python` is the interpreter that has this package and its dependencies
+installed; generated hook commands name it and run in isolated mode. The hooks
+themselves load only the standard library and Berman's capture modules. `init` records the active package
 interpreter in both settings; configure `python` for sandbox access while keeping
 `runtime_python` pinned to the package environment. Older configurations without
 `runtime_python` fall back to `python`. A
@@ -66,6 +67,18 @@ operator's decision. Claude uses separately qualified per-launch settings.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
 starts a prepared session. `berman status` reports outstanding work.
 
+On an interactive terminal, `status` shows each outstanding run's lifecycle
+facts with the evidence for each, or the reason a fact is unknown, and
+`cheatsheet` groups commands by whether they can be typed now or wait on the
+researcher's decision. Unknown is never shown as no. Redirected output is the
+plain text, and `--json` carries everything either rendering shows.
+
+A record with the wrong structure is refused with its file and the place of
+each problem, such as `connections.example.checkout must be a string`. A run
+whose operation record is refused is listed by `status` as needing attention,
+its facts are unknown, and it blocks preparation on its connection until the
+record is repaired. Reading never rewrites a record.
+
 The cheatsheet uses `berman` on PATH and includes `--root` so its commands work
 from any directory. Use the study's package environment on PATH. Inside that
 workspace you can omit `--root`. Saved launch files and hooks retain explicit
@@ -73,6 +86,8 @@ interpreter paths.
 
 `berman finish --reason TEXT` records the researcher's actual ending decision
 and preserves the encounter. Capture finalization alone is not an ending.
+An interrupted command is retried by running the same command again: it
+allocates no second run and declares no second ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
 Use the workflow rather than manually repeating profile, packet or migration steps.
 

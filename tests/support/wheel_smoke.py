@@ -22,6 +22,13 @@ from berman.records import Store
 from berman.workflow import Workflow
 
 
+# Printed by an isolated interpreter: every loaded module that is neither standard library nor Berman's.
+HOOK_MODULES = """
+import sys, berman.capture.router, berman.capture.claude_router
+print(sorted(m for m in sys.modules if m.partition('.')[0] not in {*sys.stdlib_module_names, 'berman', '__main__'}))
+"""
+
+
 class SimulatedAccess:
     def __init__(self, store):
         self.store = store
@@ -54,6 +61,14 @@ def smoke(example, base):
 
     software = invoke('--json', 'verify', '--software')
     assert software['verdict'] == 'passed' and software['not_run'] == []
+    # The wheel carries its record schemas, and pip installed what it declares.
+    assert {name: check['status'] for name, check in software['checks'].items()} == dict.fromkeys(
+        ('installation', 'dependencies', 'frozen-collector', 'schemas'), 'passed'), software['checks']
+    environment = software['checks']['installation']['details']['software']['environment']
+    assert environment['dependencies']['jsonschema'] and environment['dependencies']['rich'], environment
+    # A hook process loads the standard library and Berman's capture modules, and nothing third-party.
+    loaded = subprocess.run([sys.executable, '-I', '-B', '-c', HOOK_MODULES], cwd=unrelated, text=True, capture_output=True)
+    assert loaded.returncode == 0 and loaded.stdout.strip() == '[]', (loaded.stdout, loaded.stderr)
     initial = invoke('init', study, '--project', project, '--connection', 'example', '--codex', '/unconfigured/codex')
     assert initial['software']['files_sha256'][FROZEN] == FROZEN_SHA256
     for directory in ('recipes', 'plans'):
@@ -102,6 +117,8 @@ def smoke(example, base):
             'source_sha256': initial['software']['source_sha256'],
             'frozen_sha256': hashlib.sha256((PACKAGE / FROZEN).read_bytes()).hexdigest(),
             'software_verification': software['verdict'], 'workspace_verification': diagnostic['verdict'],
+            'python': environment['python'], 'dependencies': environment['dependencies'],
+            'hooks_load_third_party_modules': False,
             'archive_verified': True, 'callbacks': 'synthetic UserPromptSubmit, Stop, SessionEnd',
             'not_run': diagnostic['not_run'], 'not_established': diagnostic['not_established'],
             'never_checked': diagnostic['not_covered']}
