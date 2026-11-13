@@ -5,6 +5,7 @@ reports. Reading validates and changes nothing; an invalid record is never writt
 """
 
 import contextlib
+import builtins
 import io
 import json
 from pathlib import Path
@@ -217,6 +218,29 @@ class OperationRecordTests(RecordTests):
 
 
 class ResearcherInputTests(RecordTests):
+    def test_broken_jsonschema_initialization_refuses_records_without_a_traceback(self):
+        original = builtins.__import__
+
+        def broken(name, *args, **kwargs):
+            if name == 'jsonschema':
+                raise RuntimeError('synthetic damaged dependency')
+            return original(name, *args, **kwargs)
+
+        path = self.root / 'berman.json'
+        before = state(path)
+        schemas.validator.cache_clear()
+        self.addCleanup(schemas.validator.cache_clear)
+        with mock.patch('builtins.__import__', side_effect=broken):
+            code, out, err = self.command('status')
+            self.assertEqual((code, out), (2, ''))
+            self.assertIn('Records cannot be checked: jsonschema does not import', err)
+            self.assertIn('synthetic damaged dependency', err)
+            self.assertNotIn('Traceback', err)
+            code, out, err = self.command('--json', 'verify', '--skip', 'archive')
+            self.assertEqual((code, err), (1, ''))
+            self.assertEqual(json.loads(out)['checks']['workspace']['status'], 'failed')
+        self.assertEqual(state(path), before)
+
     def test_a_malformed_workspace_file_is_reported_with_its_place(self):
         path = self.edit('berman.json', packet_root=..., connections={'stewart': {'checkout': 12}})
         before = state(path)
@@ -312,6 +336,10 @@ class ResearcherInputTests(RecordTests):
                 plan,
                 {'steps': [{'id': 1, 'recipe': 'work-accounts'}, {'id': 2, 'recipe': 'participant-inquiry'}]},
             ),
+            'boolean plan steps': (
+                plan,
+                {'steps': [{'id': True, 'recipe': 'work-accounts'}, {'id': False, 'recipe': 'participant-inquiry'}]},
+            ),
             'a later step with no recipe yet': (
                 plan,
                 {'steps': [{'id': 'first', 'recipe': 'work-accounts'}, {'id': 'later'}]},
@@ -329,6 +357,10 @@ class ResearcherInputTests(RecordTests):
             'an empty executable path': ('berman.json', {'codex': ''}),
             'a numeric collection identity': ('berman.json', {'collection_id': 7}),
             'no catalogue, as false': ('berman.json', {'catalogue': False}),
+            'no catalogue, as zero': ('berman.json', {'catalogue': 0}),
+            'no catalogue, as fractional zero': ('berman.json', {'catalogue': 0.0}),
+            'no catalogue, as an empty list': ('berman.json', {'catalogue': []}),
+            'no catalogue, as an empty object': ('berman.json', {'catalogue': {}}),
         }
         for name, (relative, *change) in tolerated.items():
             path = self.root / relative

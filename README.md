@@ -16,9 +16,10 @@ You can develop and test Berman using the included synthetic examples.
 
 ## Getting started
 
-Python 3.14 and Git are required. Berman has two runtime dependencies, which
+Python 3.14 and Git are required. Berman has three runtime dependencies, which
 pip installs with it: `jsonschema` checks the structure of the records it reads
-and writes, and `rich` lays out its output on a terminal. Capture hooks, sandbox
+and writes, `rich` lays out its output on a terminal, and `packaging` interprets
+the dependency requirements checked by software verification. Capture hooks, sandbox
 probes and the archive builder use the standard library only. Native access and
 capture depend on separately installed Codex or Claude CLIs and their sandbox
 facilities; see [current limits](docs/limitations.md).

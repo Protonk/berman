@@ -95,7 +95,7 @@ class Unavailable(ValueError):
 def validator(name):
     try:
         from jsonschema import Draft202012Validator
-    except ImportError as exc:
+    except Exception as exc:  # Broken installations can raise more than ImportError while loading.
         raise Unavailable(
             f'Records cannot be checked: jsonschema does not import ({exc}). Reinstall Berman with its '
             'dependencies; berman verify --software reports the environment'

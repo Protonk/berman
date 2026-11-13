@@ -8,6 +8,7 @@ color, and interprets nothing in the recorded text it displays.
 """
 
 import contextlib
+import builtins
 import io
 import json
 import os
@@ -15,16 +16,19 @@ from pathlib import Path
 import pty
 import re
 import select
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import unicodedata
 from unittest import mock
 
 from berman import cli, presentation
 from berman.presentation import plain, terminal
 from tests.support.paths import REPO
-from tests.support.workspace import git_repository, workspace
+from tests.support.workspace import FixtureHarness, git_repository, workspace
 
 FIXTURES = REPO / 'tests/fixtures/presentation'
 CASES = {path.stem: json.loads(path.read_text()) for path in sorted(FIXTURES.glob('*.json'))}
@@ -41,7 +45,7 @@ def kind(name):
 def shown(name_or_kind, result, **options):
     """The terminal rendering as text; colorless and unwrapped unless options say otherwise."""
     out = io.StringIO()
-    options = {'color_system': None, 'width': 10_000, **options}
+    options = {'color_system': None, 'width': 10_000, 'height': 40, **options}
     terminal.render(kind(name_or_kind), result, terminal.console(out, force_terminal=True, **options))
     return out.getvalue()
 
@@ -84,6 +88,20 @@ def unimportable(*names):
 
 
 class PlainTests(unittest.TestCase):
+    def test_non_import_error_while_loading_rich_still_shows_the_result(self):
+        original = builtins.__import__
+
+        def broken(name, *args, **kwargs):
+            if name == 'berman.presentation':
+                raise RuntimeError('synthetic damaged dependency')
+            return original(name, *args, **kwargs)
+
+        result = CASES['verification-failed']
+        out = Terminal()
+        with environment(), mock.patch('builtins.__import__', side_effect=broken):
+            presentation.show('verification', result, out)
+        self.assertEqual(out.getvalue(), plain.verification(result) + '\n')
+
     def test_plain_text_is_what_version_0_4_printed(self):
         self.assertGreaterEqual(len(CASES), 9)
         for name, result in CASES.items():
@@ -131,6 +149,36 @@ class PlainTests(unittest.TestCase):
 
 
 class TerminalTests(unittest.TestCase):
+    def test_displayed_commands_preserve_control_characters_as_shell_arguments(self):
+        arguments = ['a\tb', 'line\n', "quote' slash\\ tab\t", 'escape\x1b[2J', 'hidden\u202e', '']
+        command = shlex.join([sys.executable, '-c', 'import json,sys; print(json.dumps(sys.argv[1:]))', *arguments])
+        result = dict(CASES['prepared-with-history'], launch=command)
+        displayed = shown('prepared', result, width=20).splitlines()[-1]
+        self.assertFalse(any(unicodedata.category(ch) in terminal.HIDDEN for ch in displayed))
+        tested = []
+        for name in ('bash', 'zsh'):
+            shell = shutil.which(name)
+            if shell:
+                with self.subTest(shell=name):
+                    completed = subprocess.run([shell, '-c', displayed], capture_output=True, text=True)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(json.loads(completed.stdout), arguments)
+                    tested.append(name)
+        self.assertTrue(tested, 'this test requires Bash or Zsh')
+
+    def test_narrow_terminals_retain_every_fact_value_and_evidence(self):
+        result = json.loads(json.dumps(CASES['status-busy']))
+        for row in result['runs']:
+            for name in terminal.FACTS:
+                row['lifecycle'][name] = {'value': None, 'unknown': [f'/evidence/{name}/' + 'abcdef' * 30]}
+        for width in (20, 40, 80):
+            with self.subTest(width=width):
+                displayed = ''.join(shown('status', result, width=width).split())
+                for name in terminal.FACTS:
+                    self.assertIn(name, displayed)
+                    self.assertIn(f'/evidence/{name}/' + 'abcdef' * 30, displayed)
+                self.assertIn('unknown', displayed)
+
     def test_every_word_of_the_plain_text_is_shown(self):
         for name, result in CASES.items():
             with self.subTest(case=name):
@@ -408,6 +456,45 @@ class PseudoTerminalTests(unittest.TestCase):
         self.assertEqual((code, err), (0, ''))
         self.assertNotIn(ESCAPE, text)
         self.assertEqual(json.loads(text)['verdict'], 'passed')
+
+    def test_a_command_copied_from_a_real_terminal_reaches_the_same_workspace(self):
+        from berman import files
+        from berman.records import Store
+        from berman.workflow import Workflow
+
+        shell = shutil.which('bash') or shutil.which('zsh')
+        self.assertIsNotNone(shell, 'this test requires Bash or Zsh')
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, project = base / 'study\twith-tab', base / 'project'
+            (base / 'codex').mkdir()
+            workspace(root, base, project, documents=['README.md'])
+            git_repository(project, {'README.md': 'Synthetic project\n'})
+            store = Store(root)
+            run = Workflow(store, FixtureHarness(store)).new()['run']
+            path = store.folder(run) / 'operation.json'
+            record = files.read(path)
+            record['documents'] = 'invalid'
+            files.write(path, record)
+            before = path.read_bytes(), path.stat().st_mtime_ns
+            code, displayed, error = self.run_on_terminal('--root', str(root), 'cheatsheet', NO_COLOR='1')
+            self.assertEqual((code, error), (0, ''))
+            displayed = re.sub(r'\x1b\[[0-9;]*m', '', displayed)
+            command = next(
+                line.strip()
+                for line in displayed.splitlines()
+                if line.strip().startswith('berman --root') and line.strip().endswith(' status')
+            )
+            env = os.environ | {'PATH': str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH']}
+            copied = subprocess.run([shell, '-c', command], env=env, capture_output=True, text=True)
+            direct = subprocess.run(
+                [sys.executable, '-m', 'berman', '--root', str(root), 'status'], capture_output=True, text=True
+            )
+            self.assertEqual(
+                (copied.returncode, copied.stdout, copied.stderr), (direct.returncode, direct.stdout, direct.stderr)
+            )
+            self.assertEqual(copied.returncode, 0)
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
 
 if __name__ == '__main__':

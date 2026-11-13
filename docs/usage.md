@@ -85,6 +85,11 @@ from any directory. Use the study's package environment on PATH. Inside that
 workspace you can omit `--root`. Saved launch files and hooks retain explicit
 interpreter paths.
 
+On terminals, commands whose arguments contain control characters use ANSI-C
+shell quoting (`$'...'`) so copying the displayed escape preserves the original
+argument. Bash and Zsh support this quoting, as does POSIX.1-2024; older POSIX
+shells may not. Ordinary paths need no special shell support.
+
 `berman finish --reason TEXT` records the researcher's actual ending decision
 and preserves the encounter. Capture finalization alone is not an ending.
 An interrupted command is retried by running the same command again: it

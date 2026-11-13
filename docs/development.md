@@ -36,6 +36,7 @@ It never runs the developer tests or requires this checkout.
 | JSON Schema (`jsonschema`) | runtime | The structure of nine record families, where they are read and written. | `src/berman/schemas/` |
 | Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. | `tests/properties/`, `tests/support/properties.py` |
 | Rich | runtime | Operator-facing output on an interactive terminal. | `src/berman/presentation/terminal.py` |
+| Packaging | runtime | Python requirements, versions and environment markers for installation verification. | `src/berman/environment.py` |
 
 The [integration plan](plans/python-314-dependencies.md) records why each is
 used as it is, and the decisions taken on the way.
@@ -82,7 +83,7 @@ families and bugbear.
 | `lifecycle` | Lifecycle facts are evaluated without filesystem or process access. |
 | `frozen` | Only `capture/collector.py` loads the frozen collector. |
 | `presentation` | Only the command line imports `berman.presentation`. |
-| `confined` | `jsonschema` is imported only by `berman.schemas`, and `rich` only by `berman.presentation.terminal`. |
+| `confined` | `jsonschema` is imported only by `berman.schemas`, `rich` only by `berman.presentation.terminal`, and `packaging` only by `berman.environment`. |
 
 Every contract has at least one case in `tests/unit/test_architecture.py` that
 appends an import to a copy of the package and expects that contract to break.
@@ -282,6 +283,33 @@ collector are byte for byte what 0.4.1 shipped. A basis recorded for those bytes
 still names them.
 
 ### What adopting 0.4.2 in a study needs
+
+The independent integration review prompted corrections on the development
+branch after the original 0.4.2 revision. These changes do not adopt that branch
+in a study:
+
+- Software verification now checks applicable transitive requirements, version
+  constraints and `Requires-Python`, using the additional `packaging` dependency.
+  Markers are evaluated for this interpreter and requested extras. Missing
+  package files and the APIs Berman imports are checked explicitly; surviving
+  distribution metadata alone cannot establish a pass. This is a compatibility
+  and import check, not a hash attestation of dependency bytes or their origin.
+- Import-time exceptions from a damaged `jsonschema` installation refuse records
+  with an explanation. Import-time exceptions from Rich fall back to plain text,
+  preserving the result and exit code already computed.
+- Boolean plan-step identities and false catalogue values (`0`, `[]`, `{}`)
+  accepted by 0.4.1 are accepted again, without rewriting historical records.
+- Narrow terminals show lifecycle facts vertically and fold long evidence
+  instead of truncating it. Commands containing control characters use shell
+  escapes that preserve the argument bytes; ordinary commands, redirected text
+  and JSON retain their previous forms. The renderer tests specify both console
+  dimensions so their outcome does not depend on the runner's `TERM`.
+
+The Import Linter contracts cover static imports, including deferred imports.
+They do not detect arbitrary dynamic loading or filesystem calls through an
+otherwise allowed module; code review and runtime import checks remain necessary.
+The installed-wheel smoke test checks hooks in an isolated interpreter. Neither
+those checks nor dependency compatibility establish native qualification.
 
 None of the development checks qualifies a native installation. A study that
 adopts this version still decides, and does, the following under its own

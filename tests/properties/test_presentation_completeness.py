@@ -69,7 +69,7 @@ def results(draw, texts=visible):
 
 def shown(result, **options):
     out = io.StringIO()
-    options = {'color_system': None, 'width': 10_000, **options}
+    options = {'color_system': None, 'width': 10_000, 'height': 40, **options}
     terminal.render('verification', result, terminal.console(out, force_terminal=True, **options))
     return out.getvalue()
 

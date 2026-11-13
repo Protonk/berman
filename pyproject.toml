@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "jsonschema>=4.26,<5",
+    "packaging>=25,<27",
     "rich>=15,<16",
 ]
 
@@ -149,7 +150,7 @@ layers = [
     "berman.records",
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.collector : berman.capture.claude : berman._legacy",
-    "berman.files | berman.installation | berman.schemas | berman.presentation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
+    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
@@ -170,7 +171,7 @@ source_modules = [
     "berman.files",
     "berman.installation",
 ]
-forbidden_modules = ["jsonschema", "rich"]
+forbidden_modules = ["jsonschema", "rich", "packaging"]
 broken_contract_guidance = """
 Hooks run on every turn of a fieldworker's session, and their bytes are what
 hook trust and native capture qualify. They use the standard library and the
@@ -181,7 +182,7 @@ id = "archive"
 name = "The archive builder uses the standard library only"
 type = "forbidden"
 source_modules = ["berman.archive"]
-forbidden_modules = ["jsonschema", "rich"]
+forbidden_modules = ["jsonschema", "rich", "packaging"]
 broken_contract_guidance = """
 A reading edition is deterministic and its builder's bytes are its identity.
 Presentation and validation libraries stay out of selection, rendering and
@@ -192,7 +193,7 @@ id = "scripts"
 name = "Sandbox probes and development launcher scripts are self-contained"
 type = "forbidden"
 source_modules = ["berman.harnesses.probe", "berman.harnesses.development"]
-forbidden_modules = ["jsonschema", "rich"]
+forbidden_modules = ["jsonschema", "rich", "packaging"]
 broken_contract_guidance = """
 These files are copied out of the package and run as scripts, by an interpreter
 that need not have Berman or its dependencies installed."""
@@ -214,6 +215,7 @@ forbidden_modules = [
     "tempfile",
     "jsonschema",
     "rich",
+    "packaging",
 ]
 # Run and session identity patterns come from the single loaded frozen collector.
 ignore_imports = ["berman.lifecycle -> berman._legacy.api"]
@@ -247,8 +249,8 @@ id = "confined"
 name = "No module imports a third-party package except the one that confines it"
 type = "forbidden"
 source_modules = ["berman"]
-forbidden_modules = ["jsonschema", "rich"]
-ignore_imports = ["berman.schemas -> jsonschema", "berman.presentation.terminal -> rich"]
+forbidden_modules = ["jsonschema", "rich", "packaging"]
+ignore_imports = ["berman.schemas -> jsonschema", "berman.presentation.terminal -> rich", "berman.environment -> packaging"]
 broken_contract_guidance = """
-jsonschema and rich each have one importing module. Call that module instead of
+jsonschema, rich and packaging each have one importing module. Call that module instead of
 importing the library, so its use stays in one reviewable place."""

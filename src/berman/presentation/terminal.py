@@ -14,6 +14,7 @@ Three rules hold throughout:
 Nothing here decides anything: every word about state comes from the result it is given.
 """
 
+import shlex
 import unicodedata
 
 from rich.console import Console
@@ -63,6 +64,32 @@ def text(*parts):
     return made
 
 
+def shell_command(value):
+    """Keep generated commands copyable without emitting terminal controls.
+
+    Commands are shell-quoted argument vectors, not arbitrary shell programs. Only a command
+    containing hidden characters needs requoting. ANSI-C quotes (Bash, Zsh and POSIX.1-2024)
+    preserve those argument bytes, unlike the literal escapes used in explanatory prose.
+    """
+    if not any(unicodedata.category(ch) in HIDDEN for ch in value):
+        return value
+    arguments = []
+    for argument in shlex.split(value):
+        if not any(unicodedata.category(ch) in HIDDEN for ch in argument):
+            arguments.append(shlex.quote(argument))
+            continue
+        encoded = ''.join(
+            '\\' + ch
+            if ch in "\\'"
+            else ''.join(f'\\{byte:03o}' for byte in ch.encode('utf-8', 'surrogateescape'))
+            if unicodedata.category(ch) in HIDDEN
+            else ch
+            for ch in argument
+        )
+        arguments.append("$'" + encoded + "'")
+    return ' '.join(arguments)
+
+
 def indented(renderable, depth):
     return Padding(renderable, (0, 0, 0, depth), expand=False)
 
@@ -79,7 +106,7 @@ class Screen:
 
     def command(self, value, depth, note=None):
         # soft_wrap leaves wrapping to the terminal, which inserts no line break into a copied command.
-        parts = [' ' * depth, (value, COMMAND)] + ([(note, QUIET)] if note else [])
+        parts = [' ' * depth, (shell_command(value), COMMAND)] + ([(note, QUIET)] if note else [])
         self.console.print(text(*parts), soft_wrap=True)
 
     def gap(self):
@@ -130,9 +157,9 @@ def fact_value(value):
 def facts(row):
     """Each lifecycle fact with what establishes it, or why it is unknown."""
     table = Table(box=None, padding=(0, 2, 0, 0), show_header=True, header_style=QUIET, pad_edge=False)
-    table.add_column('fact')
-    table.add_column('value')
-    table.add_column('evidence, or why it is unknown')
+    table.add_column('fact', overflow='fold')
+    table.add_column('value', overflow='fold')
+    table.add_column('evidence, or why it is unknown', overflow='fold')
     for name in FACTS:
         fact = row['lifecycle'][name]
         word, style = fact_value(fact['value'])
@@ -159,7 +186,15 @@ def status(screen, result):
         screen.line((row['run'], HEADING), f' ({row["connection"]}): ', row['summary'])
         if row['last_capture']:
             screen.line(f'Capture at {row["last_capture"]}; consistent: {row["capture_consistent"]}', depth=2)
-        screen.console.print(indented(facts(row), 2))
+        if screen.console.width < 70:
+            for name in FACTS:
+                fact = row['lifecycle'][name]
+                screen.line(name, ': ', fact_value(fact['value']), depth=2)
+                basis = fact['evidence'] if fact['value'] is not None else fact.get('unknown', [])
+                for item in basis:
+                    screen.line(item, depth=4)
+        else:
+            screen.console.print(indented(facts(row), 2))
         for line in row['lifecycle']['disagreements'] + row['warnings']:
             screen.line((line, CAUTION), depth=2)
         for line in row['problems']:

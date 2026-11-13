@@ -35,7 +35,7 @@ def show(kind, result, stream=None):
     if interactive(stream) and os.environ.get(CHOICE) != 'plain':
         try:
             from berman.presentation import terminal
-        except ImportError:
+        except Exception:  # Import-time failures must not hide the result we already computed.
             terminal = None  # A damaged environment still gets its report, as plain text.
         if terminal is not None:
             terminal.render(kind, result, terminal.console(stream))

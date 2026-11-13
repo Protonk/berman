@@ -1,49 +1,22 @@
 """Source identity and explicit, side-effect-free workspace selection."""
 import hashlib
-from importlib import metadata
 import json
 from pathlib import Path
 import platform
-import re
 import shutil
 import sys
 import tempfile
 import uuid
 
 from berman.installation import PACKAGE, version
+from berman.environment import inspect as inspect_environment
 
 SOURCE = ('.py', '.json')  # Modules and the packaged record schemas.
 
 
-def distribution_name(requirement):
-    """The normalized distribution a requirement names, or None when it applies only to an extra."""
-    spec, _, marker = requirement.partition(';')
-    if 'extra' in marker:
-        return None
-    return re.sub(r'[-_.]+', '-', re.match(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)', spec).group(1)).lower()
-
-
 def dependencies():
-    """The installed version of every distribution Berman's declared dependencies require.
-
-    Read from installed metadata, following requirements but never extras. A requirement that is
-    not installed is None, unless it carries an environment marker, which is taken not to apply.
-    """
-    found, pending = {}, list(metadata.requires('berman') or [])
-    while pending:
-        requirement = pending.pop()
-        name = distribution_name(requirement)
-        if name is None or name in found:
-            continue
-        try:
-            distribution = metadata.distribution(name)
-        except metadata.PackageNotFoundError:
-            if not requirement.partition(';')[2].strip():
-                found[name] = None
-            continue
-        found[name] = distribution.version
-        pending += distribution.requires or []
-    return dict(sorted(found.items()))
+    """Installed versions required in this environment; None means required but missing."""
+    return inspect_environment()[0]
 
 
 def identity():

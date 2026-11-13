@@ -18,7 +18,10 @@
     "legacy_connection": {"type": ["string", "null"]},
     "catalogue": {
       "description": "A path, or anything false for none.",
-      "type": ["string", "null", "boolean"]
+      "anyOf": [
+        {"type": ["string", "null", "boolean"]},
+        {"enum": [0, [], {}]}
+      ]
     },
     "support_collections": {"type": "array", "items": {"type": "string"}},
     "qualified_adapters": {"type": "array", "items": {"type": "string"}},

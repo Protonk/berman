@@ -19,7 +19,8 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   byte change there costs renewed qualification or a rebuilt edition
   (docs/development.md#byte-sensitive-files).
 - `jsonschema` is imported only by `berman.schemas` and `rich` only by
-  `berman.presentation.terminal`. Hooks, probes, launcher scripts and the archive
+  `berman.presentation.terminal`; `packaging` only by `berman.environment`.
+  Hooks, probes, launcher scripts and the archive
   builder import the standard library only. The Import Linter contracts in
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new

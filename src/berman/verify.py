@@ -9,7 +9,6 @@ command. --native-access runs the real Codex binary against disposable Berman, p
 and the real checkouts, as a preparation does; nothing outside its evidence folder is kept.
 """
 import importlib
-from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -19,13 +18,13 @@ import sys
 import tempfile
 
 from berman.capture import adapters as capture_adapters
-from berman import files
+from berman import environment, files
 from berman import schemas
 from berman.files import Decision, keep, read, write
 from berman.harnesses.codex import Codex
 from berman.recipes import git_state
 from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256, command as module_command
-from berman.workspace import distribution_name, identity
+from berman.workspace import identity
 from berman.records import Store
 from berman.workflow import Workflow
 
@@ -38,7 +37,8 @@ PROBLEMS = (OSError, ValueError, KeyError, TypeError, AttributeError)
 MEANING = {
     'frozen-collector': 'The installed historical collector retains its frozen bytes.',
     'installation': 'Installed package metadata and runtime resources can be read; no study is loaded.',
-    'dependencies': 'The packages Berman declares as runtime dependencies are installed and import. Their versions '
+    'dependencies': 'Active runtime requirements, including transitive versions and Python constraints, are satisfied, '
+                    'and the dependency modules Berman uses import. Their versions '
                     'are environment facts: nothing fingerprints them and no qualification rests on them.',
     'schemas': 'The packaged record schemas are present, well formed and named for their own record families.',
     'recorded-hashes': 'Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and '
@@ -580,17 +580,29 @@ def verify(root, skip=(), native=None, record=None, run=subprocess.run, code=PAC
     return result
 
 
-def dependencies(installed):
-    """Whether every required distribution is installed and each declared dependency's modules import."""
+def dependencies():
+    """Check requirements and explicit API imports, even when installed files have vanished."""
+    try:
+        installed, broken = environment.inspect()
+    except Exception as exc:
+        installed, broken = {}, [f'{type(exc).__name__}: {exc}']
     missing = sorted(name for name, version in installed.items() if version is None)
-    declared = {distribution_name(r) for r in metadata.requires('berman') or []} - {None}
-    broken = []
-    for module, owners in sorted(metadata.packages_distributions().items()):
-        if declared & {distribution_name(owner) for owner in owners}:
-            try:
-                importlib.import_module(module)
-            except Exception as exc:  # A damaged binary wheel fails here in its own way.
-                broken.append(f'{module}: {type(exc).__name__}: {exc}')
+    # Diagnostic imports only; state computation never uses these libraries directly. Do not
+    # discover names from installed files: deleting a package must not erase the check itself.
+    required = {
+        'jsonschema': {'jsonschema': ('Draft202012Validator',)},
+        'rich': {'rich': (), 'rich.console': ('Console',), 'rich.padding': ('Padding',),
+                 'rich.table': ('Table',), 'rich.text': ('Text',)},
+    }
+    for name, modules in required.items():
+        try:
+            for module, attributes in modules.items():
+                loaded = importlib.import_module(module)
+                for attribute in attributes:
+                    if not callable(getattr(loaded, attribute)):
+                        raise TypeError(f'{module}.{attribute} is not callable')
+        except Exception as exc:  # A damaged binary wheel fails here in its own way.
+            broken.append(f'{name}: {type(exc).__name__}: {exc}')
     details = {'installed': installed, 'missing': missing, 'problems': broken}
     if missing or broken:
         return row('failed', f'{len(missing) + len(broken)} runtime dependency problem(s)',
@@ -614,9 +626,9 @@ def software(skip=(), code=PACKAGE):
     try:
         installed = identity()
         checks = {'installation': row('passed', f"Berman {installed['version']} is installed", software=installed)}
-        checks['dependencies'] = dependencies(installed['environment']['dependencies'])
-    except (OSError, ValueError, RuntimeError) as exc:
+    except Exception as exc:  # Third-party metadata and parser failures are installation evidence.
         checks = {'installation': row('failed', f'Installed package cannot be read: {exc}')}
+    checks['dependencies'] = dependencies()
     checks['frozen-collector'] = integrity(code)
     checks['schemas'] = packaged_schemas()
     for name, check in checks.items():

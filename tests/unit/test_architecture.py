@@ -41,9 +41,12 @@ VIOLATIONS = (
     ('layers', 'harnesses/development/launch.py', 'from berman import files'),
     ('hooks', 'capture/runtime.py', 'import rich'),
     ('hooks', 'files.py', 'import jsonschema'),
+    ('hooks', 'files.py', 'import packaging.requirements'),
     ('hooks', 'capture/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
     ('archive', 'archive/package.py', 'import rich.console'),
+    ('archive', 'archive/package.py', 'import packaging'),
     ('scripts', 'harnesses/probe.py', 'import jsonschema'),
+    ('scripts', 'harnesses/probe.py', 'import packaging'),
     ('scripts', 'harnesses/development/launch.py', 'import rich'),
     ('lifecycle', 'lifecycle.py', 'import subprocess'),
     ('lifecycle', 'lifecycle.py', 'from berman import files'),
@@ -56,6 +59,7 @@ VIOLATIONS = (
     ('confined', 'presentation/plain.py', 'import rich'),
     ('confined', 'cli.py', 'from rich.console import Console'),
     ('confined', 'records.py', 'import jsonschema'),
+    ('confined', 'workspace.py', 'import packaging'),
 )
 RUNNER = """
 import sys
@@ -126,7 +130,8 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(code, 1, output)
                 self.assertIn(CONTRACTS[contract]['name'].split()[0], output)
                 self.assertIn('Contracts: 0 kept, 1 broken.', output)
-                self.assertIn(CONTRACTS[contract]['broken_contract_guidance'].strip().splitlines()[0], output)
+                guidance = CONTRACTS[contract]['broken_contract_guidance'].strip().splitlines()[0]
+                self.assertIn(' '.join(guidance.split()), ' '.join(output.split()))
 
     def test_every_module_has_a_layer(self):
         layered = set(re.split(r'\s*[|:]\s*', ' | '.join(CONTRACTS['layers']['layers'])))
