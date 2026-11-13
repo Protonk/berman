@@ -67,6 +67,20 @@ class StandaloneTests(unittest.TestCase):
         self.assertEqual(set(result['checks']), {'installation', 'frozen-collector'})
         self.assertEqual(result['scope'], 'software')
 
+    def test_changing_probe_python_keeps_the_initialized_package_interpreter(self):
+        project = self.base / 'project'
+        project.mkdir()
+        root = self.base / 'study'
+        workspaces.initialize(root, project, 'example')
+        original = adapters.definition(Store(root), 'berman-codex')
+        config = read(root / 'berman.json')
+        config['python'] = '/probe-only/python'
+        write(root / 'berman.json', config)
+        store = Store(root)
+        self.assertEqual(store.python, Path('/probe-only/python'))
+        self.assertEqual(store.runtime_python, Path(sys.executable))
+        self.assertEqual(adapters.definition(store, 'berman-codex'), original)
+
     def test_external_workspace_generated_hook_and_generic_edition(self):
         root = self.base / 'study'
         home = self.base / 'codex'

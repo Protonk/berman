@@ -53,9 +53,11 @@ actual CLI trust review where applicable. Never reuse another study's receipts.
 
 The 0.2 package removes the checkout launcher and symlink installer. Install with
 pip instead. Reading editions use `berman --root PATH archive`; this command and
-archive verification use the active package interpreter. The workspace's python
-setting remains the interpreter for native harness callbacks and must have the
-chosen package installed. `berman verify --skip archive` remains available;
+archive verification use the active package interpreter. The workspace's
+`runtime_python` runs native harness callbacks and must have the chosen package
+installed; `python` runs sandbox probes and project checks. `init` records both
+explicitly, and disposable access checks retain the distinction.
+`berman verify --skip archive` remains available;
 the former test-suite skip options are removed.
 
 Version 0.4 removes the `legacy-codex` adapter: its routing, its packet layout

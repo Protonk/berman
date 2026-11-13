@@ -45,7 +45,10 @@ berman.json names two interpreters. `python` runs access probes and a
 connection's project checks inside the fieldworker's sandbox, where the
 workspace is denied, so it must lie outside the workspace and packet root.
 `runtime_python` is the interpreter that has this package installed; generated
-hook commands name it and run in isolated mode. It defaults to `python`. A
+hook commands name it and run in isolated mode. `init` records the active package
+interpreter in both settings; configure `python` for sandbox access while keeping
+`runtime_python` pinned to the package environment. Older configurations without
+`runtime_python` fall back to `python`. A
 virtual environment inside the denied workspace is a suitable `runtime_python`:
 hooks run from the harness, outside the sandbox.
 

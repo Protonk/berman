@@ -468,6 +468,17 @@ class NativeAccessTests(Fixture, Base):
             code = cli.main(['--root', str(self.root), *argv])
         return code, out.getvalue(), err.getvalue()
 
+    def test_disposable_workspace_keeps_the_two_interpreters(self):
+        config = read(self.root / 'berman.json')
+        config['runtime_python'] = '/package-environment/bin/python'
+        write(self.root / 'berman.json', config)
+        self.reload()
+        base = self.base / 'disposable'
+        base.mkdir()
+        fixture = Store(verify.disposable_workspace(self.store, base, ['stewart'], False))
+        self.assertEqual(fixture.python, self.store.python)
+        self.assertEqual(fixture.runtime_python, self.store.runtime_python)
+
     def test_access_passes_for_each_connection_and_the_synthetic_fixture(self):
         with self.assertRaises((OSError, ValueError)):
             adapters.readiness(self.store, 'berman-codex')  # No hook trust is recorded in this workspace.

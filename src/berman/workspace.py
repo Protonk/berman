@@ -63,6 +63,7 @@ def initialize(destination, project, connection, codex=None, claude=None):
         config = {'schema': 'berman.workspace/1', 'collection_id': str(uuid.uuid4()),
                   'packet_root': str(packet), 'codex_home': str(root / '.state/codex'),
                   'claude_home': str(root / '.state/claude'), 'python': sys.executable,
+                  'runtime_python': sys.executable,
                   'codex': str(Path(codex or shutil.which('codex') or '/unconfigured/codex').expanduser().absolute()),
                   'claude': str(Path(claude or shutil.which('claude') or '/unconfigured/claude').expanduser().absolute()),
                   'default_connection': connection, 'legacy_connection': None,

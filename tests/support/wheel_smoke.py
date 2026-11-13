@@ -59,6 +59,9 @@ def smoke(example, base):
     for directory in ('recipes', 'plans'):
         shutil.copytree(example / directory, study / directory, dirs_exist_ok=True)
     config = read(study / 'berman.json')
+    # Probe Python can be a system interpreter without Berman. Hooks must keep
+    # the wheel's interpreter when the operator configures that separate path.
+    config['python'] = sys._base_executable
     config['connections']['example']['plan'] = 'plans/example/plan.json'
     write(study / 'berman.json', config)
     store = Store(study)

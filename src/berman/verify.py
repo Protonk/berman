@@ -382,7 +382,7 @@ def disposable_workspace(store, base, names, synthetic, fulfilled=()):
     write(root / 'connections/catalogue.json', {'schema': 'berman.run-catalogue/1', 'support_collections': [], 'runs': []})
     write(root / 'berman.json', {
         'schema': 'berman.workspace/1', 'packet_root': str(base / 'fieldwork'), 'codex_home': str(home),
-        'python': str(store.python), 'codex': str(store.codex),
+        'python': str(store.python), 'runtime_python': str(store.runtime_python), 'codex': str(store.codex),
         'default_connection': store.default_connection if store.default_connection in names else None,
         'legacy_connection': store.legacy_connection if store.legacy_connection in names else None,
         'catalogue': 'connections/catalogue.json', 'connections': entries})
