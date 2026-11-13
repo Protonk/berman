@@ -296,3 +296,30 @@ How these stand at the close is recorded in the last entries of the log.
     and redirected text are identical. What differs is the look of four
     commands on a terminal. Selecting the plain text everywhere is a one-line
     change in `presentation.show`.
+- **13 November 2026, close.** Verified on Python 3.14.9, macOS arm64:
+  - *Development environment (uv, locked):* `ruff check`, `ruff format --check`
+    and `lint-imports` (8 contracts kept) pass; 361 tests pass, up from 289;
+    `berman verify --software` passes with four checks.
+  - *A clean clone with pip alone* (`pip install -e . --group dev` under
+    Homebrew's Python): the same checks and the same 361 tests pass.
+  - *The built wheel, installed with pip in a fresh environment and run from
+    outside the checkout:* the copied smoke test passes. It prepares, captures
+    with synthetic callbacks, preserves and archives the example study; software
+    verification passes; workspace verification is incomplete, as it should be,
+    with native access not run and hook trust and native capture not
+    established; and a hook process loads no third-party module. The wheel
+    holds the nine schemas and no tests, examples or documents.
+  - *Byte-sensitive files:* all 24 are identical to commit `018fec4`. Both
+    adapters' implementation digests equal those in the adjacent study's
+    recorded 0.4.1 identity.
+  - *The open questions:* installation does depend on a compiled wheel
+    (`rpds-py`); the limits say so. The schemas were checked against real
+    history before they were settled. The state machine costs about nine
+    seconds per suite run at its default budget; 1,100 further sequences were
+    explored by hand. A single wheel installed with `--no-index` fails, as
+    predicted; installing from a kept wheelhouse works and is the documented
+    route.
+  - *Not done, by design:* no native installation was qualified, no study's
+    runtime was touched, nothing was tagged, pushed or published. The version
+    is `0.5.0.dev0`. What a study must still do to adopt it is in the
+    [development guide](../development.md#what-adopting-05-in-a-study-needs).

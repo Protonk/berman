@@ -22,10 +22,13 @@ from berman.records import Store
 from berman.workflow import Workflow
 
 
-# Printed by an isolated interpreter: every loaded module that is neither standard library nor Berman's.
+# Printed by an isolated interpreter: every module that importing the hook entry points loads and that
+# is neither standard library nor Berman's. What the interpreter itself loads at startup is not counted.
 HOOK_MODULES = """
-import sys, berman.capture.router, berman.capture.claude_router
-print(sorted(m for m in sys.modules if m.partition('.')[0] not in {*sys.stdlib_module_names, 'berman', '__main__'}))
+import sys
+before = set(sys.modules)
+import berman.capture.router, berman.capture.claude_router
+print(sorted(m for m in set(sys.modules) - before if m.partition('.')[0] not in {*sys.stdlib_module_names, 'berman'}))
 """
 
 
