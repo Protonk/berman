@@ -18,7 +18,7 @@ research plan. Choose the actual documents, commission and project checks for
 your project. A recipe uses schema berman.recipe/2, declares its connections and
 recording protocol, and names INSTRUCTIONS.md plus COMMISSION.md. Instructions
 contain exactly one `{{notes_directory}}` placeholder. The synthetic files under
-[tools/fixtures/workspace](tools/fixtures/workspace) show the formats; they are
+[minimal study example](../examples/minimal-study/README.md) shows the formats; these are
 examples for software testing, not research assignments to adopt automatically.
 
 A plan uses berman.research-plan/1, an id, a connection and ordered steps with
@@ -49,8 +49,8 @@ Use the workflow rather than manually repeating profile, packet or migration ste
 Build a generic edition explicitly against a workspace:
 
 ```sh
-python3 -I -B tools/build_archive.py --root /path/to/study
-python3 -I -B tools/build_archive.py --root /path/to/study --verify
+berman --root /path/to/study archive
+berman --root /path/to/study archive --verify
 ```
 
 The default selects the workspace's recorded connections. `--connection NAME`

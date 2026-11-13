@@ -7,15 +7,15 @@ import sys
 import tempfile
 import uuid
 
-ROOT = Path(__file__).resolve().parent.parent
+from berman.installation import PACKAGE, version
+
 
 
 def identity():
-    paths = [ROOT / 'berman', *sorted((ROOT / 'tools').glob('*.py')),
-             *sorted((ROOT / 'tools/development_launchers').glob('*.py'))]
-    hashes = {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+    paths = sorted(PACKAGE.rglob('*.py'))
+    hashes = {p.relative_to(PACKAGE).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in paths if not p.name.startswith('test_')}
-    return {'schema': 'berman.software/1', 'version': (ROOT / 'VERSION').read_text().strip(),
+    return {'schema': 'berman.software/1', 'version': version(),
             'source_sha256': hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
             'files_sha256': hashes}
 
@@ -26,17 +26,17 @@ def discover(start=None):
     for path in (start, *start.parents):
         if (path / 'berman.json').is_file():
             return path
-        if (path / '.git').exists() or path == ROOT:
+        if (path / '.git').exists():
             break
     return None
 
 
 def initialize(destination, project, connection, codex=None, claude=None):
     """Create an unqualified workspace; install no hooks and assign no engagement."""
-    import berman_capture
-    from berman_config import identity as check_identity
-    from berman_files import Decision, write
-    from berman_records import Store
+    from berman.capture import adapters
+    from berman.config import identity as check_identity
+    from berman.files import Decision, write
+    from berman.records import Store
     check_identity(connection, 'connection')
     root = Path(destination).expanduser().absolute()
     project = Path(project).expanduser().resolve()
@@ -78,7 +78,7 @@ def initialize(destination, project, connection, codex=None, claude=None):
         # Definition generation uses the installed code location, never workspace/tools.
         store = Store(stage)
         store.root = root  # Hook arguments name the committed destination, not staging.
-        write(stage / 'hooks/berman-capture.hooks.json', berman_capture.definition(store, 'berman-codex'))
+        write(stage / 'hooks/berman-capture.hooks.json', adapters.definition(store, 'berman-codex'))
         stage.rename(root)
     finally:
         if stage.exists():

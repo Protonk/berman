@@ -6,13 +6,11 @@ import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from berman_capture_runtime import Collector, LegacyCollector, capture, marker_warning
-
-ROOT = Path(__file__).resolve().parent.parent
+from berman.capture.runtime import Collector, LegacyCollector, capture, marker_warning
 
 
-def route(event, home, root=ROOT):
+
+def route(event, home, root):
     home, root = Path(home), Path(root)
     sid = event.get('session_id')
     if not isinstance(sid, str) or not capture.SESSION.fullmatch(sid):
@@ -68,7 +66,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('hook',))
     parser.add_argument('--codex-home', type=Path, default=capture.CODEX_HOME)
-    parser.add_argument('--analysis-root', type=Path, default=ROOT)
+    parser.add_argument('--analysis-root', type=Path, required=True)
     args = parser.parse_args()
     try:
         result = route(json.load(sys.stdin), args.codex_home, args.analysis_root)

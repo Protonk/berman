@@ -6,10 +6,10 @@ import shutil
 import subprocess
 import tempfile
 
-import berman_files as files
-from berman_files import Decision, keep, read, write
-from berman_legacy import MARKER
-import fieldwork
+from berman import files
+from berman.files import Decision, keep, read, write
+from berman._legacy.api import MARKER
+from berman import recovery as fieldwork
 
 
 PROTOCOLS = ('work-accounts/1', 'participant-inquiry/1')

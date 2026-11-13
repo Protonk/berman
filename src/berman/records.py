@@ -6,14 +6,13 @@ from pathlib import Path
 import time
 import uuid
 
-import berman_capture_runtime
-from berman_claude_capture import ClaudeCollector
-from berman_config import Catalogue, Connection, legacy_workspace
-from berman_files import Decision, digest, read, safe_directory, write
-from berman_legacy import RUN
-from berman_lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record
+from berman.capture import runtime
+from berman.capture.claude import ClaudeCollector
+from berman.config import Catalogue, Connection, legacy_workspace
+from berman.files import Decision, digest, read, safe_directory, write
+from berman._legacy.api import RUN
+from berman.lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record
 
-ROOT = Path(__file__).resolve().parent.parent
 LOCK_LABELS = {'global': 'the Berman workspace allocation and index', 'connection': 'connection {}',
                'run': '{}', 'installation': 'harness installation resource {}'}
 SUPPORT_RANGE = range(900101, 900200)  # Native support trials: run-900101 to run-900199.
@@ -32,7 +31,7 @@ def packet_evidence(root):
 
 
 class Store:
-    def __init__(self, root=ROOT):
+    def __init__(self, root):
         self.root = Path(root).expanduser().resolve()
         safe_directory(self.root)
         raw = read(self.root / 'berman.json')
@@ -53,8 +52,8 @@ class Store:
         self.operations = self.root / 'operations'
         self.lock_dir = self.root / '.berman-locks'
         self.tag = digest(str(self.root).encode())[:8]
-        self.collectors = {'legacy-codex': berman_capture_runtime.LegacyCollector(self.field, self.home, self.root),
-                           'berman-codex': berman_capture_runtime.Collector(self.field, self.home, self.root),
+        self.collectors = {'legacy-codex': runtime.LegacyCollector(self.field, self.home, self.root),
+                           'berman-codex': runtime.Collector(self.field, self.home, self.root),
                            'berman-claude': ClaudeCollector(self.field, self.claude_home, self.root)}
         self.collector = self.collectors['legacy-codex']
         self.catalogue = Catalogue(self, workspace)

@@ -6,13 +6,13 @@ from pathlib import Path
 import subprocess
 import sys
 
-import berman_capture
-import berman_support
-import berman_verify
-import berman_source
-from berman_files import Decision
-from berman_records import ROOT, Store
-from berman_workflow import Workflow
+from berman.capture import adapters
+from berman import support as support_trials
+from berman import verify
+from berman import workspace
+from berman.files import Decision
+from berman.records import Store
+from berman.workflow import Workflow
 
 
 def render_cheatsheet(result):
@@ -85,6 +85,12 @@ def main(argv=None):
     init.add_argument('--codex', type=Path)
     init.add_argument('--claude', type=Path)
     commands.add_parser('version', help='show the software version and source identity')
+    archive = commands.add_parser('archive', help='build or verify a reading edition')
+    archive.add_argument('--verify', action='store_true')
+    archive.add_argument('--edition', choices=('connections', 'stewart'), default='connections')
+    archive.add_argument('--connection', action='append', default=[])
+    archive.add_argument('--run', action='append', default=[])
+
     commands.add_parser('status', help='discover runs across connections and their next agreed roles without changing files')
     commands.add_parser('cheatsheet', help='print the commands that start fieldwork and development sessions now, '
                                            'from the recorded situation; changes nothing')
@@ -117,7 +123,7 @@ def main(argv=None):
     capture = commands.add_parser('capture', help='capture adapter installation and verification')
     capture_commands = capture.add_subparsers(dest='capture_command', required=True)
     readiness = capture_commands.add_parser('readiness', help='check an adapter against its recorded verification basis')
-    readiness.add_argument('--adapter', choices=tuple(berman_capture.ADAPTERS), required=True)
+    readiness.add_argument('--adapter', choices=tuple(adapters.ADAPTERS), required=True)
     install = capture_commands.add_parser('install', help="add an adapter's hook definition to Codex hooks.json; grants no trust")
     install.add_argument('--adapter', choices=('berman-codex',), required=True)
     trust = capture_commands.add_parser('record-trust', help='record an actual /hooks review in the Codex CLI')
@@ -141,7 +147,7 @@ def main(argv=None):
         sub.add_argument('--evidence', required=True, metavar='experiments/NAME',
                          help='the trial folder under experiments/; new for prepare')
         if name == 'prepare':
-            sub.add_argument('--adapter', choices=tuple(berman_capture.ADAPTERS), required=True)
+            sub.add_argument('--adapter', choices=tuple(adapters.ADAPTERS), required=True)
         elif name == 'launch':
             sub.add_argument('--model', help='Claude support trial model; no effect on the later fieldworker')
             sub.add_argument('--max-budget-usd', type=float, help='Required bounded budget for a Claude support trial')
@@ -150,11 +156,10 @@ def main(argv=None):
                              help='preserve an intentional incomplete boundary; the trial then demonstrates no capture')
         elif name == 'cleanup':
             sub.add_argument('--reason', required=True)
-    commands.add_parser('install', help='install the berman command in ~/.local/bin without changing shell settings')
     verification = commands.add_parser('verify', help='run the maintained checks and name what remains unestablished; '
                                                       'read-only unless --record or --native-access')
     verification.add_argument('--software', action='store_true', help='check only the standalone software')
-    verification.add_argument('--skip', action='append', default=[], choices=berman_verify.SKIPPABLE,
+    verification.add_argument('--skip', action='append', default=[], choices=verify.SKIPPABLE,
                               help='leave a slow check unrun (repeatable); the verdict is then incomplete')
     verification.add_argument('--native-access', action='store_true',
                               help='also run the real Codex sandbox check for each connection in disposable roots')
@@ -164,39 +169,39 @@ def main(argv=None):
     workflow = None
     try:
         if args.command in ('init', 'version'):
-            result = (berman_source.identity() if args.command == 'version' else
-                      berman_source.initialize(args.destination, args.project, args.connection, args.codex, args.claude))
+            result = (workspace.identity() if args.command == 'version' else
+                      workspace.initialize(args.destination, args.project, args.connection, args.codex, args.claude))
             print(json.dumps(result, indent=2))
             return 0
-        selected = args.root or berman_source.discover()
+        selected = args.root or workspace.discover()
         if args.command == 'verify' and (args.software or selected is None):
             if args.native_access or args.record:
                 raise Decision('--native-access and --record require a workspace verification')
-            result = berman_verify.software(skip=args.skip)
-            print(json.dumps(result, indent=2) if args.json else berman_verify.render(result))
-            return berman_verify.EXIT[result['verdict']]
+            result = verify.software(skip=args.skip)
+            print(json.dumps(result, indent=2) if args.json else verify.render(result))
+            return verify.EXIT[result['verdict']]
         if selected is None:
             raise Decision('Select a fieldwork workspace with --root, or create one with berman init')
         args.root = selected
+        if args.command == 'archive':
+            from berman.archive.builder import main as archive_main
+            options = ['--root', str(selected), '--edition', args.edition]
+            options += ['--verify'] if args.verify else []
+            for kind in ('connection', 'run'):
+                for value in getattr(args, kind):
+                    options += ['--' + kind, value]
+            archive_main(options)
+            return 0
+
         if args.command == 'verify':
             # Before the workspace loads, so a broken berman.json is reported as a check, not a refusal.
-            result = berman_verify.verify(args.root, skip=args.skip, record=args.record,
-                                          native=berman_verify.native_access if args.native_access else None)
-            print(json.dumps(result, indent=2) if args.json else berman_verify.render(result))
-            return berman_verify.EXIT[result['verdict']]
+            result = verify.verify(args.root, skip=args.skip, record=args.record,
+                                          native=verify.native_access if args.native_access else None)
+            print(json.dumps(result, indent=2) if args.json else verify.render(result))
+            return verify.EXIT[result['verdict']]
         store = Store(args.root)
         workflow = Workflow(store)
-        if args.command == 'install':
-            target = Path.home() / '.local/bin/berman'
-            source = ROOT / 'berman'
-            if target.exists() or target.is_symlink():
-                if not target.is_symlink() or target.resolve() != source:
-                    raise Decision(f'An unrelated command already exists: {target}')
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.symlink_to(source)
-            result = {'installed': str(target), 'source': str(source)}
-        elif args.command == 'status':
+        if args.command == 'status':
             result = workflow.status()
         elif args.command == 'cheatsheet':
             result = workflow.cheatsheet()
@@ -218,28 +223,28 @@ def main(argv=None):
             os.execv(start['argv'][0], start['argv'])
         elif args.command == 'capture':
             if args.capture_command == 'readiness':
-                result = berman_capture.readiness(store, args.adapter)
+                result = adapters.readiness(store, args.adapter)
             elif args.capture_command == 'install':
-                result = berman_capture.install(store, args.adapter)
+                result = adapters.install(store, args.adapter)
             elif args.capture_command == 'record-capture':
-                result = berman_support.record_capture(store, args.trial)
+                result = support_trials.record_capture(store, args.trial)
             else:
                 if args.adapter == 'berman-claude':
-                    from berman_claude_support import record_trust
+                    from berman.harnesses.claude_support import record_trust
                     result = record_trust(store, args.trial, args.evidence, args.statement)
                 else:
-                    result = berman_capture.record_trust(store, args.evidence, args.statement)
+                    result = adapters.record_trust(store, args.evidence, args.statement)
         elif args.command == 'support-trial':
             if args.support_command == 'launch':
-                result = berman_support.launch(store, args.evidence, args.model, args.max_budget_usd)
+                result = support_trials.launch(store, args.evidence, args.model, args.max_budget_usd)
                 if result is None:
                     return 0
             elif args.support_command == 'prepare':
-                result = berman_support.prepare(store, args.evidence, args.adapter)
+                result = support_trials.prepare(store, args.evidence, args.adapter)
             elif args.support_command == 'collect':
-                result = berman_support.collect(store, args.evidence, args.allow_incomplete)
+                result = support_trials.collect(store, args.evidence, args.allow_incomplete)
             else:
-                result = berman_support.cleanup(store, args.evidence, args.reason)
+                result = support_trials.cleanup(store, args.evidence, args.reason)
         else:
             workflow.launch(args.run, args.connection)
             return 0

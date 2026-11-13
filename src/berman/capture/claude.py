@@ -8,9 +8,9 @@ import json
 from pathlib import Path
 import time
 
-import berman_files as files
-from berman_capture_runtime import LegacyCollector
-from berman_legacy import RUN
+from berman import files
+from berman.capture.runtime import LegacyCollector
+from berman._legacy.api import RUN
 
 ADAPTER = 'berman-claude'
 MARKER = 'Berman-Claude-Fieldwork-Run: '

@@ -18,13 +18,13 @@ import sys
 import tempfile
 import uuid
 
-import berman_capture
-import berman_files as files
-from berman_files import Decision, digest_json, keep, read, write
-from berman_harness import Codex, profile_name
-from berman_lifecycle import SESSION_MATERIAL, validate_record
-from berman_verify import evidence_folder
-import fieldwork
+from berman.capture import adapters
+from berman import files
+from berman.files import Decision, digest_json, keep, read, write
+from berman.harnesses.codex import Codex, profile_name
+from berman.lifecycle import SESSION_MATERIAL, validate_record
+from berman.verify import evidence_folder
+from berman import recovery as fieldwork
 
 SCHEMA = 'berman.support-trial/1'
 COLLECTED = ('collected', 'collected-incomplete')
@@ -145,13 +145,13 @@ def codex_config(store):
 
 def installation(store, adapter, harness):
     """What the trial runs against. The router must be installed exclusively; its trust may predate these bytes."""
-    found = berman_capture.installed(store, adapter)
+    found = adapters.installed(store, adapter)
     try:
-        readiness = {'ready': True, 'basis': berman_capture.readiness(store, adapter)['basis']}
+        readiness = {'ready': True, 'basis': adapters.readiness(store, adapter)['basis']}
     except PROBLEMS as exc:
         readiness = {'ready': False, 'reason': str(exc)}
     version = harness.invoke([str(store.codex), '--version'], store.root, check=True, timeout=20).stdout.strip()
-    return {'codex_version': version, 'implementation_sha256': berman_capture.implementation(adapter),
+    return {'codex_version': version, 'implementation_sha256': adapters.implementation(adapter),
             'definition_sha256': digest_json(found['definition']), 'installed_hooks_sha256': digest_json(found['installed']),
             'codex_config_sha256': codex_config(store), 'readiness_at_preparation': readiness}
 
@@ -188,7 +188,7 @@ def reserve(store, folder, adapter, facts):
                       'support_trial': rel + '/trial.json', 'reserved_at_utc': files.now(),
                       'workspace': {'root': str(store.root), 'tag': store.tag}, 'packet_root': str(store.field),
                       'packet': str(store.field / run), 'project': str(project),
-                      'capture': berman_capture.reservation(adapter),
+                      'capture': adapters.reservation(adapter),
                       'harness': store.harness_identity(adapter, run)}
             keep(store.folder(run) / 'operation.json', files.json_bytes(validate_record(record, run)))
         trial = {'schema': SCHEMA, 'run': run, 'adapter': adapter, 'phase': 'reserved',
@@ -207,9 +207,9 @@ def prepare(store, path, adapter, harness=None):
     Resumable while the trial is reserved; a trial in any later phase is never prepared again.
     """
     if adapter == 'berman-claude':
-        from berman_claude_support import prepare as claude_prepare
+        from berman.harnesses.claude_support import prepare as claude_prepare
         return claude_prepare(store, path)
-    if adapter not in berman_capture.ADAPTERS:
+    if adapter not in adapters.ADAPTERS:
         raise Decision(f'Unknown capture adapter {adapter}')
     harness = harness or Codex(store)
     interrupted(store, path)
@@ -229,10 +229,10 @@ def prepare(store, path, adapter, harness=None):
     with store.lock('run', run):
         trial, record = claim(store, folder, run)
         refuse(trial)  # A concurrent prepare or cleanup may have moved it on.
-        if berman_capture.implementation(adapter) != record['capture']['implementation_sha256']:
+        if adapters.implementation(adapter) != record['capture']['implementation_sha256']:
             raise Decision('Capture code changed after this trial was reserved; clean it up and prepare a new trial '
                            'in a new folder')
-        a = berman_capture.ADAPTERS[adapter]
+        a = adapters.ADAPTERS[adapter]
         project, packet = Path(record['project']), Path(record['packet'])
         project.mkdir(mode=0o700, exist_ok=True)
         files.safe_directory(project)
@@ -268,7 +268,7 @@ def launch(store, path, model=None, max_budget_usd=None):
     """Start the trial's one interactive session inside a recorded terminal; a trial is never launched twice."""
     folder, trial, _ = receipt(store, path)
     if trial['adapter'] == 'berman-claude':
-        from berman_claude_support import launch as claude_launch
+        from berman.harnesses.claude_support import launch as claude_launch
         return claude_launch(store, path, model, max_budget_usd)
     if model is not None or max_budget_usd is not None:
         raise Decision('The model/budget flags here belong to the bounded Claude support trial')
@@ -320,7 +320,7 @@ def observe(trial, packet, status):
     missing = []
     if trial.get('phase') == 'prepared':
         missing.append('no launch was recorded: the session started outside berman support-trial launch')
-    if berman_capture.implementation(trial['adapter']) != trial['implementation_sha256']:
+    if adapters.implementation(trial['adapter']) != trial['implementation_sha256']:
         missing.append('the capture implementation changed after preparation')
     if (status.get('binding') or {}).get('run') != trial['run']:
         missing.append(f'no session binding for {trial["run"]}')
@@ -563,17 +563,17 @@ def next_step(store, trial):
         return (f'berman capture record-capture --trial {rel}; ' + cleanup + ' (an actual-CLI /hooks review is '
                 f'optional: berman capture record-trust --adapter berman-claude --trial {rel} --evidence FILE '
                 '--attest --statement TEXT)')
-    if berman_capture.implementation(adapter) != trial.get('implementation_sha256'):
+    if adapters.implementation(adapter) != trial.get('implementation_sha256'):
         return cleanup + '; capture code changed after this trial, so it cannot be linked. Prepare another in a new folder'
     steps = []
     try:
-        berman_capture.readiness(store, adapter)
+        adapters.readiness(store, adapter)
     except PROBLEMS:
         steps.append("with the researcher's approval, berman capture record-trust --evidence "
                      f'{store.root / rel / "native.terminal"} --attest')
     try:
         # Consulted even before a renewed review: record_trust keeps the link for unchanged bytes.
-        capture = berman_capture.native_capture(store, adapter)
+        capture = adapters.native_capture(store, adapter)
     except PROBLEMS:
         capture = None
     if capture is None:
@@ -624,16 +624,16 @@ def record_capture(store, path):
     """Link a verified native capture to its adapter's trust basis, for the bytes both were made with."""
     folder, trial, _ = receipt(store, path)
     if trial['adapter'] == 'berman-claude':
-        from berman_claude_support import record_capture as claude_record_capture
+        from berman.harnesses.claude_support import record_capture as claude_record_capture
         return claude_record_capture(store, path)
     adapter, run, rel = trial['adapter'], trial['run'], trial['evidence']
     if trial.get('phase') not in ('collected', 'cleaned') or trial.get('demonstrates_capture') is not True:
         raise Decision(f'{rel} demonstrates no native capture (phase {trial.get("phase")}); a capture is recorded only from '
                        'a complete collected trial. Run a new support trial')
-    current = berman_capture.implementation(adapter)
+    current = adapters.implementation(adapter)
     if trial['implementation_sha256'] != current:
         raise Decision(f'Capture code changed since {rel} ran; run a new support trial for these bytes')
-    basis_path = store.root / berman_capture.ADAPTERS[adapter]['basis']
+    basis_path = store.root / adapters.ADAPTERS[adapter]['basis']
     collection = folder / 'collection'
     entry = next((r for r in read(collection / 'source-layout.json')['runs'] if r['run'] == run), None)
     if entry is None:
@@ -651,7 +651,7 @@ def record_capture(store, path):
     # record_trust rewrites the basis under this lock, so the basis is judged only while it is held.
     with store.lock('installation', 'codex-hooks', wait=10):
         try:
-            berman_capture.readiness(store, adapter)
+            adapters.readiness(store, adapter)
         except PROBLEMS as exc:
             raise Decision(f'{exc}. Record the actual CLI /hooks review for these bytes with berman capture record-trust '
                            f'first; this trial\'s terminal record is {folder / "native.terminal"}') from exc
@@ -672,5 +672,5 @@ def record_capture(store, path):
                    f'implementation bytes (support {run}). Check each research session after its first reply.')
         write(basis_path, dict(basis, successful_capture=successful, meaning=meaning))
     return {'state': 'recorded', 'adapter': adapter, 'basis': str(basis_path), 'successful_capture': successful,
-            'native_capture': berman_capture.native_capture(store, adapter),
+            'native_capture': adapters.native_capture(store, adapter),
             'next': 'hooks/verification is packaged; rebuild the archive once, then verify it'}

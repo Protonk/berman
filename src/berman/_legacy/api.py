@@ -5,7 +5,7 @@ never edited. The capture path (router, runtime, berman_collector) loads it itse
 bytes are verified too. These names come from that same loaded instance, so a process never
 executes the frozen file twice. Routed legacy capture is berman_capture_runtime.LegacyCollector.
 """
-import berman_collector as _collector
+from berman.capture import collector as _collector
 
 MARKER = _collector.capture.MARKER  # The legacy opening line: Stewart-Fieldwork-Run: run-NNN
 RUN = _collector.capture.RUN  # Run identities both collectors accept: run- and 3 to 6 digits.

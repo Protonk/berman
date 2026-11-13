@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import stat
 
-import archive_stewart as stewart
+from berman.archive import stewart
 
 # Portable edition namespace, independent of the local repository name (berman).
 PREFIX = "stewart-analysis/"

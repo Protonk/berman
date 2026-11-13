@@ -8,7 +8,7 @@ fact's `unknown` says why. This module reads no files; discovery gathers evidenc
 """
 from pathlib import Path
 
-from berman_legacy import RUN, SESSION
+from berman._legacy.api import RUN, SESSION
 
 PHASES = ('reserved', 'prepared', 'ready', 'launching', 'active', 'closing', 'archived', 'cancelling', 'cancelled')
 BEFORE_SESSION = PHASES[:4]

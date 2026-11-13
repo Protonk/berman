@@ -7,7 +7,7 @@ The separated source has not inherited another installation's trust.
 
 Native sandbox access is primarily developed for macOS. Ordinary development
 launchers remain a Stewart-specific compatibility adapter, described in
-[their guide](tools/development_launchers/README.md). Named fieldwork connections
+[their guide](development-launchers.md). Named fieldwork connections
 are configurable independently of those launchers.
 
 A connected target must be an existing Git checkout with a commit. Linked

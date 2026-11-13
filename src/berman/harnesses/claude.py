@@ -14,18 +14,18 @@ alter what the fieldworker can see or what gets recorded (researcher's decision,
 No interactive /hooks review is required: the installed CLI's browser omits flag-supplied hooks,
 so the trial's native hook events are the execution evidence (LIMITS.md).
 """
+from berman.installation import PACKAGE, command as module_command
 import inspect
 import os
 from pathlib import Path
 import shlex
 import subprocess
 
-import berman_files as files
-from berman_files import Decision, digest_json, read, write
-from berman_claude_capture import EVENTS
-from development_launchers.launch import allow_read_conflicts, checkout_git_fixture, claude_conflicts, claude_sources
+from berman import files
+from berman.files import Decision, digest_json, read, write
+from berman.capture.claude import EVENTS
+from berman.harnesses.development.launch import allow_read_conflicts, checkout_git_fixture, claude_conflicts, claude_sources
 
-ROOT = Path(__file__).resolve().parent.parent
 BASIS = 'hooks/verification/berman-claude.json'
 SCHEMA = 'berman.claude-verification/2'
 CONFIGURATION = 'berman.claude-configuration/2'
@@ -45,7 +45,7 @@ LIMITATION = ("The installed CLI's /hooks browser omits flag-supplied hooks, so 
 
 def definition():
     return {'schema': 'berman.claude-hook-template/1', 'events': list(EVENTS),
-            'entry': 'tools/berman_claude_router.py',
+            'entry': 'capture/claude_router.py',
             'access_tools': ['Read', 'Edit', 'Write', 'NotebookEdit', 'Grep', 'Glob'],
             'installation': 'Per-launch --settings; run and workspace arguments bind each hook.',
             'capture': 'Only the reserved parent session; no stop continuation or completion inference.'}
@@ -57,7 +57,7 @@ def settings_path(store, run):
 
 def settings(store, record):
     root, field, packet = str(store.root), str(store.field), record['packet']
-    command = [str(store.python), '-I', '-B', str(ROOT / 'tools/berman_claude_router.py')]
+    command = module_command(python=store.python, module='berman.capture.claude_router')
     suffix = ['--root', root, '--run', record['run']]
     hooks = {event: [{'hooks': [{'type': 'command', 'command': shlex.join(command + ['capture'] + suffix),
                                'timeout': 20}]}] for event in EVENTS}
@@ -74,7 +74,7 @@ def settings(store, record):
 
 def helpers():
     """Source digests of the launcher functions readiness imports; the rest of that file is not fingerprinted."""
-    return {f'tools/development_launchers/launch.py:{f.__name__}': files.digest(inspect.getsource(f).encode())
+    return {f'harnesses/development/launch.py:{f.__name__}': files.digest(inspect.getsource(f).encode())
             for f in HELPERS}
 
 
@@ -139,7 +139,7 @@ def harness_warnings(current, qualified):
 
 
 def readiness(store, project=None):
-    import berman_capture
+    from berman.capture import adapters
     path = store.root / BASIS
     if not path.is_file():
         raise Decision('Claude fieldwork has no qualified per-launch hooks; prepare and qualify a berman-claude support trial')
@@ -148,7 +148,7 @@ def readiness(store, project=None):
         raise Decision('Invalid Claude fieldwork verification basis')
     if basis.get('schema') != SCHEMA:
         raise Decision('Claude qualification predates tiered receipts; qualify the current installation in a new support trial')
-    if basis.get('implementation_sha256') != berman_capture.implementation('berman-claude'):
+    if basis.get('implementation_sha256') != adapters.implementation('berman-claude'):
         raise Decision('Claude in-session implementation changed; qualify the current bytes in a new support trial')
     if basis.get('helpers_sha256') != helpers():
         raise Decision('Claude readiness helpers changed; qualify them in a new support trial')

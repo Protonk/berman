@@ -9,15 +9,15 @@ from pathlib import Path
 import shlex
 import uuid
 
-import berman_capture
-import berman_source
-import berman_files as files
-from berman_files import Decision, keep, read, write
-from berman_records import ROOT
-from berman_recipes import compose, prepare, recipe, snapshot
-from berman_preserve import finish, finishable, preserve
-from berman_harness import Harnesses
-from berman_lifecycle import (BEFORE_SESSION, CANCELLATION, SESSION_MATERIAL, authorized, declared, describe,
+from berman.capture import adapters
+from berman import workspace
+from berman import files
+from berman.files import Decision, keep, read, write
+from berman.installation import command as module_command
+from berman.recipes import compose, prepare, recipe, snapshot
+from berman.preserve import finish, finishable, preserve
+from berman.harnesses.codex import Harnesses
+from berman.lifecycle import (BEFORE_SESSION, CANCELLATION, SESSION_MATERIAL, authorized, declared, describe,
                               open_engagement, outstanding, progress_state, unused, validate_request)
 
 
@@ -81,7 +81,7 @@ class Workflow:
         return values
 
     def status(self):
-        import berman_support  # Imported here: berman_support uses berman_verify, which imports this module.
+        from berman import support  # Imported here: berman_support uses berman_verify, which imports this module.
         rows = self.rows()
         held = self.store.occupied()
         connections = {}
@@ -118,7 +118,7 @@ class Workflow:
                 'workspace_problems': self.store.discovery_problems,
                 'default_connection': self.store.default_connection, 'connections': connections,
                 'next_recipe': default.get('next_recipe'), 'operations_in_progress': held,
-                'support_trials': berman_support.status(self.store),
+                'support_trials': support.status(self.store),
                 'meaning': 'Session activity and declared engagement endings are distinct. No files were changed.'}
 
     def select(self, rows, run=None, prepared=False, command=None):
@@ -268,14 +268,14 @@ class Workflow:
             commission = compose(connection.commission(), selected['research_commission']) \
                 if 'research_commission' in selected else selected['commission']
             record = {'schema': 'berman.operation/1', 'run': run, 'phase': 'reserved',
-                      'software': berman_source.identity(),
+                      'software': workspace.identity(),
                       'reserved_at_utc': files.now(), 'workspace': {'root': str(store.root), 'tag': store.tag},
                       'connection': connection.reservation(), 'plan': connection.plan.reservation(step),
                       'step': step['id'], 'recipe': selected, 'commission': commission,
                       'recording_protocol': selected['metadata']['recording_protocol'],
                       'project': str(connection.checkout), 'documents': connection.documents(),
                       'packet_root': str(store.field), 'packet': str(store.field / run),
-                      'capture': berman_capture.reservation(connection.capture),
+                      'capture': adapters.reservation(connection.capture),
                       'harness': store.harness_identity(connection.capture, run, connection.entry.get('fieldwork_model')),
                       'retained_open_runs': []}
             store.save(record)
@@ -377,11 +377,7 @@ class Workflow:
                 record = self.store.record(run)
                 record.update(phase='ready', readiness=str(self.store.folder(run) / 'preparation/readiness.json'))
                 self.store.save(record)
-                argv = [str(ROOT / 'berman')]
-                if self.store.root != ROOT:
-                    argv += ['--root', str(self.store.root)]
-                argv += ['launch', '--run', run]
-                command = shlex.join(argv)
+                command = self.command('launch', '--run', run)
                 keep(self.store.folder(run) / 'preparation/LAUNCH.txt', (command + '\n').encode())
                 if request:
                     request['state'] = 'complete'
@@ -453,16 +449,8 @@ class Workflow:
         return {'argv': [str(path), *args], 'cwd': str(conn.checkout), 'connection': conn.id}
 
     def command(self, *words):
-        """A command line for a person to type: the installed `berman` when it resolves to this root."""
-        installed = Path.home() / '.local/bin/berman'
-        try:
-            short = installed.is_symlink() and installed.resolve() == (ROOT / 'berman').resolve()
-        except OSError:
-            short = False
-        argv = ['berman' if short else str(ROOT / 'berman')]
-        if self.store.root != ROOT:
-            argv += ['--root', str(self.store.root)]
-        return shlex.join([*argv, *words])
+        """Use this installation's interpreter and name the workspace explicitly."""
+        return shlex.join(module_command('--root', self.store.root, *words))
 
     def cheatsheet(self):
         """The commands a person types to start sessions now, per connection; read-only.

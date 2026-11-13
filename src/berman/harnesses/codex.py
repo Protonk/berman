@@ -13,10 +13,10 @@ import subprocess
 import tempfile
 import uuid
 
-import berman_capture
-import berman_files as files
-from berman_files import Decision, keep, read, write
-from berman_records import ROOT
+from berman.capture import adapters
+from berman import files
+from berman.files import Decision, keep, read, write
+from berman.installation import PACKAGE
 
 PROTECTED = ('.git', '.agents', '.codex', '.aws')
 CANARIES = ('berman', 'unassigned_packet')
@@ -122,7 +122,7 @@ class Codex:
         return hooks
 
     def hooks(self, adapter):
-        return berman_capture.readiness(self.store, adapter)
+        return adapters.readiness(self.store, adapter)
 
     def fingerprint(self, run, project, adapter, checks):
         store = self.store
@@ -130,8 +130,8 @@ class Codex:
         paths = [store.home / 'config.toml', store.home / 'hooks.json',
                  store.home / (profile_name(store, run) + '.config.toml'),
                  Path('/etc/codex/config.toml'), Path('/etc/codex/requirements.toml'),
-                 ROOT / 'tools/berman_harness.py', ROOT / 'tools/berman_probe.py',
-                 *(ROOT / rel for rel in berman_capture.ADAPTERS[adapter]['implementation'])]
+                 PACKAGE / 'harnesses/codex.py', PACKAGE / 'harnesses/probe.py',
+                 *(PACKAGE / rel for rel in adapters.ADAPTERS[adapter]['implementation'])]
         paths += [p / '.codex/config.toml' for p in (project, *project.parents)]
         st = self.binary.resolve().stat()
         return {'codex': str(self.binary.resolve()), 'version': version, 'size': st.st_size,
@@ -180,7 +180,7 @@ class Codex:
                 for path in canaries.values():
                     path.write_text(token + '\n')
                 subprocess.run(['git', 'init', '-q', str(fixture / 'git-probe')], check=True, capture_output=True)
-                shutil.copyfile(ROOT / 'tools/berman_probe.py', fixture / 'probe.py')
+                shutil.copyfile(PACKAGE / 'harnesses/probe.py', fixture / 'probe.py')
                 rg = shutil.which('rg')
                 if not rg:
                     raise Decision('The native check needs the existing rg executable')
@@ -237,7 +237,7 @@ class Harnesses:
 
     def selected(self, adapter):
         if adapter == 'berman-claude':
-            from berman_claude import Claude
+            from berman.harnesses.claude import Claude
             return Claude(self.store)
         return Codex(self.store)
 

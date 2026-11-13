@@ -1,50 +1,72 @@
-# Maintaining Berman core
+# Developing Berman
 
-`berman verify` from this checkout runs the main and launcher test suites and
-checks the frozen collector. It loads no study configuration. The suites create
-disposable repositories, synthetic packets and simulated callbacks; they do not
-spend model tokens or establish native capture.
+Use Python 3.11 or later. From the repository root:
 
-`berman --root PATH verify` checks a selected fieldwork installation, including
-its records, capture qualification and generated archive. The report lists
-failures, checks not run, facts not established and work it never performs.
-`berman --root PATH verify --native-access` adds the native access check. Keep
-receipts with `--record experiments/NAME` in that workspace.
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python -m unittest discover -s tests -t .
+berman verify --software
+```
 
-## Compatibility and source identity
+Tests create disposable repositories, synthetic packets and simulated callbacks.
+They do not spend model tokens or establish native capture. The installed
+`berman verify` checks package integrity and, when selected, a fieldwork workspace.
+It never runs the developer tests or requires this checkout.
 
-`tools/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
+Build a distribution with `python -m pip install build` followed by
+`python -m build`. Install the wheel in a fresh virtual environment and run it
+from outside this repository. Runtime dependencies are all in the Python standard
+library; setuptools is a build dependency only. Version metadata lives in
+pyproject.toml and is read from the installed distribution.
+
+## Code map
+
+| Location | Responsibility |
+| --- | --- |
+| `src/berman/cli.py`, `workspace.py` | Command interface, workspace discovery and initialization. |
+| `workflow.py`, `records.py`, `lifecycle.py` | Engagement decisions, journals and resumable operations. |
+| `recipes.py`, `preserve.py`, `recovery.py` | Preparation, retained records and explicit low-level recovery. |
+| `capture/` | Exclusive session routing, collector adapters and locking. |
+| `harnesses/` | Access policies, native checks, Claude settings and optional development launchers. |
+| `archive/` | Selection, reading aids and deterministic packaging, including historical readers. |
+| `installation.py`, `verify.py` | Installed resources, diagnostics and qualification receipts. |
+| `tests/` | Unit, integration and compatibility tests with synthetic fixtures and shared helpers. |
+
+Workspace paths come from the selected Store. Installed resources come from the
+package. Generated commands name the installed interpreter and use isolated
+module execution; they do not depend on the current directory or PATH finding a
+particular Berman installation. Probes are copied into disposable sandboxes.
+
+## Compatibility and qualification
+
+`src/berman/_legacy/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
 Never edit it or install it directly. The exclusive router owns session locking
-and chooses the appropriate collector. Historical marker and schema names stay
-readable even when they name Stewart.
+and chooses the collector. Historical markers and schema names remain readable.
 
-VERSION and the executable/module hashes identify this source. New operation
-records carry that identity. A workspace's software.json records its initial
-selection; adopting another version is an explicit maintenance operation.
+New operation records carry the package version and runtime source digests.
+A workspace's software.json records its initial selection. Adopting another
+installation is explicit maintenance: changed capture bytes or hook commands
+require closed captures and renewed installation-specific qualification, including
+actual CLI trust review where applicable. Never reuse another study's receipts.
 
-Run both suites after implementation changes. Changes to capture bytes or hook
-commands require installation-specific qualification before a real study adopts
-them. Closed captures, CLI trust where applicable and native capture are separate
-facts. Never copy another workspace's trust receipt as evidence of your installation.
+The 0.2 package removes the checkout launcher and symlink installer. Install with
+pip instead. Reading editions use `berman --root PATH archive`; this command and
+archive verification use the active package interpreter. The workspace's python
+setting remains the interpreter for native harness callbacks and must have the
+chosen package installed. `berman verify --skip archive` remains available;
+the former test-suite skip options are removed.
 
-## Preserved material and Git
+## Preserved material
 
-Preserved packets, inventories, preparation snapshots, recordings and linked
-qualification records belong to the fieldwork workspace. Never edit them in
-place or run ordinary Git commands inside their nested repositories. Archive
-verification checks recorded bytes, modes and modification times where recorded.
+Never edit preserved packets, inventories or recordings in place or run ordinary
+Git commands inside their nested repositories. Archive verification checks
+recorded bytes, modes and modification times where recorded. Keep maintenance
+evidence with the installation it checked.
 
-Keep maintenance evidence with the installation it checked. General software
-regressions should use small synthetic fixtures in this repository. No actual
-study is required for software development.
-
-## Source layout
-
-The executable loads tools/ in isolated Python mode. berman_cli selects a
-workspace; berman_source provides source identity, initialization and discovery.
-The workflow, records and preservation modules operate on the selected Store.
-Capture implementation paths resolve against installed code, while generated
-router arguments identify the selected workspace and harness home explicitly.
-
-The archive modules use only the standard library and each other. The import
-and frozen-helper rules in tools/test_boundaries.py apply to added modules too.
+`berman --root PATH verify --native-access` adds a native access check. Use
+`--record experiments/NAME` to retain receipts in that workspace. Every report
+distinguishes failures, checks not run, facts not established and work never
+performed. Rebuilding an archive, native support trials and actual CLI trust
+review are separate actions. See [current limits](limitations.md).

@@ -8,8 +8,8 @@ berman.json and are kept apart from the reusable connection description.
 from pathlib import Path
 import re
 
-from berman_files import Decision, digest, digest_json, read, regular
-from berman_legacy import RUN
+from berman.files import Decision, digest, digest_json, read, regular
+from berman._legacy.api import RUN
 
 IDENTITY = re.compile(r'[a-z][a-z0-9-]{0,62}')
 CAPTURE_ADAPTERS = ('legacy-codex', 'berman-codex', 'berman-claude')

@@ -12,26 +12,26 @@ import subprocess
 import tempfile
 import uuid
 
-import berman_capture
-import berman_claude
-import berman_files as files
-from berman_files import Decision, keep, read, write
-from berman_harness import COMMON_CHECKS, project_checks
-import fieldwork
-from development_launchers.launch import checkout_git_fixture
+from berman.capture import adapters
+from berman.harnesses import claude
+from berman import files
+from berman.files import Decision, keep, read, write
+from berman.harnesses.codex import COMMON_CHECKS, project_checks
+from berman import recovery as fieldwork
+from berman.harnesses.development.launch import checkout_git_fixture
 
 ADAPTER = 'berman-claude'
 
 
 def prepare(store, path):
-    import berman_support as support
+    from berman import support
     support.interrupted(store, path)
     folder = support.evidence(store, path)
     connection = store.connection()
-    configuration = berman_claude.configuration(store, connection.checkout)
+    configuration = claude.configuration(store, connection.checkout)
     facts = {'project': str(connection.checkout), 'connection': connection.reservation(),
-             'configuration': configuration, 'implementation_sha256': berman_capture.implementation(ADAPTER),
-             'helpers_sha256': berman_claude.helpers()}
+             'configuration': configuration, 'implementation_sha256': adapters.implementation(ADAPTER),
+             'helpers_sha256': claude.helpers()}
     support.catalogue(store)
     trial = support.claim(store, folder)[0] if (folder / 'trial.json').exists() else support.reserve(store, folder, ADAPTER, facts)
     run = trial['run']
@@ -51,9 +51,9 @@ def prepare(store, path):
         if not packet.exists():
             fieldwork.prepare(store.collector_for(record), run, support.ASSIGNMENT, connection.checkout,
                               support.REVISION.format(adapter=ADAPTER), ['notes'], source,
-                              recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=berman_capture.ADAPTERS[ADAPTER]['marker'],
+                              recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=adapters.ADAPTERS[ADAPTER]['marker'],
                               layout='notes', connection=fieldwork.SUPPORT_CONNECTION, harness='Claude Code')
-        harness = berman_claude.Claude(store)
+        harness = claude.Claude(store)
         harness.install_profile(run, connection.checkout, folder)
         trial.update(phase='prepared', prepared_at_utc=files.now(), instructions=source.name,
                      argv=harness.argv(run, prompt=False))
@@ -160,7 +160,7 @@ def failure_control(store, folder, base, marker, token, model, budget):
 
 
 def launch(store, path, model=None, max_budget_usd=None):
-    import berman_support as support
+    from berman import support
     folder, trial, record = support.receipt(store, path)
     model, budget = model or 'haiku', 2.0 if max_budget_usd is None else max_budget_usd
     if not 0 < budget <= 10:
@@ -168,13 +168,13 @@ def launch(store, path, model=None, max_budget_usd=None):
     if trial['phase'] != 'prepared' or (folder / 'native.stdout.jsonl').exists():
         raise Decision('A support trial is launched once; collect or clean it up and prepare a new one')
     project, packet = Path(record['project']), Path(record['packet'])
-    if berman_claude.configuration(store, project) != trial['configuration']:
+    if claude.configuration(store, project) != trial['configuration']:
         raise Decision('Configuration changed after preparation; prepare a new support trial')
-    if berman_capture.implementation(ADAPTER) != trial['implementation_sha256']:
+    if adapters.implementation(ADAPTER) != trial['implementation_sha256']:
         raise Decision('Implementation changed after preparation; prepare a new support trial')
     if (packet / 'session/binding.json').exists():
         raise Decision('This packet already has a session; it cannot be launched again')
-    harness = berman_claude.Claude(store)
+    harness = claude.Claude(store)
     base = harness.argv(trial['run'], prompt=False)
     token = 'berman-claude-probe-' + uuid.uuid4().hex
     with tempfile.TemporaryDirectory(prefix='.berman-claude-check-', dir=project) as temporary, \
@@ -204,7 +204,7 @@ def launch(store, path, model=None, max_budget_usd=None):
                     'canaries': {k: str(v) for k, v in canaries.items()}, 'rg': rg,
                     'reads': [d for d in trial['connection']['documents'] if (project / d).is_file()],
                     'project_checks': project_checks(trial['connection']['checks'], values)}
-            shutil.copyfile(berman_claude.ROOT / 'tools/berman_probe.py', fixture / 'probe.py')
+            shutil.copyfile(claude.PACKAGE / 'harnesses/probe.py', fixture / 'probe.py')
             write(fixture / 'spec.json', spec)
             write(folder / 'access-spec.json', {'shell': spec, 'file_tools': reads})
             command = shlex.join([str(store.python), '-I', '-B', str(fixture / 'probe.py'), str(fixture / 'spec.json')])
@@ -243,7 +243,7 @@ def launch(store, path, model=None, max_budget_usd=None):
             except (ValueError, TypeError) as exc:
                 result = {'passed': False, 'error': str(exc)}
             result.update(exit_code=exit_code, failure=failure, configuration_unchanged=(
-                berman_claude.configuration(store, project) == trial['configuration']))
+                claude.configuration(store, project) == trial['configuration']))
             result['passed'] &= exit_code == 0 and result['configuration_unchanged']
             control = failure_control(store, folder, base, allowed, token, model, budget * 0.2)
             result['checks']['missing_hook_blocks_read'] = control['passed']
@@ -254,14 +254,14 @@ def launch(store, path, model=None, max_budget_usd=None):
 
 
 def record_trust(store, path, evidence, statement):
-    import berman_support as support
+    from berman import support
     if not path or not statement or not statement.strip() or 'Codex CLI' in statement:
         raise Decision('An optional Claude hook review needs --trial and an operator --statement describing the actual '
                        '/hooks observation; record-capture does not require one')
     folder, trial, record = support.receipt(store, path)
     if trial['adapter'] != ADAPTER:
         raise Decision('This is not a Claude support trial')
-    if trial['implementation_sha256'] != berman_capture.implementation(ADAPTER):
+    if trial['implementation_sha256'] != adapters.implementation(ADAPTER):
         raise Decision('Review the current implementation in a new trial')
     source = files.regular(Path(evidence).expanduser().resolve())
     if not source.stat().st_size:
@@ -270,7 +270,7 @@ def record_trust(store, path, evidence, statement):
     keep(saved, source.read_bytes())
     observation = {'at_utc': files.now(), 'statement': statement, 'evidence': support.relative(store, saved),
                    'evidence_sha256': files.digest(saved.read_bytes()),
-                   'settings_sha256': files.digest(files.regular(berman_claude.settings_path(store, trial['run'])).read_bytes()),
+                   'settings_sha256': files.digest(files.regular(claude.settings_path(store, trial['run'])).read_bytes()),
                    'implementation_sha256': trial['implementation_sha256'],
                    'meaning': 'Operator-attested inspection in the actual Claude CLI /hooks browser; not inferred from settings.'}
     keep(folder / 'hook-review.json', files.json_bytes(observation))
@@ -278,14 +278,14 @@ def record_trust(store, path, evidence, statement):
 
 
 def record_capture(store, path):
-    import berman_support as support
+    from berman import support
     folder, trial, _ = support.receipt(store, path)
     if trial['phase'] not in ('collected', 'cleaned') or trial.get('demonstrates_capture') is not True:
         raise Decision('Only a complete collected native trial can qualify Claude capture')
-    current = berman_capture.implementation(ADAPTER)
+    current = adapters.implementation(ADAPTER)
     if trial['implementation_sha256'] != current:
         raise Decision('Implementation changed; qualify current bytes in a new support trial')
-    if trial.get('helpers_sha256') != berman_claude.helpers():
+    if trial.get('helpers_sha256') != claude.helpers():
         raise Decision('Readiness helpers changed; qualify them in a new support trial')
     result = read(folder / 'access-result.json')
     if result.get('passed') is not True:
@@ -293,7 +293,7 @@ def record_capture(store, path):
     review = read(folder / 'hook-review.json') if (folder / 'hook-review.json').exists() else None
     if review and review['implementation_sha256'] != current:
         raise Decision('The retained hook review describes other bytes; remove it or review again')
-    if berman_claude.configuration(store, Path(trial['project'])) != trial['configuration']:
+    if claude.configuration(store, Path(trial['project'])) != trial['configuration']:
         raise Decision('Configuration changed; qualify it in a new support trial')
     collection = folder / 'collection'
     entry = next(r for r in read(collection / 'source-layout.json')['runs'] if r['run'] == trial['run'])
@@ -312,22 +312,22 @@ def record_capture(store, path):
                   'implementation_sha256': current, 'required_events': support.REQUIRED_EVENTS,
                   'path': support.relative(store, packet / 'session/captures.jsonl'),
                   'trial_receipt': support.relative(store, folder / 'trial.json')}
-    basis = {'schema': berman_claude.SCHEMA, 'adapter': ADAPTER,
+    basis = {'schema': claude.SCHEMA, 'adapter': ADAPTER,
              'implementation_sha256': current, 'helpers_sha256': trial['helpers_sha256'],
-             'configuration': trial['configuration'], 'tiers': berman_claude.TIERS,
+             'configuration': trial['configuration'], 'tiers': claude.TIERS,
              'hook_review': support.relative(store, folder / 'hook-review.json') if review else None,
-             'limitation': berman_claude.LIMITATION, 'successful_capture': successful,
+             'limitation': claude.LIMITATION, 'successful_capture': successful,
              'evidence_sha256': {support.relative(store, p): files.digest(files.regular(p).read_bytes()) for p in paths},
              'meaning': 'Fresh parent Claude session: native access checks with a missing-hook control, exact reply '
                         'at Stop, SessionEnd, verified finalization and preservation. Policy, in-session bytes and '
                         'helpers must match; CLI drift warns. No native qualification of resume, compaction, abrupt '
                         'death or child transcript capture.'}
     with store.lock('global', wait=30):
-        previous = store.root / berman_claude.BASIS
+        previous = store.root / claude.BASIS
         if previous.exists():
             if read(previous) == basis:
-                return {'basis': berman_claude.BASIS, 'state': 'already-recorded', 'successful_capture': successful}
+                return {'basis': claude.BASIS, 'state': 'already-recorded', 'successful_capture': successful}
             keep(store.root / 'hooks/verification/history' / ('berman-claude-' + uuid.uuid4().hex + '.json'),
                  files.regular(previous).read_bytes())
-        write(store.root / berman_claude.BASIS, basis)
-    return {'basis': berman_claude.BASIS, 'successful_capture': successful, 'meaning': basis['meaning']}
+        write(store.root / claude.BASIS, basis)
+    return {'basis': claude.BASIS, 'successful_capture': successful, 'meaning': basis['meaning']}

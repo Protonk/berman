@@ -14,47 +14,21 @@ import shlex
 import sys
 import tarfile
 
-# Under python3 -I the script's own directory is not on sys.path.
-TOOLS = str(Path(__file__).resolve().parent)
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 # Stewart's specialized readers are Berman code, selected explicitly for Stewart runs.
-import archive_stewart as stewart
+from berman.archive import stewart
 # archive_select fixes an edition's runs, attributions and destination in a Build; this module renders it
 # into fresh Outputs; archive_package assembles, verifies and writes the payload. No state is kept between
 # builds. Selection and packaging names are also re-exported for berman_preserve and the tests.
-from archive_package import apply, assemble, compare, destinations, make_zip, obsolete, verify_zip
-from archive_select import (ARCHIVE, BERMAN_PREFIX, CONTEXT_DOCUMENTS, EDITION_DOCUMENTS, PREFIX, SHA, STEWART,
+from berman.archive.package import apply, assemble, compare, destinations, make_zip, obsolete, verify_zip
+from berman.archive.select import (ARCHIVE, BERMAN_PREFIX, CONTEXT_DOCUMENTS, EDITION_DOCUMENTS, PREFIX, SHA, STEWART,
                             Build, Edition, inventory, load, select)
 
-ROOT = Path(__file__).resolve().parent.parent
 CONVERSATIONS = (stewart.CONVERSATION, "Codex session transcript")
 # Edition identity names every module that selects, renders or packages it.
-BUILDER = ("build_archive.py", "archive_stewart.py", "archive_select.py", "archive_package.py")
+BUILDER = ("builder.py", "stewart.py", "select.py", "package.py")
 
 
-def use_configured_python(root=ROOT):
-    """The CLI and berman verify build with the same workspace interpreter.
 
-    Python versions can serialize identical CSV fields differently (notably NUL
-    bytes under 3.9 and 3.14). Select the runtime before reading the inventory or
-    writing outputs. Imported builder functions keep their caller's interpreter.
-    """
-    config = root / "berman.json"
-    if not config.exists():
-        return  # Standalone inventories need not have a Berman installation.
-    value = json.loads(config.read_text()).get("python")
-    if value is None:
-        return
-    if not isinstance(value, str) or not value.strip():
-        raise SystemExit(f"Invalid archive interpreter in {config}: python must be a nonempty path")
-    python = Path(value).expanduser()
-    if not python.is_absolute():
-        python = root / python
-    if not python.is_file() or not os.access(python, os.X_OK):
-        raise SystemExit(f"Archive interpreter configured in {config} is unavailable: {python}")
-    if python.resolve() != Path(sys.executable).resolve():
-        os.execv(str(python), [str(python), "-I", "-B", str(Path(__file__).resolve()), *sys.argv[1:]])
 
 
 class Outputs(dict):
@@ -625,7 +599,7 @@ This generated guide describes the preservation and reading edition of
 {len(build.runs)} recorded runs. README.md introduces the investigation and links its
 research framing. framing/working_in_a_berman_archive.md guides analytical work
 with the material. Developing inquiry and findings have a place in inquiry/.
-The source for this guide and the reading aids is tools/build_archive.py.
+The source for this guide and the reading aids is berman.archive.builder.
 
 FIND MATERIAL
   {', '.join('review/' + run + '.txt' for run in build.runs)}:
@@ -789,10 +763,10 @@ LOCAL INVESTIGATION
   packaged guidance; MAINTENANCE.md describes the retirement and recovery route.
 
 REBUILD AND VERIFY
-  python3 -I -B tools/build_archive.py
-  python3 -I -B tools/build_archive.py --verify
-  python3 -I -B tools/build_archive.py --run {build.runs[-1]}
-  python3 -I -B tools/build_archive.py --run {build.runs[-1]} --verify
+  berman archive
+  berman archive --verify
+  berman archive --run {build.runs[-1]}
+  berman archive --run {build.runs[-1]} --verify
   --run builds a separate ZIP for the selected run without changing the
   cumulative reading aids. Repeat --run to select multiple runs.
   The standard-library builder validates the relocation inventory, verifies
@@ -856,8 +830,8 @@ PRESERVATION
   files other than itself. No archived program is executed to build the edition.
 
 REBUILD AND VERIFY
-  python3 -I -B tools/build_archive.py --edition connections {' '.join('--connection ' + c for c in build.edition.connections)}
-  python3 -I -B tools/build_archive.py --edition connections {' '.join('--connection ' + c for c in build.edition.connections)} --verify
+  berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)}
+  berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)} --verify
   {build.archive_path} is this edition's portable copy; its checksum file sits beside it.
 """
 
@@ -899,7 +873,7 @@ def edition(build, verify=False):
             "archive_path": build.archive_path, "archive_bytes": len(zipped), "archive_sha256": SHA(zipped)}
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Fieldwork workspace containing source-layout.json")
     parser.add_argument("--verify", action="store_true", help="Compare generated files and archive without writing anything")
@@ -907,15 +881,14 @@ def main():
     parser.add_argument("--edition", choices=("stewart", "connections"), default="connections",
                         help="connections (default): generic edition; stewart: explicit historical compatibility edition")
     parser.add_argument("--connection", action="append", default=[], help="connections edition: include this connection's runs (repeatable)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
-    use_configured_python(root)
     recorded = inventory(root)
     runs = {run["run"] for run in recorded[0]["runs"]}
     if args.run and set(args.run) - runs:
         parser.error("Unknown run(s): " + ", ".join(sorted(set(args.run) - runs)))
     if args.edition == "connections" and not args.connection:
-        from archive_select import attribute
+        from berman.archive.select import attribute
         args.connection = sorted({r["id"] for r in attribute(root, recorded[0]).values() if r["id"]})
     build = select(root, args.edition, args.connection, args.run or [], recorded)
     result = edition(build, args.verify)

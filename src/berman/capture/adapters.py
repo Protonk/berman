@@ -11,40 +11,41 @@ from pathlib import Path
 import shlex
 import subprocess
 
-import berman_collector
-import berman_files as files
-from berman_files import Decision, digest_json, keep, read, write
-from berman_legacy import MARKER, RUN
-from berman_records import ROOT, closed_by
+from berman.capture import collector
+from berman import files
+from berman.files import Decision, digest_json, keep, read, write
+from berman._legacy.api import MARKER, RUN
+from berman.installation import PACKAGE, command as module_command
+from berman.records import closed_by
 
 EVENTS = ('UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd')
-ROUTER_IMPLEMENTATION = ('tools/berman_capture_router.py', 'tools/berman_capture_runtime.py',
-                         'tools/berman_collector.py', 'tools/capture_session.py')
+ROUTER_IMPLEMENTATION = ('capture/router.py', 'capture/runtime.py',
+                         'capture/collector.py', '_legacy/capture_session.py')
 ADAPTERS = {
     'legacy-codex': {
         'harness': 'codex', 'collector': 'capture_session', 'marker': MARKER, 'layout': 'legacy',
-        'entry': 'tools/berman_capture_router.py', 'definition': 'hooks/berman-capture.hooks.json',
+        'entry': 'capture/router.py', 'definition': 'hooks/berman-capture.hooks.json',
         'basis': 'hooks/verification/routed-legacy-codex.json', 'implementation': ROUTER_IMPLEMENTATION},
     'berman-codex': {
-        'harness': 'codex', 'collector': berman_collector.OWNER, 'marker': berman_collector.MARKER, 'layout': 'notes',
-        'entry': 'tools/berman_capture_router.py', 'definition': 'hooks/berman-capture.hooks.json',
+        'harness': 'codex', 'collector': collector.OWNER, 'marker': collector.MARKER, 'layout': 'notes',
+        'entry': 'capture/router.py', 'definition': 'hooks/berman-capture.hooks.json',
         'basis': 'hooks/verification/berman-codex.json',
         'implementation': ROUTER_IMPLEMENTATION},
     'berman-claude': {
         'harness': 'claude', 'collector': 'berman-claude/1', 'marker': 'Berman-Claude-Fieldwork-Run: ',
-        'layout': 'notes', 'entry': 'tools/berman_claude_router.py',
-        'definition': 'tools/berman_claude.py', 'basis': 'hooks/verification/berman-claude.json',
+        'layout': 'notes', 'entry': 'capture/claude_router.py',
+        'definition': 'harnesses/claude.py', 'basis': 'hooks/verification/berman-claude.json',
         # The bytes that run in a fieldworker's session plus the module that generates its settings.
         # Readiness fingerprints the launcher helpers it imports by function source (berman_claude.helpers).
-        'implementation': ('tools/berman_claude.py', 'tools/berman_claude_router.py',
-                           'tools/berman_claude_capture.py', 'tools/berman_capture_runtime.py',
-                           'tools/berman_collector.py', 'tools/berman_files.py', 'tools/berman_legacy.py',
-                           'tools/capture_session.py')},
+        'implementation': ('harnesses/claude.py', 'capture/claude_router.py',
+                           'capture/claude.py', 'capture/runtime.py',
+                           'capture/collector.py', 'files.py', '_legacy/api.py',
+                           '_legacy/capture_session.py')},
 }
 
 
 def implementation(name):
-    return {rel: files.digest((ROOT / rel).read_bytes()) for rel in ADAPTERS[name]['implementation']}
+    return {rel: files.digest((PACKAGE / rel).read_bytes()) for rel in ADAPTERS[name]['implementation']}
 
 
 def reservation(name):
@@ -56,11 +57,11 @@ def reservation(name):
 def definition(store, name):
     """A new adapter's hook definition, generated from resolved installation settings."""
     if name == 'berman-claude':
-        from berman_claude import definition as claude_definition
+        from berman.harnesses.claude import definition as claude_definition
         return claude_definition()
     # The established quoting and timeouts of the legacy definition.
-    command = shlex.join([str(store.python), '-I', '-B', str(ROOT / ADAPTERS[name]['entry']),
-                          'hook', '--analysis-root', str(store.root), '--codex-home', str(store.home)])
+    command = shlex.join(module_command('hook', '--analysis-root', store.root, '--codex-home', store.home,
+                                        python=store.python, module='berman.capture.router'))
     timeouts = {'UserPromptSubmit': 3, 'Stop': 10, 'Interrupt': 3, 'SessionEnd': 3}
     return {'description': 'Berman exclusive capture router. Routes Stewart-Fieldwork-Run and Berman-Fieldwork-Run '
                            'to their respective collectors; one owner per session.',
@@ -79,6 +80,8 @@ def capture_entry(hook):
         argv = shlex.split(hook.get('command', ''))
     except ValueError:
         return None
+    if any(argv[i:i + 2] == ['-m', 'berman.capture.router'] for i in range(len(argv) - 1)):
+        return 'berman.capture.router'
     for name in ('capture_session.py', 'berman_collector.py', 'berman_capture_router.py'):
         if any(Path(arg).is_absolute() and Path(arg).name == name for arg in argv):
             return name
@@ -119,10 +122,9 @@ def installed(store, name):
         for group in expected:
             for hook in group['hooks']:
                 argv = shlex.split(hook['command'])
-                if (len(argv) != 9 or argv[1:3] != ['-I', '-B']
-                        or argv[4:] != ['hook', '--analysis-root', str(store.root), '--codex-home', str(store.home)]
-                        or Path(argv[3]).resolve() != ROOT / a['entry']
-                        or not os.access(argv[0], os.X_OK) or not Path(argv[3]).is_file()):
+                if (argv != module_command('hook', '--analysis-root', store.root, '--codex-home', store.home,
+                                           python=store.python, module='berman.capture.router')
+                        or not os.access(argv[0], os.X_OK) or not (PACKAGE / a['entry']).is_file()):
                     raise Decision(f'{event} collector or interpreter is unavailable')
     exclusive_definition(hooks, template)
     return {'adapter': name, 'config_path': str(path), 'installed': hooks, 'definition': template}
@@ -130,7 +132,7 @@ def installed(store, name):
 
 def readiness(store, name):
     if name == 'berman-claude':
-        from berman_claude import readiness as claude_readiness
+        from berman.harnesses.claude import readiness as claude_readiness
         # Each connection using the adapter is checked against its own checkout; harness drift is a warning.
         projects = [c.checkout for c in store.connections.values() if c.capture == name]
         results = [claude_readiness(store, project) for project in projects] or [claude_readiness(store)]

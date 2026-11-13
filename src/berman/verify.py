@@ -17,30 +17,25 @@ import subprocess
 import sys
 import tempfile
 
-import berman_capture
-import berman_files as files
-from berman_files import Decision, digest_json, keep, read, write
-from berman_harness import Codex
-from berman_recipes import git_state
-from berman_records import ROOT, Store
-from berman_workflow import Workflow
+from berman.capture import adapters as capture_adapters
+from berman import files
+from berman.files import Decision, digest_json, keep, read, write
+from berman.harnesses.codex import Codex
+from berman.recipes import git_state
+from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256, command as module_command
+from berman.workspace import identity
+from berman.records import Store
+from berman.workflow import Workflow
 
-SKIPPABLE = ('tests', 'launcher-tests', 'archive')
+SKIPPABLE = ('archive',)
 EXIT = {'passed': 0, 'failed': 1, 'incomplete': 3}
-SUITES = {'tests': 'tools', 'launcher-tests': 'tools/development_launchers'}
-RECEIPTS = {'tests': 'tests.txt', 'launcher-tests': 'development-launcher-tests.txt', 'archive': 'archive-verify.json'}
+RECEIPTS = {'archive': 'archive-verify.json'}
 BUILDER_OUTPUT = {'stdout': 'archive-verify.stdout.txt', 'stderr': 'archive-verify.stderr.txt'}
 TIMEOUT = 1800
 PROBLEMS = (OSError, ValueError, KeyError, TypeError, AttributeError)
-RAN = re.compile(r'^Ran (\d+) tests? in ([\d.]+)s$', re.M)
-OUTCOME = re.compile(r'^(OK|FAILED|NO TESTS RAN)(?: \((.*)\))?$', re.M)
-FAILING = re.compile(r'^((?:FAIL|ERROR): .+)$', re.M)
-COLOUR = re.compile(r'\x1b\[[0-9;]*m')
 MEANING = {
-    'tests': 'The main suite passes in disposable fixtures; it establishes neither hook trust, native capture nor native access.',
-    'launcher-tests': "The development launchers' offline tests pass; the installed launchers' --check is separate.",
-    'frozen-collector': 'tools/capture_session.py keeps the bytes its historical basis records, and the retained legacy '
-                        'definition is unchanged.',
+    'frozen-collector': 'The installed historical collector retains its frozen bytes.',
+    'installation': 'Installed package metadata and runtime resources can be read; no study is loaded.',
     'recorded-hashes': 'Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and '
                        'inquiry/*/MANIFEST.json keep their recorded bytes.',
     'workspace': "This workspace's berman.json, catalogue, connections and plans load with this code, and berman status "
@@ -58,7 +53,8 @@ MEANING = {
                      'disposable roots.',
 }
 NOT_COVERED = [
-    "The installed development launchers' --check (tools/development_launchers/README.md).",
+    'Developer regression tests (run separately from the source checkout).',
+    "The installed development launchers' --check (docs/development-launchers.md).",
     'The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their '
     'recorded result. Claude needs no review (LIMITS.md).',
     'A native support trial; verify reports only a recorded successful capture.',
@@ -73,7 +69,7 @@ CLAUDE_TRIAL_NEXT = ("A native support trial for berman-claude, with the researc
                      '(bounded model usage, non-interactive); berman support-trial collect --evidence experiments/NAME; '
                      'berman capture record-capture --trial experiments/NAME; '
                      'berman support-trial cleanup --evidence experiments/NAME --reason TEXT')
-REBUILD = 'After intended changes, rebuild once with python3 -I -B tools/build_archive.py, then verify again'
+REBUILD = 'After intended changes, rebuild once with berman archive, then verify again'
 NATIVE_NEXT = 'berman verify --native-access'
 TRIAL_NEXT = ("A native support trial for {name}, with the researcher's approval: "
               'berman support-trial prepare --evidence experiments/NAME --adapter {name}; '
@@ -153,68 +149,18 @@ def unfinished(exc):
     return output.decode('utf-8', 'replace') if isinstance(output, bytes) else output
 
 
-def suite(python, code, start, run):
-    """One unittest suite in a child process; it passes only on exit 0, an OK summary and at least one test.
 
-    The child is asked for uncoloured output (NO_COLOR outranks FORCE_COLOR) so its summary parses and
-    its receipt reads plainly; any colour that remains is stripped before parsing.
-    """
-    argv = [python, '-I', '-B', '-m', 'unittest', 'discover', '-s', start, '-p', 'test_*.py']
-    env = {k: v for k, v in os.environ.items() if k != 'FORCE_COLOR'} | {'BERMAN_VERIFYING': '1', 'NO_COLOR': '1'}
+
+
+def integrity(code=PACKAGE):
+    """Check the frozen implementation without loading study-specific receipts."""
     try:
-        done = run(argv, cwd=code, env=env, capture_output=True, encoding='utf-8', errors='replace', timeout=TIMEOUT)
-    except subprocess.TimeoutExpired as exc:
-        return row('failed', f'The suite did not finish: {exc}', argv=argv), unfinished(exc)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return row('failed', f'The suite could not run: {exc}', argv=argv), None
-    text = COLOUR.sub('', done.stderr)
-    ran, outcome = RAN.findall(text), OUTCOME.findall(text)
-    counts = {k.strip().replace(' ', '_'): int(v) for k, v in re.findall(r'([a-z ]+)=(\d+)', outcome[-1][1])} if outcome else {}
-    details = {'argv': argv, 'exit': done.returncode, 'ran': int(ran[-1][0]) if ran else None,
-               'seconds': float(ran[-1][1]) if ran else None, 'outcome': outcome[-1][0] if outcome else None,
-               'failures': counts.get('failures', 0), 'errors': counts.get('errors', 0),
-               'unexpected_successes': counts.get('unexpected_successes', 0),
-               'skipped': counts.get('skipped', 0), 'failing': FAILING.findall(text)}
-    if done.returncode == 0 and details['outcome'] == 'OK' and details['ran']:
-        return row('passed', f'{details["ran"]} tests passed in {details["seconds"]}s', **details), done.stderr
-    if details['outcome'] == 'FAILED':
-        summary = f'{details["ran"]} tests ran: {details["failures"]} failures, {details["errors"]} errors'
-        if details['unexpected_successes']:
-            summary += f', {details["unexpected_successes"]} unexpected successes'
-    elif details['outcome'] == 'NO TESTS RAN' or details['ran'] == 0:
-        summary = 'No tests ran'
-    else:
-        summary = f'The suite exited {done.returncode} without a passing unittest summary'
-    return row('failed', summary, **details), done.stderr
+        actual = files.digest((code / FROZEN).read_bytes())
+    except OSError as exc:
+        return row('failed', f'Frozen collector cannot be read: {exc}')
+    return row('passed' if actual == FROZEN_SHA256 else 'failed',
+               f'Frozen collector SHA-256 {actual}; expected {FROZEN_SHA256}', sha256=actual)
 
-
-def integrity(code):
-    """The frozen collector's bytes and the retained legacy definition, independently of the suite."""
-    if not (code / 'hooks/verification/legacy-codex.json').is_file():
-        expected = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
-        try:
-            actual = files.digest((code / 'tools/capture_session.py').read_bytes())
-        except OSError as exc:
-            return row('failed', f'Frozen collector cannot be read: {exc}')
-        return row('passed' if actual == expected else 'failed',
-                   f'Frozen collector SHA-256 {actual}; expected {expected}', sha256=actual)
-    try:
-        basis = read(code / 'hooks/verification/legacy-codex.json')
-        expected = basis['implementation_sha256']['tools/capture_session.py']
-        actual = files.digest((code / 'tools/capture_session.py').read_bytes())
-        definition = digest_json(read(code / basis['definition']))
-    except PROBLEMS as exc:
-        return row('failed', f'The frozen-collector basis cannot be checked: {exc}')
-    details = {'sha256': actual, 'recorded_by': 'hooks/verification/legacy-codex.json', 'definition': basis['definition']}
-    problems = []
-    if actual != expected:
-        problems.append(f'tools/capture_session.py is {actual}, frozen as {expected}')
-    if definition != basis['definition_sha256']:
-        problems.append(f'{basis["definition"]} digest is {definition}, recorded as {basis["definition_sha256"]}')
-    if problems:
-        return row('failed', '; '.join(problems), step='Restore the recorded bytes; tools/capture_session.py is never edited',
-                   **details)
-    return row('passed', f'tools/capture_session.py matches frozen {expected[:12]}; historical definition retained', **details)
 
 
 def recorded_hashes(root):
@@ -276,7 +222,7 @@ def adapters(store, root, code):
     workspace both facts are reported as not run rather than as missing.
     """
     checks = {}
-    for name, adapter in berman_capture.ADAPTERS.items():
+    for name, adapter in capture_adapters.ADAPTERS.items():
         trust, native = f'hook-trust:{name}', f'native-capture:{name}'
         if store is None:
             checks[trust], checks[native] = row('not-run', 'Depends on workspace'), row('not-run', 'Depends on workspace')
@@ -286,10 +232,10 @@ def adapters(store, root, code):
         claude = name == 'berman-claude'
         trial = CLAUDE_TRIAL_NEXT if claude else TRIAL_NEXT.format(name=name, root=root)
         try:
-            ready = berman_capture.readiness(store, name)
+            ready = capture_adapters.readiness(store, name)
         except PROBLEMS as exc:
             try:
-                changed = berman_capture.changed_implementation(store, name)
+                changed = capture_adapters.changed_implementation(store, name)
             except PROBLEMS:
                 changed = None
             checks[trust] = row('not-established', str(exc), bool(used), CLAUDE_TRUST_NEXT if claude else TRUST_NEXT,
@@ -303,7 +249,7 @@ def adapters(store, root, code):
         if warnings:
             summary += '; warning: ' + ' '.join(warnings)
         checks[trust] = row('passed', summary, bool(used), changed_implementation=[], warnings=warnings, **details)
-        evidence = berman_capture.native_capture(store, name)
+        evidence = capture_adapters.native_capture(store, name)
         if evidence:
             checks[native] = row('passed', f'Native {", ".join(evidence["events"])} captured by these implementation bytes '
                                            f'({evidence["run"] or evidence["path"]})', bool(used), **details, **evidence)
@@ -319,7 +265,7 @@ def archive(python, root, code, run):
     Returns the check and its receipts by file name: the JSON summary when it passes, otherwise
     whatever output the builder produced.
     """
-    argv = [python, '-I', '-B', 'tools/build_archive.py', '--root', str(root), '--verify']
+    argv = module_command('--root', root, 'archive', '--verify')
     try:
         done = run(argv, cwd=code, capture_output=True, encoding='utf-8', errors='replace', timeout=TIMEOUT)
     except subprocess.TimeoutExpired as exc:
@@ -498,8 +444,8 @@ def native_access(store, folder, connections=None, synthetic=True, harness=None)
     fulfilled, unknown = fulfilled_commitments(store, names)
     report = {'schema': 'berman.native-access-check/1', 'checked_at_utc': files.now(), 'scope': ACCESS_SCOPE,
               'codex': str(store.codex), 'codex_version': None, 'python': str(store.python),
-              'harness_sha256': {rel: files.digest((ROOT / rel).read_bytes())
-                                 for rel in ('tools/berman_harness.py', 'tools/berman_probe.py')},
+              'harness_sha256': {rel: files.digest((PACKAGE / rel).read_bytes())
+                                 for rel in ('harnesses/codex.py', 'harnesses/probe.py')},
               'fulfilled_commitments': fulfilled,
               'connections': {}, 'access_passed': False, 'disposable_roots_removed': False,
               'not_established': ACCESS_NOT_ESTABLISHED + [f'{n}: Claude access is qualified by its separate bounded '
@@ -588,16 +534,13 @@ def verdict(checks):
     return 'passed'
 
 
-def verify(root=ROOT, skip=(), native=None, record=None, run=subprocess.run, code=ROOT):
+def verify(root, skip=(), native=None, record=None, run=subprocess.run, code=PACKAGE):
     """Run every check not skipped and return the result; a failed check is reported, never raised.
 
-    root is the workspace (as --root); code is the repository whose suites, frozen collector and
-    builder are checked. native, when given, is called as native(store, folder) and returns a report
+    root is the workspace (as --root); code is the installed package resource directory. native, when given, is called as native(store, folder) and returns a report
     whose access_passed must be True. Raises Decision only for a refused record folder, an unknown
     skip, or a nested run with the real subprocess runner.
     """
-    if os.environ.get('BERMAN_VERIFYING') and run is subprocess.run:
-        raise Decision('berman verify is already running in this process tree; a nested run would repeat its own suites')
     if set(skip) - set(SKIPPABLE):
         raise Decision('Only these checks can be skipped: ' + ', '.join(SKIPPABLE))
     root, code = Path(root).expanduser().resolve(), Path(code).resolve()
@@ -609,11 +552,6 @@ def verify(root=ROOT, skip=(), native=None, record=None, run=subprocess.run, cod
         store, problem = None, str(exc)
     python = str(store.python) if store else sys.executable
     checks, receipts = {}, {}
-    for name, start in SUITES.items():
-        if name in skip:
-            checks[name] = skipped(name)
-        else:
-            checks[name], receipts[RECEIPTS[name]] = suite(python, code, start, run)
     checks['frozen-collector'] = integrity(code)
     checks['recorded-hashes'] = recorded_hashes(root)
     checks['workspace'] = workspace(store, problem)
@@ -669,15 +607,15 @@ def render(result):
     return '\n'.join(lines)
 
 
-def software(skip=(), run=subprocess.run, code=ROOT):
+def software(skip=(), run=subprocess.run, code=PACKAGE):
     """Verify portable source only; never load a workspace or harness home."""
-    if os.environ.get('BERMAN_VERIFYING') and run is subprocess.run:
-        raise Decision('berman verify is already running in this process tree')
-    if set(skip) - set(SUITES):
-        raise Decision('Software verification can skip only tests or launcher-tests')
-    checks = {}
-    for name, start in SUITES.items():
-        checks[name] = skipped(name) if name in skip else suite(sys.executable, code, start, run)[0]
+    if skip:
+        raise Decision('Software verification has no skippable checks')
+    try:
+        installed = identity()
+        checks = {'installation': row('passed', f"Berman {installed['version']} is installed", software=installed)}
+    except (OSError, ValueError, RuntimeError) as exc:
+        checks = {'installation': row('failed', f'Installed package cannot be read: {exc}')}
     checks['frozen-collector'] = integrity(code)
     for name, check in checks.items():
         check['meaning'] = MEANING[name]
@@ -686,6 +624,7 @@ def software(skip=(), run=subprocess.run, code=ROOT):
             'failed': [n for n, c in checks.items() if c['status'] == 'failed'],
             'not_run': [n for n, c in checks.items() if c['status'] == 'not-run'],
             'not_established': [], 'not_covered': [
+                'Developer regression tests (run separately from the source checkout).',
                 'Workspace records, preserved evidence and reading editions.',
                 'Installed launchers, hook trust, native capture and native access.'],
             'record': None, 'meaning': 'Software checks only. No workspace or native installation was verified.'}

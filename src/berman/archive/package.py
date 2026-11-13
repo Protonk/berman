@@ -11,7 +11,7 @@ from pathlib import Path
 import stat
 import zipfile
 
-from archive_select import PREFIX, SHA
+from berman.archive.select import PREFIX, SHA
 
 LEGACY_ARCHIVE = "archive/stewart-runs-001-002.zip"
 

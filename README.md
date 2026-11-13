@@ -18,34 +18,38 @@ You can develop and test Berman using the included synthetic examples.
 
 Python 3.11 or later and Git are required. The implementation uses the Python
 standard library. Native access and capture depend on separately installed Codex
-or Claude CLIs and their sandbox facilities; see [current limits](LIMITS.md).
+or Claude CLIs and their sandbox facilities; see [current limits](docs/limitations.md).
 
-Check the version and run the software checks:
+Install from this checkout in a virtual environment:
 
 ```sh
-./berman version
-./berman verify
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+berman version
+berman verify
 ```
 
 Create a workspace for a study and connect it to a project:
 
 ```sh
-./berman init /path/to/study --project /path/to/project --connection example
-./berman --root /path/to/study status
+berman init /path/to/study --project /path/to/project --connection example
+berman --root /path/to/study status
 ```
 
 `init` creates separate harness homes inside the study, an empty inventory and a
 connection with no assigned plan. It installs no hooks, changes no project files
-and starts no session. Read [the fieldwork guide](BERMAN.md) before assigning a
-plan or qualifying an installation.
+and starts no session. The [minimal study example](examples/minimal-study/README.md)
+shows the configuration formats. Read [the fieldwork guide](docs/usage.md) before
+assigning a plan or qualifying an installation.
 
-`verify` in this source checkout checks software only. To check a configured
-study, use `./berman --root /path/to/study verify`. Passing software tests does
-not establish native access or capture.
+`berman verify --software` checks the installed package. To check a configured
+study, use `berman --root /path/to/study verify`. Developer tests run separately;
+neither software verification nor tests establish native access or capture.
 
-A study can invoke this executable by absolute path, or `berman install` from a
-selected study can link it into `~/.local/bin`. Workspace selection uses `--root`
-or the nearest `berman.json` in the current repository; it stops at Git boundaries.
+Both `berman` and `python -m berman` work outside the checkout. Workspace selection
+uses `--root` or the nearest `berman.json` in the current repository; it stops at
+Git boundaries. Keep the environment installed while a study uses it.
 
 ## Software, fieldwork and analysis
 
@@ -63,6 +67,6 @@ can retain a pinned runtime until an explicitly qualified upgrade. A separate
 analysis repository must remain within a denied research root or be covered by
 an equivalent qualified access policy.
 
-The [maintenance guide](MAINTENANCE.md) covers development checks and
-compatibility. [Source provenance](ORIGIN.json) records where this code began;
+The [development guide](docs/development.md) covers tests, packaging and
+compatibility. [Source provenance](docs/provenance/origin.json) records where this code began;
 the original research ledger retains its history separately.

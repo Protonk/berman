@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "berman"
+version = "0.2.0"
+description = "Prepare, capture, and preserve research alongside software development."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+berman = "berman.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Protonk/berman"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

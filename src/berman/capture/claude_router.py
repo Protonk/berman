@@ -7,10 +7,9 @@ from pathlib import Path
 import sys
 import unicodedata
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import berman_files as files
-from berman_claude_capture import ClaudeCollector
-from berman_legacy import RUN
+from berman import files
+from berman.capture.claude import ClaudeCollector
+from berman._legacy.api import RUN
 
 
 def canonical(path):

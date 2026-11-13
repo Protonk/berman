@@ -11,9 +11,9 @@ from pathlib import Path
 import re
 import time
 
-import berman_collector
+from berman.capture import collector
 
-capture = berman_collector.capture
+capture = collector.capture
 _current_run = ContextVar('berman_capture_run', default=None)
 
 
@@ -22,7 +22,7 @@ def marker_warning(prompt, marker=None):
     if not isinstance(prompt, str):
         return {}
     variants = ((capture.MARKER, r'(?:Stewart-Fieldwork-Run|Fieldwork-Run)'),
-                (berman_collector.MARKER, r'Berman-Fieldwork-Run'))
+                (collector.MARKER, r'Berman-Fieldwork-Run'))
     for expected, pattern in variants:
         if marker is not None and marker != expected:
             continue
@@ -141,9 +141,9 @@ class LegacyCollector(Routed, capture.Collector):
     marker = capture.MARKER
 
 
-class Collector(Routed, berman_collector.Collector):
+class Collector(Routed, collector.Collector):
     adapter = 'berman-codex'
-    marker = berman_collector.MARKER
+    marker = collector.MARKER
 
     def at(self, packet_root):
         return self if Path(packet_root) == self.fieldwork else type(self)(packet_root, self.codex_home, self.analysis)

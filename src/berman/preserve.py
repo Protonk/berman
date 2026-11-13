@@ -5,12 +5,12 @@ from pathlib import Path
 import shlex
 import stat
 
-import berman_files as files
-from berman_files import Decision, keep, read, write
-import build_archive
-import fieldwork
-from berman_lifecycle import declaration, declared
-from berman_recipes import snapshot
+from berman import files
+from berman.files import Decision, keep, read, write
+from berman.archive import builder
+from berman import recovery as fieldwork
+from berman.lifecycle import declaration, declared
+from berman.recipes import snapshot
 
 
 def copy_tree(source, target):
@@ -28,7 +28,7 @@ def namespace(store, record):
     """Stewart-compatible packages keep their namespace; other connections use Berman's."""
     connection = ((record or {}).get('connection') or {}).get('id')
     if connection is None or connection == store.legacy_connection:
-        return build_archive.PREFIX
+        return builder.PREFIX
     return 'berman-analysis/'
 
 
@@ -53,14 +53,14 @@ def package(store, run):
             payload[name] = (data, stat.S_IFREG | mode)
     payload['recording-inventory.json'] = (files.json_bytes(entry), stat.S_IFREG | 0o644)
     payload['RECORDING.txt'] = (b'Berman recording package. Contains the preserved packet and its migration inventory.\n'
-                              b'Full reading editions are built separately with tools/build_archive.py.\n', stat.S_IFREG | 0o644)
+                              b'Full reading editions are built separately with archive/builder.py.\n', stat.S_IFREG | 0o644)
     prefix = namespace(store, store.record(run))
-    data = build_archive.make_zip(payload, prefix)
-    build_archive.verify_zip(data, payload, prefix)
+    data = builder.make_zip(payload, prefix)
+    builder.verify_zip(data, payload, prefix)
     destination = store.root / 'archive/recordings' / (run + '.zip')
     keep(destination, data)
     # Verify disk bytes, not just the in-memory construction.
-    build_archive.verify_zip(destination.read_bytes(), payload, prefix)
+    builder.verify_zip(destination.read_bytes(), payload, prefix)
     fieldwork.verify_moved(root, entry)
     sha = files.digest(data)
     keep(destination.with_suffix('.zip.sha256'), f'{sha}  {destination.name}\n'.encode())

@@ -8,17 +8,13 @@ this collector. Its packets carry no narrative.md placeholder, so the legacy col
 them even if a session submits the legacy marker.
 """
 import argparse
-import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location('berman_collector_legacy', ROOT / 'tools/capture_session.py')
-capture = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(capture)
+from berman._legacy import capture_session as capture
 
 MARKER = 'Berman-Fieldwork-Run: '
 OWNER = 'berman-collector/1'
@@ -190,9 +186,9 @@ class Collector(capture.Collector):
         return {}
 
 
-def collector(run, codex_home, analysis=ROOT):
+def collector(run, codex_home, analysis):
     """Resolve a run's collector through its recorded packet location."""
-    from berman_capture_runtime import Collector as RoutedCollector
+    from berman.capture.runtime import Collector as RoutedCollector
     record = capture.read_json(analysis / 'operations' / run / 'operation.json')
     if record.get('harness', {}).get('home', str(codex_home)) != str(codex_home):
         raise ValueError('Codex home differs from the run reservation; restore the recorded installation')
@@ -203,6 +199,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('hook', 'status', 'refresh', 'finalize', 'replace', 'supplement', 'adopt'))
     parser.add_argument('run', nargs='?')
+    parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--codex-home', type=Path, default=capture.CODEX_HOME)
     parser.add_argument('--transcript-path')
     parser.add_argument('--session-id')
@@ -214,8 +211,8 @@ def main():
         try:
             event = json.load(sys.stdin)
             # Registry and records determine the packet; there is no default project.
-            from berman_capture_router import route
-            result = route(event, args.codex_home, ROOT)
+            from berman.capture.router import route
+            result = route(event, args.codex_home, args.root)
         except Exception as error:
             result = {'systemMessage': 'Berman fieldwork capture: ' + str(error)}
         print(json.dumps(result))  # Never block, continue a turn, or inject instructions.
@@ -223,7 +220,7 @@ def main():
     if not args.run:
         parser.error('run is required for status and recovery commands')
     try:
-        print(json.dumps(collector(args.run, args.codex_home).command(
+        print(json.dumps(collector(args.run, args.codex_home, args.root).command(
             args.command, args.run, reason=args.allow_incomplete or args.reason, transcript_path=args.transcript_path,
             relationship=args.relationship, session_id=args.session_id), indent=2))
     except (ValueError, OSError, KeyError) as error:

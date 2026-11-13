@@ -13,10 +13,8 @@ import sys
 import tempfile
 import time
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / 'tools'))  # An isolated (-I) script does not search its own directory.
-import berman_files as files
-import berman_legacy as legacy
+from berman import files
+from berman._legacy import api as legacy
 
 # A notes-layout support packet records this protocol and connection identity; recipes never name them.
 SUPPORT_PROTOCOL, SUPPORT_CONNECTION = 'support-trial/1', 'support-trial'
@@ -233,8 +231,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('prepare', 'status', 'refresh', 'finalize', 'replace', 'supplement', 'adopt', 'migrate', 'doctor'))
     parser.add_argument('run', nargs='?')
-    parser.add_argument('--fieldwork-root', type=Path, default=ROOT.parent / 'stewart-fieldwork')
-    parser.add_argument('--analysis-root', type=Path, default=ROOT)
+    parser.add_argument('--fieldwork-root', type=Path, required=True)
+    parser.add_argument('--analysis-root', type=Path, required=True)
     parser.add_argument('--codex-home', type=Path, default=legacy.CODEX_HOME)
     parser.add_argument('--assignment-file', type=Path)
     parser.add_argument('--manager-cwd', type=Path)
@@ -249,18 +247,18 @@ def main():
     parser.add_argument('--session-id')
     parser.add_argument('--plan', action='store_true', help='Inspect migration without moving or indexing')
     args = parser.parse_args()
-    from berman_capture_runtime import LegacyCollector
+    from berman.capture.runtime import LegacyCollector
     collector = LegacyCollector(args.fieldwork_root, args.codex_home, args.analysis_root)
     if args.run:
         collector = collector.for_run(args.run)
     try:
         if args.run and (args.analysis_root / 'operations' / args.run / 'operation.json').exists():
-            from berman_records import Store
+            from berman.records import Store
             store = Store(args.analysis_root)
             collector = store.collector_for(store.record(args.run))
         if args.command == 'doctor':
-            from berman_records import Store
-            from berman_capture import readiness
+            from berman.records import Store
+            from berman.capture.adapters import readiness
             store = Store(args.analysis_root)
             result = {adapter: readiness(store, adapter) for adapter in store.collectors}
         elif not args.run:
