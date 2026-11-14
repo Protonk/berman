@@ -30,6 +30,9 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   choose or increment a version because of what a change does; increment the
   serial only when explicitly asked to prepare a release, and never move or
   reuse a released tag (docs/development.md#release-numbering).
+- GitHub is the backup of released artifacts: every release from 0.4.4 on stays
+  there with its assets, and none is deleted. Locally, `dist/` holds only the
+  current version's build (docs/development.md#keeping-release-artifacts).
 - Any release may deliberately change behavior and record requirements. Prefer
   the simplest robust implementation over compatibility machinery, and add no
   pre-release stage, migration guarantee or compatibility accommodation unless

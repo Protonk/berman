@@ -237,6 +237,20 @@ Version `1.0.0` is reserved for an explicit future decision to establish a stabl
 Releases through 0.4.4 were numbered before this scheme, and their numbers
 carry no meaning under it. The first release numbered this way is 0.26.1.
 
+## Keeping release artifacts
+
+Every release from 0.4.4 on stays on GitHub with its wheel, source distribution
+and `SHA256SUMS`. That is the backup of released artifacts: do not delete a
+release or its tag. Releases before 0.4.4 were removed on 14 November 2026;
+their tags remain.
+
+Keep less locally. `dist/` is ignored by Git and holds only the artifacts of the
+version in `pyproject.toml`: clear it before `uv build`. The test suite fails
+while it holds another version's files, so a stale build cannot be mistaken for
+the one being released. A study keeps the dependency wheelhouse of the release
+it runs and of the one it ran before, and fetches anything older from GitHub by
+its tag.
+
 ## Code map
 
 | Location | Responsibility |
@@ -264,6 +278,13 @@ behavior survives ([release numbering](#release-numbering)). Prefer a simple,
 robust corrective change over compatibility machinery. Describe changed
 refusals, output and verification scope, and any response an adopting study
 needs. Preserved evidence is never rewritten to make a new check pass.
+
+### Version 0.26.2: keeping release artifacts
+
+States where released artifacts are kept and removes this guide's notes on
+releases before 0.4.4. It adds two checks to the test suite, on the version's
+form and on what `dist/` holds. No source file differs from 0.26.1, so nothing
+in how Berman behaves differs from 0.4.4.
 
 ### Version 0.26.1: release numbering
 
