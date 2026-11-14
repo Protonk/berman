@@ -1,11 +1,12 @@
 """Select an edition's runs from the verified recorded inventory (stdlib only).
 
-Runs come from source-layout.json, never from recency, and each run's connection from Berman's
-recorded attributions, never from a project name. Every recorded run is inventoried whichever runs
-an edition then selects. A Build is the whole input to rendering and packaging; nothing here keeps
-state between builds.
+Runs come from preservation manifests and the historical source inventory, never from recency;
+each run's connection comes from recorded attribution. Every recorded run is inventoried whichever
+runs an edition then selects. A Build is the whole input to rendering and packaging; nothing here
+keeps state between builds.
 """
 from dataclasses import dataclass
+from functools import cached_property
 import hashlib
 import json
 import os
@@ -62,12 +63,72 @@ class Build:
     attributions: dict  # run -> connection attribution, for every recorded run
     subset: bool        # some recorded runs are left out; the package carries the restricted layout
     separate: bool      # runs were named: a separate ZIP, with no reading aids in the tree
-    archive_path: str
+    selection: dict    # original request; its pointer is independent of current run membership
 
-    @property
-    def tree(self):
-        """Only the cumulative Stewart edition writes reading aids into the working tree."""
-        return self.edition.name == "stewart" and not self.separate
+    @cached_property
+    def collection_id(self):
+        from berman.evidence import collection
+        return collection(self.root)
+
+    @cached_property
+    def source_manifests(self):
+        """Pinned preservation authority, with explicit historical inventory fallback."""
+        result = []
+        for entry in self.layout['runs']:
+            path = f"recordings/{entry['run']}/manifest.json"
+            if (self.root / path).is_file():
+                data = (self.root / path).read_bytes()
+                value = json.loads(data)
+                from berman.evidence import validate
+                validate(value)
+                if value.get('run') != entry['run']:
+                    raise ValueError(f'Invalid recording manifest: {path}')
+                if value.get('collection_id') != self.collection_id:
+                    raise ValueError(f'Recording collection differs: {path}')
+                result.append({'run': entry['run'], 'path': path, 'sha256': SHA(data),
+                               'basis': 'recording manifest', 'manifest': value})
+            else:
+                data = json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+                result.append({'run': entry['run'], 'path': 'source-layout.json', 'sha256': SHA(data),
+                               'basis': 'historical inventory entry', 'manifest': None})
+        return result
+
+    def stream(self, path):
+        """Use recorded formats, never project names or participant roles."""
+        run = Path(path).parts[1]
+        manifests = [item for item in self.source_manifests if item['run'] == run and item['manifest']]
+        for item in manifests:
+            for stream in item['manifest'].get('streams', []):
+                if stream.get('path') == path:
+                    return {'format': stream['format'], 'basis': 'recording manifest', 'authority': item['path']}
+        if manifests:
+            return {'format': 'unknown', 'basis': 'no stream declaration in recording manifest', 'authority': manifests[0]['path']}
+        # Historical inference is bounded to capture/binding evidence adjacent to this stream.
+        if Path(path).name == 'transcript.jsonl':
+            for name in ('capture.json', 'binding.json'):
+                relative = str(Path(path).with_name(name))
+                source = self.root / relative
+                if not source.is_file():
+                    continue
+                record = json.loads(source.read_bytes())
+                if record.get('format') in ('codex-jsonl/1', 'claude-jsonl/1', 'unknown'):
+                    return {'format': record['format'], 'basis': 'historical capture metadata', 'authority': relative}
+                harness = record.get('harness')
+                if harness not in ('codex', 'claude'):
+                    collector = record.get('collector', '')
+                    harness = {'berman-codex': 'codex', 'berman-claude': 'claude'}.get(collector)
+                if harness is None and record.get('schema') in ('stewart.session-binding/1', 'stewart.session-capture/1'):
+                    harness = 'codex'
+                if harness in ('codex', 'claude'):
+                    return {'format': harness + '-jsonl/1', 'basis': 'historical capture metadata', 'authority': relative}
+        return {'format': 'unknown', 'basis': 'format not recorded', 'authority': ''}
+
+    def session_path(self, run):
+        folder = self.root / 'runs' / run / 'session'
+        if (folder / 'current.json').exists():
+            from berman.snapshots import resolve
+            folder = resolve(folder)
+        return folder.relative_to(self.root).as_posix()
 
     @property
     def files(self):
@@ -104,9 +165,45 @@ def load(root, path):
     return json.loads((root / path).read_text(encoding="utf-8"))
 
 
+def retained_bytes(root, manifest_path, manifest, ref):
+    """Check retained authority bytes before using them to select or attribute a run."""
+    from berman.evidence import relative
+    ref = relative(ref)
+    entry = next((row for row in manifest['entries'] if row['path'] == ref), None)
+    if entry is None or entry['type'] != 'file':
+        raise ValueError(f'Recording authority does not name an inventoried file: {ref}')
+    path = root / ref if ref.startswith('runs/') else manifest_path.parent / ref
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f'Recording evidence is not a regular file: {path}')
+    if oct(stat.S_IMODE(path.stat().st_mode)) != entry['mode']:
+        raise ValueError(f'Recording evidence mode differs: {path}')
+    data = path.read_bytes()
+    if SHA(data) != entry['sha256'] or len(data) != entry['size']:
+        raise ValueError(f'Recording evidence bytes differ: {path}')
+    return data
+
+
 def inventory(root):
-    """Check every recorded run against source-layout.json; return the layout and observed rows."""
-    layout = load(root, "source-layout.json")
+    """Check original custody against recording authority or an explicit historical inventory."""
+    root = Path(root)
+    layout = load(root, "source-layout.json") if (root / 'source-layout.json').is_file() else {'runs': []}
+    legacy = {entry['run']: entry for entry in layout['runs']}
+    if len(legacy) != len(layout['runs']):
+        raise ValueError('Duplicate run identity in source-layout.json')
+    authoritative = {}
+    for path in sorted((root / 'recordings').glob('run-*/manifest.json')):
+        from berman.evidence import collection, validate
+        manifest = validate(json.loads(path.read_bytes()))
+        if manifest['collection_id'] != collection(root) or manifest['run'] != path.parent.name:
+            raise ValueError(f'Recording manifest identity differs: {path}')
+        custody = manifest.get('custody', {}).get('inventory')
+        if custody is None:
+            raise ValueError(f'Recording manifest has no original custody inventory: {path}')
+        if custody.get('run') != manifest['run'] or custody.get('current_root') != 'runs/' + manifest['run']:
+            raise ValueError(f'Recording custody identity differs: {path}')
+        authoritative[manifest['run']] = custody
+    merged = dict(legacy, **authoritative)
+    layout = dict(layout, runs=[merged[run] for run in sorted(merged)])
     rows = []
     for run in layout["runs"]:
         base = root / run["current_root"]
@@ -171,17 +268,41 @@ def attribute(root, layout):
     catalogued = {row["run"]: row["connection"] for row in catalogue["runs"]}
     result = {}
     for run in (r["run"] for r in layout["runs"]):
-        path = root / "operations" / run / "operation.json"
-        record = json.loads(path.read_text()) if path.is_file() else {}
-        ident, basis = (record.get("connection") or {}).get("id"), "operation record"
-        if not ident and run in catalogued:
+        manifest_path = root / 'recordings' / run / 'manifest.json'
+        manifest = None
+        if manifest_path.is_file():
+            from berman.evidence import check_authority, collection, validate
+            manifest = validate(json.loads(manifest_path.read_bytes()))
+            if manifest['run'] != run or manifest['collection_id'] != collection(root):
+                raise ValueError(f'Recording manifest identity differs: {manifest_path}')
+            checked = {}
+            def read_authority(ref, checked=checked, manifest_path=manifest_path, manifest=manifest):
+                if ref not in checked:
+                    checked[ref] = retained_bytes(root, manifest_path, manifest, ref)
+                return checked[ref]
+            check_authority(manifest, read_authority)
+            ref = manifest['evidence'].get('operation')
+            record = json.loads(read_authority(ref)) if ref else {}
+            attribution_ref = manifest.get('attribution', {}).get('evidence')
+            if attribution_ref and attribution_ref != ref:
+                read_authority(attribution_ref)
+            operation_basis = 'recording evidence'
+        else:
+            path = root / "operations" / run / "operation.json"
+            record = json.loads(path.read_text()) if path.is_file() else {}
+            operation_basis = 'operation record'
+        ident, basis = (record.get("connection") or {}).get("id"), operation_basis
+        if manifest is not None and 'attribution' in manifest:
+            ident = manifest['attribution']['connection']
+            basis = manifest['attribution']['basis']
+        if manifest is None and not ident and run in catalogued:
             ident, basis = catalogued[run], "run catalogue"
-        if not ident:
+        if manifest is None and not ident:
             ident, basis = legacy, "legacy single-project convention"
         if record.get("project"):
             checkouts.setdefault(ident, set()).add(record["project"])
         result[run] = dict(definitions.get(ident, {"id": ident, "name": ident or "unattributed", "readers": []}),
-                           basis=basis, harness=(record.get("harness") or {}).get("id", "codex"))
+                           basis=basis, harness=(record.get("harness") or {}).get("id", "unknown" if manifest is not None else "codex"))
     for row in result.values():
         row["checkouts"] = sorted(checkouts.get(row["id"], ()))
     return result
@@ -193,6 +314,7 @@ def select(root, edition="stewart", connections=(), runs=(), recorded=None):
     recorded, an earlier inventory(root), lets several editions share one inventory.
     """
     root = Path(root)
+    request = selection(edition, connections, runs)
     layout, entries = inventory(root) if recorded is None else recorded
     # Attribution covers the full recorded layout, so unselected runs' checkouts still classify references.
     attributions = attribute(root, layout)
@@ -203,13 +325,14 @@ def select(root, edition="stewart", connections=(), runs=(), recorded=None):
         chosen = STEWART
         selected = [r for r in layout["runs"] if stewart.READER in connection(r["run"])["readers"]]
     else:
+        select_all = not connections
         if not connections:
-            raise ValueError("--edition connections needs at least one --connection")
+            connections = sorted({row['id'] for row in attributions.values() if row['id']})
         known = {c["id"] for c in attributions.values()}
         if set(connections) - known:
             raise ValueError("No recorded runs for connection(s): " + ", ".join(sorted(set(connections) - known)))
         chosen = Edition("connections", "BERMAN FIELDWORK", BERMAN_PREFIX, tuple(sorted(set(connections))))
-        selected = [r for r in layout["runs"] if connection(r["run"])["id"] in connections]
+        selected = list(layout['runs']) if select_all else [r for r in layout["runs"] if connection(r["run"])["id"] in connections]
     if runs:
         outside = set(runs) - {r["run"] for r in selected}
         if outside:
@@ -223,9 +346,8 @@ def select(root, edition="stewart", connections=(), runs=(), recorded=None):
         roots = {r["current_root"] for r in selected}
         layout = dict(layout, runs=selected)
         entries = [e for e in entries if any(e["path"] == base or e["path"].startswith(base + "/") for base in roots)]
-    suffix = (names[0] if len(names) == 1 else "runs-" + "-".join(run.removeprefix("run-") for run in names)) if runs else ""
-    if chosen.name == "stewart":
-        archive_path = "archive/stewart-" + suffix + ".zip" if runs else ARCHIVE
-    else:
-        archive_path = "archive/editions/berman-" + "-".join(chosen.connections) + ("-" + suffix if suffix else "") + ".zip"
-    return Build(root, chosen, layout, entries, names, attributions, subset, bool(runs), archive_path)
+    return Build(root, chosen, layout, entries, names, attributions, subset, bool(runs), request)
+
+
+def selection(edition, connections=(), runs=()):
+    return {'edition': edition, 'connections': sorted(set(connections)), 'runs': sorted(set(runs))}

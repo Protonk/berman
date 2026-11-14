@@ -86,6 +86,8 @@ def initialize(destination, project, connection, codex=None, claude=None):
                   'connections': {connection: {'definition': f'connections/{connection}/connection.json',
                      'checkout': str(project), 'capture': 'berman-codex', 'plan': None}}}
         write(stage / 'berman.json', config)
+        write(stage / 'collection.json', {'schema': 'berman.collection/1', 'id': config['collection_id'],
+                                         'name': connection, 'meaning': 'Portable identity of this evidence collection.'})
         write(stage / f'connections/{connection}/connection.json', {
             'schema': 'berman.connection/1', 'id': connection, 'name': connection, 'version': 1,
             'documents': ['README.md', 'AGENTS.md'], 'commission': 'COMMISSION.md',

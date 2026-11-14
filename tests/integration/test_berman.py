@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 from berman.records import Decision, Store
 from berman import files
+from berman import snapshots
 from berman.files import read, write
 from berman.capture.collector import MARKER
 from berman.workflow import Workflow
@@ -107,7 +108,7 @@ class WorkflowTests(unittest.TestCase):
         package = self.store.record('run-001')['package']
         self.assertEqual(files.digest(Path(package['path']).read_bytes()), package['sha256'])
         with zipfile.ZipFile(package['path']) as z:
-            self.assertEqual(z.read('stewart-analysis/runs/run-001/notes/one.txt'), b'An actual participant account.\n')
+            self.assertEqual(z.read('runs/run-001/notes/one.txt'), b'An actual participant account.\n')
 
     def test_failed_packaging_is_resumed_by_new(self):
         first = self.workflow.new(); self.start(first['run'])
@@ -373,35 +374,35 @@ class WorkflowTests(unittest.TestCase):
     def test_post_finalize_supplement_allows_continuation_then_explicit_finish(self):
         first = self.workflow.new(); source = self.start(first['run'])
         self.store.collector.command('finalize', first['run'])
-        frozen = (Path(first['packet']) / 'session/transcript.jsonl').read_bytes()
+        frozen = (snapshots.resolve(Path(first['packet']) / 'session') / 'transcript.jsonl').read_bytes()
         self.append_source(source)
         supplied = self.workflow.supplement('Retain continuation', first['run'])
         second = self.workflow.new(keep_open=True)
         self.assertNotIn('ending', self.store.record(first['run']))
         self.workflow.finish('Now concluded', first['run'])
         archived = self.root / 'runs' / first['run']
-        self.assertEqual((archived / 'session/transcript.jsonl').read_bytes(), frozen)
+        self.assertEqual((snapshots.resolve(archived / 'session') / 'transcript.jsonl').read_bytes(), frozen)
         self.assertEqual(len(list((archived / 'session-supplements').iterdir())), 1)
-        self.assertEqual((archived / 'session-supplements' / Path(supplied['path']).name / 'session/transcript.jsonl').read_bytes(), source.read_bytes())
+        self.assertEqual((snapshots.resolve(archived / 'session-supplements' / Path(supplied['path']).name / 'session') / 'transcript.jsonl').read_bytes(), source.read_bytes())
         self.assertEqual(self.workflow.new()['run'], second['run'])
 
     def test_finish_collects_uncovered_later_activity_without_changing_frozen_bytes(self):
         first = self.workflow.new(); source = self.start(first['run'])
         self.store.collector.command('finalize', first['run'])
-        frozen = (Path(first['packet']) / 'session/transcript.jsonl').read_bytes()
+        frozen = (snapshots.resolve(Path(first['packet']) / 'session') / 'transcript.jsonl').read_bytes()
         self.append_source(source)
         self.workflow.finish('Actual ending')
         archived = self.root / 'runs' / first['run']
-        self.assertEqual((archived / 'session/transcript.jsonl').read_bytes(), frozen)
+        self.assertEqual((snapshots.resolve(archived / 'session') / 'transcript.jsonl').read_bytes(), frozen)
         coverage = read(archived / 'context/berman/source-coverage.json')
         self.assertEqual(coverage['source_sha256'], files.digest(source.read_bytes()))
-        self.assertEqual((archived / coverage['retained_in'] / 'session/transcript.jsonl').read_bytes(), source.read_bytes())
+        self.assertEqual((snapshots.resolve(archived / coverage['retained_in'] / 'session') / 'transcript.jsonl').read_bytes(), source.read_bytes())
 
     def test_bad_supplement_is_not_mistaken_for_retained_later_activity(self):
         first = self.workflow.new(); source = self.start(first['run'])
         self.store.collector.command('finalize', first['run']); self.append_source(source)
         supplement = self.workflow.supplement('later')
-        (Path(supplement['path']) / 'session/conversation.txt').write_text('changed')
+        (snapshots.resolve(Path(supplement['path']) / 'session') / 'conversation.txt').write_text('changed')
         with self.assertRaisesRegex(Decision, 'inconsistent supplement'):
             self.workflow.finish('ended')
         self.assertTrue(Path(first['packet']).exists())
@@ -413,7 +414,7 @@ class WorkflowTests(unittest.TestCase):
         self.start(second['run']); self.workflow.finish('done')
         record = self.store.record(second['run'])
         with zipfile.ZipFile(record['package']['path']) as archive:
-            meta = json.loads(archive.read('stewart-analysis/runs/run-002/run.json'))
+            meta = json.loads(archive.read('runs/run-002/run.json'))
         self.assertEqual(meta['recording_protocol'], 'participant-inquiry/1')
 
     def test_combined_request_retries_same_target_and_reports_archival_on_error(self):

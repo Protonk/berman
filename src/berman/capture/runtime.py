@@ -12,6 +12,8 @@ import re
 import time
 
 from berman.capture import collector
+from berman.capture import transaction
+from berman import snapshots
 
 capture = collector.capture
 _current_run = ContextVar('berman_capture_run', default=None)
@@ -59,6 +61,20 @@ class Routed:
     adapter = None
     marker = None
     bound_run = None
+
+    def capture(self, root, event):
+        return transaction.capture(self, root, event)
+
+    def status(self, run):
+        return transaction.status(self, run)
+
+    def find_source(self, binding, supplied=None):
+        if supplied is None:
+            session = self.fieldwork / binding['run'] / 'session'
+            folder = snapshots.resolve(session)
+            if (folder / 'capture.json').exists():
+                supplied = capture.read_json(folder / 'capture.json').get('source_transcript')
+        return super().find_source(binding, supplied)
 
     def for_run(self, run):
         result = type(self)(self.fieldwork, self.codex_home, self.analysis)
@@ -122,7 +138,9 @@ class Routed:
 
     def command(self, name, run, **kwargs):
         if name == 'status':
-            return super().command(name, run, **kwargs)
+            return self.status(run)
+        if self.archived(run):
+            raise ValueError(f'{run} is archived; capture commands cannot change preserved material')
         root = self.run_path(run)
         binding = root / 'session/binding.json'
         sid = capture.read_json(binding)['session_id'] if binding.exists() else kwargs.get('session_id')
@@ -130,6 +148,8 @@ class Routed:
             if sid:
                 self.check_owner(sid)
             with self.run_scope(run):
+                if name in ('refresh', 'finalize'):
+                    return transaction.command(self, name, run, **kwargs)
                 return super().command(name, run, **kwargs)
 
 

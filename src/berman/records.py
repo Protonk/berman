@@ -6,7 +6,8 @@ from pathlib import Path
 import time
 import uuid
 
-from berman import schemas
+from berman import evidence as recording_evidence
+from berman import files, schemas, snapshots
 from berman.capture import runtime
 from berman.capture.claude import ClaudeCollector
 from berman.config import Catalogue, Connection
@@ -37,10 +38,15 @@ def capture_metadata(root, run):
     The collector's historical status reader treated false JSON values as no metadata. Do
     this check before calling it, without changing the collector or any preserved bytes.
     """
-    path = root / 'session/capture.json'
+    try:
+        path = snapshots.resolve(root / 'session') / 'capture.json'
+    except FileNotFoundError as exc:
+        raise Decision(f'{run}: missing capture metadata: {exc}') from exc
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise Decision(f'{run}: damaged capture metadata: {exc}') from exc
     if not path.exists() and not path.is_symlink():
         if any((root / 'session' / name).exists() for name in
-               ('transcript.jsonl', 'captures.jsonl', 'conversation.txt', 'finalized.json')):
+               ('transcript.jsonl', 'captures.jsonl', 'conversation.txt', 'finalized.json', 'snapshots')):
             raise Decision(f'{run}: missing capture metadata for retained session evidence: {path}')
         return None
     value = read(path)
@@ -280,6 +286,11 @@ class Store:
         return held
 
     def attribute(self, run, record):
+        if run in getattr(self, 'recording_errors', {}):
+            return None, 'damaged published recording authority'
+        if run in getattr(self, 'published_recordings', {}):
+            attribution = self.published_recordings[run][0]['attribution']
+            return attribution['connection'], attribution['basis']
         if record and record.get('connection'):
             return record['connection']['id'], 'operation record'
         catalogued = self.catalogue.connection(run)
@@ -334,6 +345,44 @@ class Store:
                             problem(p.name, p, exc)
         layout = self.root / 'source-layout.json'
         indexed = {r['run'] for r in read(layout)['runs']} if layout.exists() else set()
+        self.published_recordings = {}
+        self.recording_errors = {}
+        for path in (self.root / 'recordings').glob('run-*/manifest.json'):
+            run = path.parent.name
+            identities.add(run)
+            try:
+                if not (path.parent / 'publication.json').exists():
+                    continue  # Publication is unfinished; the resumable operation still owns it.
+                manifest = recording_evidence.validate(read(path))
+                publication = read(path.parent / 'publication.json')
+                if (manifest['run'] != run or manifest['collection_id'] != recording_evidence.collection(self.root)
+                        or publication['manifest_sha256'] != recording_evidence.identity(manifest)):
+                    raise Decision('Published recording identity disagrees')
+                members = {item['path']: item for item in manifest['entries']}
+                def retained(name, member_rows=members, folder=path.parent):
+                    source = self.root / name if name.startswith('runs/') else folder / name
+                    data = files.regular(source).read_bytes()
+                    item = member_rows[name]
+                    if item['type'] != 'file' or digest(data) != item['sha256'] or len(data) != item['size']:
+                        raise Decision('Retained authority differs from its manifest: ' + name)
+                    return data
+                recording_evidence.check_authority(manifest, retained, snapshot_bytes=False)
+                ref = manifest['evidence']['operation']
+                record = None
+                if ref:
+                    source = self.root / ref if ref.startswith('runs/') else path.parent / ref
+                    data = files.regular(source).read_bytes()
+                    item = next(item for item in manifest['entries'] if item['path'] == ref)
+                    if digest(data) != item['sha256'] or len(data) != item['size']:
+                        raise Decision('Retained operation differs from its manifest')
+                    record = checked(read(source), run)
+                    # A derived discovery view, never written over retained operation bytes.
+                    record = dict(record, phase='archived', package=dict(publication, path=str(self.root / recording_evidence.relative(publication['relative_path']))))
+                self.published_recordings[run] = (manifest, record)
+                indexed.add(run)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                self.recording_errors[run] = str(exc)
+                problem(run, path, exc)
         identities.update(indexed)
         journals = self.root / 'migrations'
         pending, phases = {}, {}
@@ -341,6 +390,8 @@ class Store:
             for p in journals.glob('run-*.json'):
                 if RUN.fullmatch(p.stem):
                     identities.add(p.stem)
+                    if p.stem in self.published_recordings:
+                        continue
                     try:
                         phases[p.stem] = journal_phase(read(p), p.stem)
                         if phases[p.stem] != 'indexed':
@@ -396,7 +447,9 @@ class Store:
                 row['binding'] = candidates[0]
             record_error = None
             try:
-                row['record'] = self.record(run)
+                if run in self.recording_errors:
+                    raise Decision(self.recording_errors[run])
+                row['record'] = (self.published_recordings[run][1] if run in self.published_recordings else self.record(run))
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 record_error = str(exc)
                 row['problems'].append(record_error)
@@ -470,7 +523,7 @@ class Store:
         binding = read(root / 'session/binding.json') if (root / 'session/binding.json').exists() else None
         if binding and binding.get('run') != run:
             raise Decision(f'{run}: session binding belongs to a different run')
-        if record and record.get('packet') and record['packet'] != str(active):
+        if run not in getattr(self, 'published_recordings', {}) and record and record.get('packet') and record['packet'] != str(active):
             raise Decision(f'{run}: recorded packet {record["packet"]} is outside the shared packet root')
         row.update(location=location, state=state, binding=binding, capture_status=status)
 

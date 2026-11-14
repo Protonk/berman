@@ -38,7 +38,7 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   terminal gets the Rich rendering of the same result. `--json`, exit codes and
   redirected text must not depend on whether a terminal is attached.
 - `berman verify` includes a read-only `recordings` audit. Missing historical
-  authority is unestablished, not a passing assertion. Interrupted writer-owned
+  authority remains unknown coverage; an integrity pass makes no completion assertion. Interrupted writer-owned
   material goes into `.state/recovery` before inventory; nothing already
   inventoried is cleaned retrospectively. Notes and selected project documents
   can have temporary-looking filenames and must remain intact.

@@ -5,9 +5,9 @@ from pathlib import Path
 import shlex
 import stat
 
-from berman import files
-from berman.files import Decision, keep, read, write
+from berman import files, snapshots
 from berman.archive import builder
+from berman.files import Decision, keep, read, write
 from berman import recovery as fieldwork
 from berman.lifecycle import declaration, declared
 from berman.recipes import snapshot
@@ -61,22 +61,8 @@ def recording_payload(root, entry):
 
 
 def package(store, run):
-    layout = read(store.root / 'source-layout.json')
-    entry = next(e for e in layout['runs'] if e['run'] == run)
-    root = store.root / 'runs' / run
-    fieldwork.verify_moved(root, entry)
-    payload = recording_payload(root, entry)
-    prefix = namespace(store, store.record(run))
-    data = builder.make_zip(payload, prefix)
-    builder.verify_zip(data, payload, prefix)
-    destination = store.root / 'archive/recordings' / (run + '.zip')
-    keep(destination, data)
-    # Verify disk bytes, not just the in-memory construction.
-    builder.verify_zip(destination.read_bytes(), payload, prefix)
-    fieldwork.verify_moved(root, entry)
-    sha = files.digest(data)
-    keep(destination.with_suffix('.zip.sha256'), f'{sha}  {destination.name}\n'.encode())
-    return {'path': str(destination), 'sha256': sha, 'bytes': len(data), 'members': len(payload), 'namespace': prefix}
+    from berman.recordings import publish
+    return publish(store, run)
 
 
 def finish_help(record):
@@ -96,15 +82,17 @@ def retained_source(store, record, create=True):
         return {'source_unavailable': True, 'frozen_sha256': frozen}
     source_hash = files.digest(source)
     if source_hash == frozen:
-        return {'source_sha256': source_hash, 'retained_in': 'session/transcript.jsonl'}
+        return {'source_sha256': source_hash,
+                'retained_in': (snapshots.resolve(root / 'session') / 'transcript.jsonl').relative_to(root).as_posix()}
     for receipt_path in sorted((root / 'session-supplements').glob('*/supplement.json')):
         receipt = read(receipt_path)
         if receipt['frozen_sha256'] != frozen:
             raise Decision(f'{run}: supplement refers to a different frozen capture')
-        folder = receipt_path.parent / 'session'
+        session = receipt_path.parent / 'session'
+        folder = snapshots.resolve(session)
         raw = files.regular(folder / 'transcript.jsonl').read_bytes()
         meta = read(folder / 'capture.json')
-        associated = read(folder / 'binding.json')
+        associated = read(session / 'binding.json')
         history = files.regular(folder / 'captures.jsonl').read_bytes().splitlines()
         consistent = (files.digest(raw) == receipt['supplement_sha256'] == meta['sha256']
                       and len(raw) == meta['saved_bytes'] and associated['session_id'] == binding['session_id']

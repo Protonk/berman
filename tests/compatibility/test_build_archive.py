@@ -20,6 +20,7 @@ class ArchiveTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name).resolve()
+        (self.root / "collection.json").write_text(json.dumps({"id": "00000000-0000-4000-8000-000000000001"}))
         self.run = self.root / "runs/run-005"
         self.run.mkdir(parents=True)
         (self.run / "INSTRUCTIONS.md").write_text("Preserved recording instructions.\n")
@@ -178,9 +179,9 @@ class ArchiveTests(unittest.TestCase):
         self.layout['runs'][0]['entries'] = self.inventory()
         (self.root / 'source-layout.json').write_text(json.dumps(self.layout))
         generated = self.render()
-        self.assertIn(b'nested stream', generated['review/auditor-events.txt'])
+        self.assertNotIn(b'nested stream', generated['review/events.txt'])
         rows = list(csv.DictReader(io.StringIO(generated['review/transcript-map.csv'].decode())))
-        rejected = [row for row in rows if row['availability'] == 'preserved raw; not decoded']
+        rejected = [row for row in rows if row['decode_status'] == 'malformed']
         self.assertEqual([row['line'] for row in rejected], ['2', '3'])
         self.assertEqual(path.read_text().splitlines()[-2:], ['not-json', '[]'])
 
@@ -202,9 +203,10 @@ class ArchiveTests(unittest.TestCase):
         with path.open('a') as stream:
             stream.write(json.dumps({'type':'response_item','payload':None})+'\n')
             stream.write(json.dumps({'type':'event_msg','payload':{'type':'task_complete','error':{'message':'HTTP 400 trial'}}})+'\n')
+        (path.parent / 'binding.json').write_text(json.dumps({'harness': 'codex'}))
         out = self.builder.Outputs()
         self.builder.transcripts(build, {path.relative_to(self.root).as_posix()}, out)
-        result = out['review/manager-events.txt']
+        result = out['review/events.txt']
         self.assertIn(b'ROLE: harness | KIND: task_error', result)
         self.assertIn(b'/payload/error', result)
         self.assertIn(b'HTTP 400 trial', result)
@@ -239,8 +241,8 @@ class ArchiveTests(unittest.TestCase):
         (self.root / "source-layout.json").write_text(json.dumps(self.layout))
         fresh = self.package(self.builder.select(self.root))
         separate = self.builder.select(self.root, runs=["run-006"])
-        self.assertEqual((separate.runs, separate.subset, separate.separate, separate.tree, separate.archive_path),
-                         (("run-006",), True, True, False, "archive/stewart-run-006.zip"))
+        self.assertEqual((separate.runs, separate.subset, separate.separate, separate.selection),
+                         (("run-006",), True, True, {"edition": "stewart", "connections": [], "runs": ["run-006"]}))
         generated, payload, _ = self.package(separate)
         self.assertNotIn("review/run-005.txt", payload)
         self.assertFalse(any(path.startswith("runs/run-005") for path in payload))
@@ -251,7 +253,7 @@ class ArchiveTests(unittest.TestCase):
     def test_rendering_reads_the_build_without_changing_it(self):
         build = self.builder.select(self.root)
         before = copy.deepcopy((build.layout, build.entries, build.attributions))
-        self.builder.destinations(build, *self.package(build))
+        self.package(build)
         self.assertEqual((build.layout, build.entries, build.attributions), before)
         with self.assertRaises(dataclasses.FrozenInstanceError):
             build.runs = ()
@@ -267,18 +269,18 @@ class ArchiveTests(unittest.TestCase):
         for name, digest in record["builder_sha256"].items():
             self.assertEqual(digest, hashlib.sha256((tools / name).read_bytes()).hexdigest())
 
-    def test_written_edition_verifies_and_a_stale_aid_is_reported(self):
+    def test_written_edition_is_immutable_and_local_aids_are_independent(self):
         build = self.builder.select(self.root)
         written = self.builder.edition(build)
-        self.assertEqual((written["mode"], written["archive_path"]), ("built and verified", "archive/stewart-runs.zip"))
-        self.assertEqual((self.root / "archive/SHA256SUMS").read_text(), f"{written['archive_sha256']}  stewart-runs.zip\n")
-        self.assertEqual(self.builder.edition(build, verify=True), dict(written, mode="verified"))
-        (self.root / "review/run-005.txt").write_text("edited\n")
-        with self.assertRaisesRegex(ValueError, "Generated file is missing or stale: review/run-005.txt"):
-            self.builder.edition(build, verify=True)
+        self.assertEqual(written['mode'], 'published and verified')
+        self.assertEqual(written['archive_path'], f"archive/editions/{written['archive_sha256']}.zip")
+        self.assertEqual(self.builder.edition(build, verify=True), dict(written, mode='verified'))
+        (self.root / 'review').mkdir()
+        (self.root / 'review/run-005.txt').write_text('independently edited old aid\n')
+        self.assertEqual(self.builder.edition(build, verify=True), dict(written, mode='verified'))
         self.assertEqual(self.builder.edition(build), written)
-        self.assertEqual(self.builder.edition(build, verify=True), dict(written, mode="verified"))
-        self.assertEqual(self.inventory(), self.layout["runs"][0]["entries"])
+        self.assertEqual((self.root / 'review/run-005.txt').read_text(), 'independently edited old aid\n')
+        self.assertEqual(self.inventory(), self.layout['runs'][0]['entries'])
 
     def test_historical_audit_apparatus_is_not_packaged(self):
         probe = self.root / "handoffs/fieldworker-support-audit/probe_04_migration.py"
@@ -290,8 +292,7 @@ class ArchiveTests(unittest.TestCase):
     def test_selection_refusals(self):
         with self.assertRaisesRegex(ValueError, "The Stewart edition selects Stewart's runs"):
             self.builder.select(self.root, "stewart", ["stewart"])
-        with self.assertRaisesRegex(ValueError, "--edition connections needs at least one --connection"):
-            self.builder.select(self.root, "connections")
+        self.assertEqual(self.builder.select(self.root, "connections").runs, ("run-005",))
         with self.assertRaisesRegex(ValueError, "No recorded runs for connection\\(s\\): orchard"):
             self.builder.select(self.root, "connections", ["orchard"])
         with self.assertRaisesRegex(ValueError, "Run\\(s\\) outside this edition's connections: run-404"):
@@ -304,8 +305,8 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No recorded runs are selected for this edition"):
             self.builder.select(self.root)
         build = self.builder.select(self.root, "connections", ["orchard"])
-        self.assertEqual((build.edition.prefix, build.archive_path, build.connection("run-005")["basis"]),
-                         ("berman-analysis/", "archive/editions/berman-orchard.zip", "legacy single-project convention"))
+        self.assertEqual((build.edition.prefix, build.selection, build.connection("run-005")["basis"]),
+                         ("berman-analysis/", {"edition": "connections", "connections": ["orchard"], "runs": []}, "legacy single-project convention"))
         self.layout["runs"].append(self.layout["runs"][0])
         (self.root / "source-layout.json").write_text(json.dumps(self.layout))
         with self.assertRaisesRegex(ValueError, "Duplicate run identity in source-layout.json"):

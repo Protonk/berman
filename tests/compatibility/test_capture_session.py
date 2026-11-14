@@ -272,11 +272,12 @@ class CaptureTests(unittest.TestCase):
             path = self.analysis / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"Current framing: {name}\n")
+        (self.analysis / 'collection.json').write_text(json.dumps({'id': '00000000-0000-4000-8000-000000000001'}))
         build = builder.select(self.analysis)
         self.assertEqual(build.runs, ("run-004",))
         generated, _ = builder.render(build)
         self.assertIn(b"runs/run-004/session/transcript.jsonl", generated["review/transcript-map.csv"])
-        self.assertIn(b"Finished.", generated["review/manager-events.txt"])
+        self.assertIn(b"Finished.", generated["review/events.txt"])
         self.assertIn(b"runs/run-004/session/conversation.txt", generated["review/run-004.txt"])
         self.assertIn(b"ASSIGNMENT SOURCE: runs/run-004/scratch/manager-004/audits/run-004/PROMPT.md", generated["review/run-004.txt"])
 

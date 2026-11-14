@@ -87,5 +87,14 @@
   ],
   "recovered-write-1/invalid/file.json": [
     "source is required"
+  ],
+  "recording-2/invalid/schema.json": [
+    "schema must be \"berman.recording/2\", not a string (\"berman.wrong/1\")"
+  ],
+  "capture-current-1/invalid/schema.json": [
+    "schema must be \"berman.capture-current/1\", not a string (\"berman.wrong/1\")"
+  ],
+  "reading-edition-2/invalid/schema.json": [
+    "schema must be \"berman.reading-edition/2\", not a string (\"berman.wrong/1\")"
   ]
 }

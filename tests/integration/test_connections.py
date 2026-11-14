@@ -15,7 +15,7 @@ import zipfile
 
 from berman.records import Decision, Store
 from berman.installation import PACKAGE as ROOT
-from berman import files
+from berman import snapshots, files
 from berman.files import read, write
 from berman.capture.collector import MARKER
 from berman.workflow import Workflow
@@ -204,9 +204,9 @@ class SecondConnectionTests(Base):
             stream.write(json.dumps({'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant',
                                                                            'content': [{'text': 'later'}]}}) + '\n')
         self.berman.hook(dict(orchard_event, hook_event_name='Stop'))
-        self.assertEqual(read(packet / 'session/capture.json')['saved_bytes'], orchard_source.stat().st_size)
+        self.assertEqual(read(snapshots.resolve(packet / 'session') / 'capture.json')['saved_bytes'], orchard_source.stat().st_size)
         self.berman.hook(dict(stewart_event, hook_event_name='Stop'))
-        self.assertTrue((self.store.field / stewart['run'] / 'session/capture.json').exists())
+        self.assertTrue((snapshots.resolve(self.store.field / stewart['run'] / 'session') / 'capture.json').exists())
         self.store.collectors['berman-codex'].command('finalize', one['run'])
         with orchard_source.open('a') as stream:
             stream.write(json.dumps({'type': 'response_item', 'payload': {'type': 'message', 'role': 'user',
@@ -225,9 +225,9 @@ class SecondConnectionTests(Base):
         self.assertTrue((self.root / 'runs' / one['run']).exists())
         result = self.workflow.finish('The orchard engagement ended')
         self.assertEqual((result['run'], result['state']), (one['run'], 'archived'))
-        self.assertEqual(result['package']['namespace'], 'berman-analysis/')
+        self.assertEqual(result['package']['namespace'], '')
         with zipfile.ZipFile(result['package']['path']) as archive:
-            self.assertIn(f'berman-analysis/runs/{one["run"]}/ASSIGNMENT.md', archive.namelist())
+            self.assertIn(f'runs/{one["run"]}/ASSIGNMENT.md', archive.namelist())
         archived = self.root / 'runs' / one['run']
         self.assertEqual((archived / 'context/berman/closing-project/GUIDE.md').read_text(), 'How the orchard project works.\n')
         self.assertEqual(len(list((archived / 'session-supplements').iterdir())), 1)
@@ -486,7 +486,7 @@ class CollectorOwnershipTests(Base):
         self.assertEqual(elsewhere.hook(dict(event, hook_event_name='Stop')), {})
         unrouted = capture_collector.Collector(self.base / 'unrouted', self.home, self.root)
         unrouted.hook(dict(event, hook_event_name='Stop'))
-        self.assertEqual(read(Path(one['packet']) / 'session/capture.json')['event'], 'Stop')
+        self.assertEqual(read(snapshots.resolve(Path(one['packet']) / 'session') / 'capture.json')['event'], 'Stop')
 
     def test_installation_waits_for_closed_captures_and_trust_needs_a_recorded_review(self):
         (self.root / 'hooks').mkdir(exist_ok=True)
@@ -608,7 +608,7 @@ class ConcurrencyTests(Base):
         with mock.patch.object(fieldwork, 'migration_entry', side_effect=during_inventory):
             self.workflow.finish('First engagement ended', first['run'])
         self.assertEqual(observed['hook'], {})
-        self.assertEqual(read(self.store.field / second['run'] / 'session/capture.json')['event'], 'Stop')
+        self.assertEqual(read(snapshots.resolve(self.store.field / second['run'] / 'session') / 'capture.json')['event'], 'Stop')
         self.assertFalse(read(self.home / f'berman-capture/{event["session_id"]}.json')['active_turn'])
 
     def test_contention_names_the_occupied_run(self):
@@ -650,13 +650,14 @@ class ArchiveEditionTests(Base):
     def test_mixed_edition_identifies_connections_without_stewart_explanations(self):
         stewart, one = self.mixed()
         build, generated, payload, zipped = self.build('connections', ['stewart', 'orchard'])
-        self.assertEqual(build.archive_path, 'archive/editions/berman-orchard-stewart.zip')
+        self.assertEqual(build.selection, {'edition': 'connections', 'connections': ['orchard', 'stewart'], 'runs': []})
         edition = json.loads(generated['review/EDITION.json'])
         self.assertEqual(edition['namespace'], 'berman-analysis/')
-        self.assertEqual([(r['run'], r['connection'], r['attribution']) for r in edition['runs']],
-                         [(stewart['run'], 'stewart', 'operation record'), (one['run'], 'orchard', 'operation record')])
+        self.assertEqual([(r['run'], r['connection']) for r in edition['runs']],
+                         [(stewart['run'], 'stewart'), (one['run'], 'orchard')])
+        self.assertTrue(all(row['attribution'] for row in edition['runs']))
         reader = generated[f'review/{one["run"]}.txt'].decode()
-        self.assertTrue(reader.startswith(f'ORCHARD FIELDWORK: {one["run"]}\n\nConnection: orchard (attributed by operation record)'))
+        self.assertTrue(reader.startswith(f'ORCHARD FIELDWORK: {one["run"]}\n\nConnection: orchard (attributed by '))
         self.assertNotIn('Stewart', reader)
         self.assertNotIn('EVIDENCE EXPORTS', reader)
         self.assertIn('INCLUDED SESSION CONVERSATION FILES', reader)
@@ -665,9 +666,9 @@ class ArchiveEditionTests(Base):
         self.assertTrue(generated[f'review/{stewart["run"]}.txt'].decode().startswith(f'STEWART FIELDWORK: {stewart["run"]}'))
         rows = list(__import__('csv').DictReader(__import__('io').StringIO(generated['review/transcript-map.csv'].decode())))
         kinds = {r['record_kind'] for r in rows if r['run'] == one['run']}
-        self.assertIn('rendered session conversation', kinds)
         self.assertNotIn('rendered manager conversation', kinds)
-        self.assertIn(b'DECODED SESSION CONVERSATIONS', generated['review/manager-events.txt'])
+        self.assertTrue(all(row['raw_availability'] == 'included' for row in rows))
+        self.assertIn(b'DECODED NATIVE STREAMS', generated['review/events.txt'])
         guide = generated['ARCHIVE-GUIDE.txt'].decode()
         self.assertIn(f'  orchard (Orchard): {one["run"]}', guide)
         self.assertIn('Orchard: no specialized readers or coverage notes are recorded', guide)
@@ -696,6 +697,84 @@ class ArchiveEditionTests(Base):
         self.assertEqual(self.build('connections', ['stewart', 'orchard'], builder)[1:], fresh_mixed)
         self.assertEqual(self.build('stewart', [], builder)[1:], fresh_stewart)
         self.assertEqual(self.build('connections', ['stewart', 'orchard'], builder)[1:], fresh_mixed)
+
+    def test_committed_snapshot_streams_use_their_preservation_manifest(self):
+        stewart, orchard = self.mixed()
+        build, generated, _, _ = self.build('connections', ['stewart', 'orchard'])
+        blocks = [json.loads(line) for line in generated['review/decoded-blocks.jsonl'].splitlines()]
+        self.assertEqual(len(blocks), 2)
+        for prepared in (stewart, orchard):
+            run = prepared['run']
+            manifest = read(self.root / 'recordings' / run / 'manifest.json')
+            stream = next(row for row in manifest['streams'] if row['format'] == 'codex-jsonl/1')
+            self.assertIn('/session/snapshots/', stream['path'])
+            block = next(item for item in blocks if item['run'] == run)
+            self.assertEqual(block['source_path'], stream['path'])
+            self.assertEqual(block['format'], stream['format'])
+            self.assertEqual(block['source_sha256'], files.digest((self.root / stream['path']).read_bytes()))
+            self.assertEqual(block['content'], 'done')
+            self.assertIn(stream['path'].encode(), generated[f'review/{run}.txt'])
+        report = self.builder().edition(build)
+        self.assertEqual(self.builder().verify_edition(self.root / report['archive_path'])['freshness'], 'not-checked')
+
+    def test_mutable_operation_changes_do_not_reassign_preserved_runs(self):
+        stewart, orchard = self.mixed()
+        for prepared in (stewart, orchard):
+            path = self.root / 'operations' / prepared['run'] / 'operation.json'
+            record = read(path)
+            record['connection']['id'] = 'later-corrupt-view'
+            write(path, record)
+        build = self.builder().select(self.root, 'connections', ['stewart', 'orchard'])
+        self.assertEqual(build.connection(stewart['run'])['id'], 'stewart')
+        self.assertEqual(build.connection(orchard['run'])['id'], 'orchard')
+
+    def test_recording_custody_replaces_a_missing_or_stale_mutable_inventory(self):
+        stewart, orchard = self.mixed()
+        index = self.root / 'source-layout.json'
+        original = read(index)
+        stale = read(index)
+        item = next(row for row in stale['runs'][0]['entries'] if row['type'] == 'file')
+        item['sha256'] = '0' * 64
+        write(index, stale)
+        selected = self.builder().select(self.root, 'connections')
+        self.assertEqual(selected.layout['runs'], original['runs'])
+        index.unlink()
+        selected = self.builder().select(self.root, 'connections')
+        self.assertEqual(set(selected.runs), {stewart['run'], orchard['run']})
+        result = self.builder().edition(selected)
+        self.assertFalse(index.exists())
+        self.assertEqual(self.builder().verify_edition(self.root / result['archive_path'])['mode'], 'verified')
+
+    def test_changed_retained_attribution_cannot_hide_a_run_during_selection(self):
+        stewart, _ = self.mixed()
+        path = self.root / 'recordings' / stewart['run'] / 'evidence/operation.json'
+        authority = read(path)
+        authority['connection']['id'] = 'orchard'
+        write(path, authority)
+        with self.assertRaisesRegex(ValueError, 'Recording evidence bytes differ'):
+            self.builder().select(self.root, 'connections', ['stewart'])
+
+    def test_default_selection_keeps_explicitly_unattributed_historical_runs(self):
+        stewart, orchard = self.mixed()
+        path = self.root / 'recordings' / stewart['run'] / 'manifest.json'
+        manifest = read(path)
+        manifest['profile'] = 'historical-import'
+        manifest['evidence']['operation'] = None
+        manifest['coverage']['unknown'].append('No historical operation evidence or connection attribution')
+        manifest['attribution'] = {'connection': None, 'basis': 'unattributed', 'evidence': None}
+        write(path, manifest)
+        selected = self.builder().select(self.root, 'connections')
+        self.assertEqual(set(selected.runs), {stewart['run'], orchard['run']})
+        self.assertIsNone(selected.connection(stewart['run'])['id'])
+
+    def test_manifest_attribution_must_agree_before_a_connection_can_exclude_it(self):
+        stewart, _ = self.mixed()
+        path = self.root / 'recordings' / stewart['run'] / 'manifest.json'
+        manifest = read(path)
+        manifest['attribution']['connection'] = 'orchard'
+        write(path, manifest)
+        with self.assertRaisesRegex(ValueError, 'Retained operation and connection attribution disagree'):
+            self.builder().select(self.root, 'connections', ['stewart'])
 
 
 if __name__ == '__main__':

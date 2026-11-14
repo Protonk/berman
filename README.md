@@ -54,7 +54,7 @@ assigning a plan or qualifying an installation.
 study, use `berman --root /path/to/study verify`. Developer tests run separately;
 neither software verification nor tests establish native access or capture.
 Study verification includes a read-only audit of preserved originals, ending
-evidence and recording ZIPs. Missing historical authority stays unestablished;
+evidence and recording ZIPs. Missing historical authority remains explicit coverage uncertainty;
 verification never invents an ending or repairs preserved material.
 
 On an interactive terminal, `status`, `verify`, `cheatsheet` and the result of

@@ -13,7 +13,7 @@ from berman.files import Decision, read, write
 from berman.harnesses.codex import Codex
 from berman.capture.router import route
 from berman.capture import adapters
-from berman import cli
+from berman import snapshots, cli
 
 
 class ReviewRegressionTests(Base):
@@ -175,7 +175,7 @@ class ReviewRegressionTests(Base):
                                         input=json.dumps(dict(event, hook_event_name=name, prompt=cls.marker + one['run'])),
                                         capture_output=True, text=True, check=True)
                 self.assertEqual(json.loads(result.stdout), {}, result.stderr)
-            self.assertEqual(read(Path(one['packet']) / 'session/capture.json')['event'], 'SessionEnd')
+            self.assertEqual(read(snapshots.resolve(Path(one['packet']) / 'session') / 'capture.json')['event'], 'SessionEnd')
 
     def test_readiness_rejects_duplicate_direct_hooks(self):
         template = adapters.definition(self.store, 'berman-codex')

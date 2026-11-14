@@ -15,17 +15,18 @@ import sys
 import tarfile
 
 # Stewart's specialized readers are Berman code, selected explicitly for Stewart runs.
-from berman.archive import stewart
+from berman.archive import stewart, streams
 # archive_select fixes an edition's runs, attributions and destination in a Build; this module renders it
 # into fresh Outputs; archive_package assembles, verifies and writes the payload. No state is kept between
 # builds. Selection and packaging names are also re-exported for berman_preserve and the tests.
-from berman.archive.package import apply, assemble, compare, destinations, make_zip, obsolete, verify_zip
+from berman.archive.package import (assemble, make_zip, published, publish, seal,
+                                   verify_edition, verify_published, verify_zip)
 from berman.archive.select import (ARCHIVE, BERMAN_PREFIX, CONTEXT_DOCUMENTS, EDITION_DOCUMENTS, PREFIX, SHA, STEWART,
-                            Build, Edition, inventory, load, select)
+                            Build, Edition, inventory, load, select, selection)
 
-CONVERSATIONS = (stewart.CONVERSATION, "Codex session transcript")
+CONVERSATIONS = ("Codex session transcript", "Claude session transcript")
 # Edition identity names every module that selects, renders or packages it.
-BUILDER = ("builder.py", "stewart.py", "select.py", "package.py")
+BUILDER = ("builder.py", "stewart.py", "select.py", "package.py", "streams.py")
 
 
 
@@ -52,9 +53,7 @@ def stamp(value):
 
 def session_kind(build, run):
     """Label captured transcripts by their recorded harness and format, not the participant's role."""
-    if build.stewart_reader(run):
-        return stewart.CONVERSATION
-    return "Codex session transcript" if build.connection(run)["harness"] == "codex" else ""
+    return stream_kind(build, build.session_path(run) + '/transcript.jsonl')
 
 
 class Corpus:
@@ -161,11 +160,22 @@ def evidence_map(build, files, out):
 def stream_kind(build, path):
     parts = Path(path).parts
     run = parts[1] if len(parts) > 1 else ""
-    if len(parts) == 4 and parts[2:] == ("session", "transcript.jsonl"):
-        return session_kind(build, run)
-    if len(parts) == 6 and parts[2] in ('session-history', 'session-supplements') and parts[-2:] == ('session', 'transcript.jsonl'):
-        return session_kind(build, run)
+    if path.endswith('.jsonl'):
+        format_name = build.stream(path)['format']
+        if format_name in ('codex-jsonl/1', 'claude-jsonl/1'):
+            return 'Codex session transcript' if format_name == 'codex-jsonl/1' else 'Claude session transcript'
     return stewart.stream_kind(parts) if build.stewart_reader(run) else ""
+
+
+def decoded(build, path):
+    data = (build.root / path).read_bytes()
+    source = {'collection_id': build.collection_id, 'run': Path(path).parts[1],
+              'source_path': path, 'source_sha256': SHA(data)}
+    descriptor = build.stream(path)
+    records, blocks = streams.decode(data, descriptor['format'], source)
+    for row in records:
+        row.update(format_basis=descriptor['basis'], format_authority=descriptor['authority'])
+    return records, blocks
 
 
 def chronology(build, groups, files, out):
@@ -196,6 +206,16 @@ def chronology(build, groups, files, out):
             kind = stream_kind(build, path)
             if not path.startswith(f"runs/{run}/") or not kind:
                 continue
+            if kind in CONVERSATIONS:
+                records, _ = decoded(build, path)
+                for row in records:
+                    if row['decode_status'] not in ('decoded', 'partial') or not row['time']:
+                        continue
+                    try:
+                        event(row['time'], kind, path, row['line'], row['line'], str(row['record_kind']))
+                    except (ValueError, TypeError, AttributeError):
+                        pass  # Original non-date fields remain indexed without invented timestamps.
+                continue
             for i, line in enumerate((build.root / path).read_bytes().splitlines(), 1):
                 try:
                     obj = json.loads(line)
@@ -203,14 +223,6 @@ def chronology(build, groups, files, out):
                     continue  # The transcript map reports malformed records; originals remain intact.
                 if not isinstance(obj, dict):
                     continue
-                if kind in CONVERSATIONS:
-                    payload = obj.get("payload", {})
-                    if not isinstance(payload, dict):
-                        continue
-                    if obj.get("type") != "response_item" or payload.get("type") == "reasoning":
-                        continue
-                    if payload.get("type") == "message" and payload.get("role") not in ("user", "assistant"):
-                        continue
                 time = obj.get("timestamp") or obj.get("time")
                 if time:
                     payload = obj.get('payload', {})
@@ -250,102 +262,37 @@ def accommodations(build, files, groups, out):
 
 
 def transcripts(build, files, out):
-    rows = []
-    rendered = ["DECODED EXTERNAL AUDITOR STREAMS", "",
-                "Reading aid for text, tool_use and tool_result message blocks, plus the final result.",
-                "System metadata, signatures, thinking blocks and other fields stay in the raw stream.",
-                "A user-role tool result here is a harness message, not necessarily a human message.",
-                "JSON pointers below refer to the named raw JSONL record. No timestamps are inferred.", ""]
-    manager = ["DECODED MANAGER CONVERSATIONS" if all(build.stewart_reader(run) for run in build.runs) else "DECODED SESSION CONVERSATIONS", "",
-               "User/assistant messages and tool calls/results, plus harness task_complete errors.",
-               "Reasoning, developer context, metadata and duplicate message events remain in the raw files.",
-               "Each block cites its original JSONL line and JSON pointer. No timestamps are inferred.", ""]
+    records, blocks = [], []
+    rendered = ["DECODED NATIVE STREAMS", "",
+                "Visible text and tool blocks selected by each stream's declared native format.",
+                "Native user role may describe a harness message; it does not establish a human actor.",
+                "Raw inclusion and decoded coverage are separate columns in transcript-map.csv.",
+                "Unknown formats, unsupported records and private content remain in the original files.",
+                "Each block cites the original file digest, physical JSONL line and JSON pointer.", ""]
     for path in sorted(files):
-        if not path.endswith(".jsonl"):
-            continue
-        for i, line in enumerate((build.root / path).read_bytes().splitlines(), 1):
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-                if not isinstance(obj, dict):
-                    raise ValueError('Record is not an object')
-            except (ValueError, UnicodeError):
-                rows.append({'run': Path(path).parts[1], 'source_path': path, 'line': i,
-                             'record_kind': 'unparsed or unsupported JSONL record',
-                             'availability': 'preserved raw; not decoded'})
-                continue
-            kind = obj.get("type", obj.get("event", obj.get("kind", "record")))
-            message = obj.get("message")
-            role = message.get("role", "") if isinstance(message, dict) else ""
-            payload = obj.get("payload", {})
-            if stream_kind(build, path) in CONVERSATIONS and isinstance(payload, dict):
-                role = payload.get("role", "")
-            rows.append({"run": Path(path).parts[1], "source_path": path, "line": i,
-                         "time": obj.get("timestamp", obj.get("time", "")), "record_kind": kind,
-                         "message_role": role, "uuid": obj.get("uuid", payload.get("id", "") if isinstance(payload, dict) else ""),
-                         "payload_kind": payload.get("type", "") if isinstance(payload, dict) else "",
-                         "availability": "included"})
-            if stream_kind(build, path) in CONVERSATIONS and isinstance(payload, dict) and kind in ('response_item', 'event_msg'):
-                payload_kind = payload.get("type")
-                blocks = []
-                if kind == 'event_msg':
-                    if payload_kind == 'task_complete' and payload.get('error'):
-                        role, payload_kind = 'harness', 'task_error'
-                        blocks.append(('/payload/error', payload['error']))
-                elif payload_kind == "message" and role in ("user", "assistant"):
-                    content = payload.get('content', [])
-                    for j, block in enumerate(content if isinstance(content, list) else []):
-                        if isinstance(block, dict) and isinstance(block.get("text"), str):
-                            blocks.append((f"/payload/content/{j}/text", block["text"]))
-                elif payload_kind in ("function_call", "custom_tool_call"):
-                    field = "arguments" if payload_kind == "function_call" else "input"
-                    blocks.append(("/payload/" + field, payload.get(field, "")))
-                elif payload_kind in ("function_call_output", "custom_tool_call_output"):
-                    blocks.append(("/payload/output", payload.get("output", "")))
-                for pointer, content in blocks:
-                    manager += ["=" * 72, f"SOURCE: {path}#L{i} {pointer}",
-                                f"TIME: {obj.get('timestamp', 'not recorded')} | ROLE: {role} | KIND: {payload_kind}",
-                                f"NAME: {payload.get('name', '')} | CALL ID: {payload.get('call_id', '')}",
-                                content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2), ""]
-            if stream_kind(build, path) != "external auditor stream":
-                continue
-            if isinstance(message, dict):
-                content = message.get("content", [])
-                if isinstance(content, str):
-                    content = [{"type": "text", "text": content}]
-                if not isinstance(content, list):
-                    content = []
-                for j, block in enumerate(content):
-                    if not isinstance(block, dict):
-                        continue
-                    if block.get("type") not in ("text", "tool_use", "tool_result"):
-                        continue
-                    pointer = f"/message/content/{j}"
-                    rendered += ["=" * 72, f"SOURCE: {path}#L{i} {pointer}",
-                                 f"TIME: {obj.get('timestamp', 'not recorded')} | ROLE: {role}"]
-                    if block["type"] == "text":
-                        rendered.append(block.get("text", ""))
-                    elif block["type"] == "tool_result" and isinstance(block.get("content"), str):
-                        rendered += [f"TOOL RESULT ID: {block.get('tool_use_id', '')}", "CONTENT (/content):", block["content"]]
-                    else:
-                        rendered.append(json.dumps(block, ensure_ascii=False, indent=2))
-                    rendered.append("")
-            if kind == "result":
-                rendered += ["=" * 72, f"SOURCE: {path}#L{i} /result", "EXTERNAL HARNESS RESULT (attributed)", str(obj.get("result", "")), ""]
-    for run in build.runs:
-        historical = build.stewart_reader(run)
-        for path in sorted(files):
-            if (historical and stewart.is_conversation_export(path, run) and path.endswith(".md")) or path == f"runs/{run}/session/conversation.txt":
-                rows.append({"run": run, "source_path": path, "line": "", "time": "",
-                             "record_kind": "rendered manager conversation" if historical else "rendered session conversation",
-                             "message_role": "", "uuid": "",
-                             "payload_kind": "", "availability": "included; full text mapped in review/text-map.csv"})
-    if any(build.stewart_reader(run) for run in build.runs):
-        rows.append(dict(stewart.SHARED_TRANSCRIPT))
-    out.table("review/transcript-map.csv", rows, ["run", "source_path", "line", "time", "record_kind", "message_role", "uuid", "payload_kind", "availability"])
-    out.put("review/auditor-events.txt", "\n".join(rendered) + "\n")
-    out.put("review/manager-events.txt", "\n".join(manager) + "\n")
+        if path.endswith('.jsonl'):
+            source_records, source_blocks = decoded(build, path)
+            records.extend(source_records)
+            blocks.extend(source_blocks)
+    for item in blocks:
+        role = item['native_role'] or ('harness' if item['kind'] == 'task_error' else 'not recorded')
+        content = item['content']
+        rendered += ["=" * 72, f"SOURCE: {item['source_path']}#L{item['line']} {item['pointer']}",
+                     f"SHA256: {item['source_sha256']} | FORMAT: {item['format']}",
+                     f"TIME: {item['time'] or 'not recorded'} | ROLE: {role} | KIND: {item['kind']}",
+                     f"NAME: {item['name']} | CALL ID: {item['call_id']}",
+                     content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2), ""]
+    fields = ['collection_id', 'run', 'source_path', 'source_sha256', 'line', 'format',
+              'format_basis', 'format_authority', 'record_kind', 'native_role', 'time', 'uuid',
+              'raw_availability', 'decode_status', 'blocks', 'detail']
+    out.table('review/transcript-map.csv', records, fields)
+    out.put('review/decoded-blocks.jsonl', ''.join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in blocks))
+    out.put('review/events.txt', "\n".join(rendered) + "\n")
+    coverage = Counter(row['decode_status'] for row in records)
+    out.put('review/decoded-coverage.json', json.dumps({'schema': 'berman.decoded-coverage/1',
+            'raw_records': len(records), 'decoded_blocks': len(blocks), 'records_by_status': dict(coverage),
+            'meaning': 'Coverage of this decoder selection only; raw inclusion establishes neither decoding nor complete encounter capture.'},
+            ensure_ascii=False, indent=2) + "\n")
 
 
 def external_references(build, files, out):
@@ -421,6 +368,7 @@ def context_order(run, files):
 def readers(build, files, groups, evidence, aids, mappings, out):
     for run in build.runs:
         historical = build.stewart_reader(run)
+        session = build.session_path(run)
         metadata_path = f"runs/{run}/run.json"
         notes_protocol = metadata_path in files and load(build.root, metadata_path).get("recording_protocol") in ("work-accounts/1", "participant-inquiry/1")
         note_paths = sorted(p for p in files if p.startswith(f"runs/{run}/notes/") and p.endswith((".md", ".txt")))
@@ -447,7 +395,7 @@ def readers(build, files, groups, evidence, aids, mappings, out):
         lines += [f"{a['path']} | {a['role']}" for a in aids if a["run"] == run]
         if notes_protocol:
             lines += ["", "READING ORDER", "1. Opening assignment, recording instructions and participant notes, reproduced below with original line numbers.",
-                      "2. session/conversation.txt and review/manager-events.txt for the recorded main conversation and tools.",
+                      f"2. {session}/conversation.txt and review/events.txt for the recorded main conversation and tools.",
                       *context_order(run, files), "",
                       f"Participant notes supplied: {len(note_paths)}."]
             if narrative_path in files:
@@ -457,10 +405,10 @@ def readers(build, files, groups, evidence, aids, mappings, out):
             lines += stewart.HISTORICAL_READING_ORDER
         else:
             lines += ["", "READING ORDER", "1. Recording instructions and any narrative, reproduced below with original line numbers.",
-                      "2. review/manager-events.txt, review/commands.txt and review/chronology.csv for interactions and recorded times.",
+                      "2. review/events.txt, review/commands.txt and review/chronology.csv for interactions and recorded times.",
                       "Do not treat a missing row as proof that an action did not occur.", ""]
         conversations = [p for p in sorted(files) if (historical and stewart.is_conversation_export(p, run)) or p in
-                         (f"runs/{run}/session/transcript.jsonl", f"runs/{run}/session/conversation.txt")]
+                         (session + '/transcript.jsonl', session + '/conversation.txt')]
         lines += ["INCLUDED MANAGER CONVERSATION FILES" if historical else "INCLUDED SESSION CONVERSATION FILES",
                   *(conversations or ["No manager conversation file supplied within this run." if historical else
                                       "No session conversation file supplied within this run."]), ""]
@@ -489,11 +437,16 @@ def readers(build, files, groups, evidence, aids, mappings, out):
 def edition_record(build):
     """Deterministic edition identity: selection, attribution, namespace and builder bytes."""
     builder = {name: SHA((Path(__file__).parent / name).read_bytes()) for name in BUILDER}
-    return {"schema": "berman.archive-edition/1", "edition": build.edition.name, "namespace": build.edition.prefix,
+    return {"schema": "berman.archive-edition/2", "collection_id": build.collection_id,
+            "edition": build.edition.name, "namespace": build.edition.prefix,
             "connections": list(build.edition.connections),
             "runs": [{"run": run, "connection": build.connection(run)["id"], "attribution": build.connection(run)["basis"],
+                      "name": build.connection(run)['name'], "harness": build.connection(run)['harness'],
+                      "checkouts": build.connection(run)['checkouts'],
                       "readers": build.connection(run)["readers"] or ["common"]} for run in build.runs],
             "builder_sha256": builder,
+            "foundation_sha256": {name: SHA((Path(__file__).parent.parent / name).read_bytes())
+                                  for name in ("evidence.py", "files.py", "snapshots.py")},
             "meaning": "Selection and readers for this edition. Connection-specific explanations apply only to their own runs."}
 
 
@@ -545,11 +498,11 @@ def render(build):
                             "exit_location": " | ".join(sorted({"separate .exit file" if g["exit_file"] else "metadata /exit" for g in selected})),
                             "narrative_timestamp_headings": ("not requested (placeholder)" if f"runs/{run}/narrative.md" in files else "not requested (no placeholder)") if protocol in ("work-accounts/1", "participant-inquiry/1") else ("yes" if re.search(r"^\d{4}-\d\d-\d\dT\S+$", narrative, re.MULTILINE) else "no"),
                             "git_command_log": "supplied" if f"runs/{run}/git-commands.log" in files else "not supplied (optional)",
-                            "captured_manager_session": f"runs/{run}/session/transcript.jsonl" if f"runs/{run}/session/transcript.jsonl" in files else "",
+                            "captured_session": build.session_path(run) + "/transcript.jsonl" if build.session_path(run) + "/transcript.jsonl" in files else "",
                             "recording_helper": " | ".join(p for p in (f"runs/{run}/scratch/manage.py", f"runs/{run}/scratch/record-command.py") if p in files),
                             "supplied_context": stewart.RUN_NOTES.get(run, "") if build.stewart_reader(run) else "",
                             "scope": "Saved invocations count standalone command metadata only; transcript tool calls are indexed separately. Layout description only; no usability or causal conclusion."})
-    out.table("review/recording-layouts.csv", layout_rows, ["run", "recording_protocol", "participant_notes", "saved_invocations", "metadata_patterns", "time_location", "exit_location", "narrative_timestamp_headings", "git_command_log", "captured_manager_session", "recording_helper", "supplied_context", "scope"])
+    out.table("review/recording-layouts.csv", layout_rows, ["run", "recording_protocol", "participant_notes", "saved_invocations", "metadata_patterns", "time_location", "exit_location", "narrative_timestamp_headings", "git_command_log", "captured_session", "recording_helper", "supplied_context", "scope"])
     for path in sorted(set(canonical.values())):
         if path in mappings:
             continue
@@ -623,11 +576,10 @@ FIND MATERIAL
     every original occurrence stays in runs/ and manifest.csv.
   review/source.txt: retained code, tests and repository documentation.
   review/artifacts.txt: remaining UTF-8 artifacts, including raw JSONL streams.
-  review/auditor-events.txt: decoded text/tool messages from supplied external
-    auditor streams, with original JSONL lines and JSON pointers.
-  review/manager-events.txt: decoded visible messages and tool interactions
-    from supplied manager conversations, with the same source references.
-  review/transcript-map.csv: included JSONL records and transcript availability.
+  review/events.txt and review/decoded-blocks.jsonl: decoded visible messages
+    and tool interactions, with source digest, physical line and JSON pointer.
+  review/transcript-map.csv: raw inclusion and decoded coverage, separately.
+  review/decoded-coverage.json: decoded, partial, unsupported and unselected counts.
   review/runtime-members.csv: tar members, read without extracting or executing.
   review/external-references.csv: lexical path references and relocation mapping.
   review/EDITION.json: this edition's run selection, connection attribution,
@@ -714,7 +666,7 @@ COVERAGE AND ATTRIBUTION
   Run 004 supplies a finalized hook capture in session/ (raw transcript, text
   reader and capture metadata). Its manager worktree is scratch/manager-004/.
   No standalone argv/time/exit command metadata was supplied for run 004;
-  manager tool calls and results are available in review/manager-events.txt.
+  manager tool calls and results are available in review/events.txt.
   Its auditor.stdout.json is a single harness result, not a streamed tool log.
   Run 005 supplies a finalized manager hook capture and three auditor JSONL
   streams. Its scratch/logs/<sequence>-<label>.json records contain argv, cwd
@@ -734,8 +686,8 @@ LOCAL INVESTIGATION
   Local investigators can search the complete corpora or runs/ directly.
   BERMAN.md describes the current workflow; SESSION-CAPTURE.txt describes
   capture records, the session/ layout and low-level recovery.
-  Captured session/transcript.jsonl and session/conversation.txt files are
-  recognized automatically when their run is migrated into the inventory.
+  Recorded stream descriptors select native readers. Missing format authority
+  stays unknown. Raw files remain included even when a reader cannot decode them.
 
   A ZIP includes the current README, framing/working_in_a_berman_archive.md and
   the accompanying research framing documents in framing/,
@@ -762,21 +714,23 @@ LOCAL INVESTIGATION
   Retired per-run reading ZIPs remain recoverable from Git with their original
   packaged guidance; MAINTENANCE.md describes the retirement and recovery route.
 
-REBUILD AND VERIFY
+PUBLISH, VERIFY AND CHECK FRESHNESS
   berman archive
   berman archive --verify
   berman archive --run {build.runs[-1]}
   berman archive --run {build.runs[-1]} --verify
-  --run builds a separate ZIP for the selected run without changing the
-  cumulative reading aids. Repeat --run to select multiple runs.
+  berman archive --freshness
+  --run selects a separate publication. Repeat --run to select multiple runs.
   The standard-library builder validates the relocation inventory, verifies
   export identities, regenerates indexes deterministically and checks every
   ZIP member's bytes, Unix type/mode, symlink target and complete membership.
   It never executes archived code, invokes Git, or writes beneath runs/.
-  {build.archive_path} is the complete portable copy.
-  A checksum file beside the ZIP identifies its bytes. It remains outside
-  the ZIP to avoid a self-referential checksum. Original evidence is checked
-  again after work.
+  archive/editions/<sha256>.zip is the complete immutable portable copy.
+  edition-manifest.json pins every member, source occurrence and reader input.
+  All review/ paths in this guide are inside that ZIP; publishing leaves older
+  editions and working-tree reading aids untouched. Verification checks this
+  publication without consulting current source files or rerendering it.
+  --freshness separately compares selected current inputs and reader identity.
 """
 
 
@@ -789,7 +743,7 @@ def connections_guide(build, counts, groups, events, evidence):
     for (ident, name), runs in by_connection.items():
         if build.stewart_reader(runs[0]):
             specialized.append(f"  {name} runs use Stewart's specialized readers: evidence-map.csv for its\n"
-                               "    evidence-export packages, auditor-events.txt for its auditor streams, and\n"
+                               "    evidence-export packages, events.txt for declared native streams, and\n"
                                "    accommodations.csv descriptions of historical recording programs. The\n"
                                "    Stewart edition's ARCHIVE-GUIDE.txt describes those runs' coverage.")
         else:
@@ -811,8 +765,12 @@ COMMON READERS
     and the collection-time context each run actually supplies.
   review/command-index.csv and review/commands.txt: {len(groups)} standalone command records.
   review/chronology.csv: {len(events)} explicitly timestamped records with source attribution.
-  review/manager-events.txt: visible messages and tool interactions decoded from
-    captured transcripts according to their recorded harness format.
+  review/events.txt: visible messages and tool interactions decoded from
+    captured transcripts according to their declared native format.
+  review/decoded-blocks.jsonl: the same blocks, with source hashes, physical lines,
+    JSON pointers and native roles. Native roles do not establish human actors.
+  review/decoded-coverage.json and review/transcript-map.csv distinguish raw
+    inclusion from decoded, partial, unsupported and deliberately unselected records.
   review/transcript-map.csv, review/text-map.csv, review/recording-layouts.csv,
   review/runtime-members.csv and review/external-references.csv.
   Unknown artifacts remain preserved in runs/ and mapped in review/text-map.csv.
@@ -829,10 +787,15 @@ PRESERVATION
   {counts['directory']} directory entries. checksums.sha256 covers regular payload
   files other than itself. No archived program is executed to build the edition.
 
-REBUILD AND VERIFY
+PUBLISH, VERIFY AND CHECK FRESHNESS
   berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)}
   berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)} --verify
-  {build.archive_path} is this edition's portable copy; its checksum file sits beside it.
+  berman archive --freshness
+  archive/editions/<sha256>.zip is this edition's immutable portable copy.
+  edition-manifest.json pins all members, selected inputs and collection identity.
+  The review/ paths above are inside that ZIP. Publishing leaves old editions and
+  working-tree aids untouched. --verify checks published bytes without current
+  sources or rerendering; --freshness explicitly compares the current selection.
 """
 
 
@@ -855,43 +818,43 @@ def finish_outputs(build, out, text_rows, counts, groups, evidence):
             "verified_export_entries": len(evidence)}
 
 
-def edition(build, verify=False):
-    """Render, package and verify one edition; write it, or with verify compare it with the tree."""
+def edition(build, verify=False, freshness=False):
+    """Publish an immutable edition, verify a publication, or explicitly compare inputs."""
+    if verify and not freshness:
+        return verify_published(build.root, build.selection)
     generated, summary = render(build)
-    payload = assemble(build, generated)
-    zipped = make_zip(payload, build.edition.prefix)
-    verify_zip(zipped, payload, build.edition.prefix)
-    outputs = destinations(build, generated, payload, zipped)
-    stale = obsolete(build)
-    if verify:
-        compare(build, outputs, stale, payload)
-    else:
-        apply(build, outputs, stale)
+    payload, manifest = seal(build, generated, summary)
+    # Custody checks remain strict on the original workspace; portable verification is separate.
     inventory(build.root)
-    return {"mode": "verified" if verify else "built and verified", **summary,
-            "generated_files": len(outputs), "zip_members": len(payload),
-            "archive_path": build.archive_path, "archive_bytes": len(zipped), "archive_sha256": SHA(zipped)}
+    if freshness:
+        prior, result = published(build.root, build.selection)
+        return dict(result, freshness='current' if prior['inputs'] == manifest['inputs'] else 'stale',
+                    mode='freshness checked')
+    return publish(build, payload)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Fieldwork workspace containing source-layout.json")
-    parser.add_argument("--verify", action="store_true", help="Compare generated files and archive without writing anything")
+    parser.add_argument("--verify", action="store_true", help="Verify the published edition without rebuilding or inspecting current inputs")
+    parser.add_argument("--freshness", action="store_true", help="Compare the publication's pinned inputs with the current selection; write nothing")
+    parser.add_argument("--path", type=Path, help="Verify a standalone immutable reading edition ZIP")
     parser.add_argument("--run", action="append", help="Build a separate ZIP containing only this run (repeatable); leave cumulative reading aids unchanged")
-    parser.add_argument("--edition", choices=("stewart", "connections"), default="connections",
+    parser.add_argument("--edition", choices=("stewart", "connections"),
                         help="connections (default): generic edition; stewart: explicit historical compatibility edition")
     parser.add_argument("--connection", action="append", default=[], help="connections edition: include this connection's runs (repeatable)")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
-    recorded = inventory(root)
-    runs = {run["run"] for run in recorded[0]["runs"]}
-    if args.run and set(args.run) - runs:
-        parser.error("Unknown run(s): " + ", ".join(sorted(set(args.run) - runs)))
-    if args.edition == "connections" and not args.connection:
-        from berman.archive.select import attribute
-        args.connection = sorted({r["id"] for r in attribute(root, recorded[0]).values() if r["id"]})
-    build = select(root, args.edition, args.connection, args.run or [], recorded)
-    result = edition(build, args.verify)
+    edition_name = args.edition or 'connections'
+    if args.path:
+        if args.freshness or args.connection or args.run or args.edition:
+            parser.error('--path cannot be combined with freshness or selection options')
+        result = verify_edition(args.path.expanduser().resolve())
+    elif args.verify and not args.freshness:
+        result = verify_published(root, selection(edition_name, args.connection, args.run or []))
+    else:
+        build = select(root, edition_name, args.connection, args.run or [])
+        result = edition(build, args.verify, args.freshness)
     result.update(python=sys.executable, python_version=sys.version.split()[0])
     print(json.dumps(result, indent=2))
 

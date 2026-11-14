@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema",
+    "collection_id",
+    "namespace",
+    "selection",
+    "runs",
+    "inputs",
+    "members",
+    "generated",
+    "containers",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "berman.reading-edition/2"
+    },
+    "collection_id": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "selection": {
+      "type": "object"
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "type",
+          "mode",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "file",
+              "directory",
+              "symlink"
+            ]
+          },
+          "mode": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "generated": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "containers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "object"
+    },
+    "inputs": {
+      "type": "object",
+      "required": [
+        "originals",
+        "documents",
+        "recordings",
+        "streams",
+        "reader"
+      ],
+      "properties": {
+        "originals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "type",
+              "mode",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "file",
+                  "directory",
+                  "symlink"
+                ]
+              },
+              "mode": {
+                "type": "integer"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "type",
+              "mode",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "file",
+                  "directory",
+                  "symlink"
+                ]
+              },
+              "mode": {
+                "type": "integer"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "recordings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "format"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "reader": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "title": "berman.reading-edition/2",
+  "$id": "urn:berman:schema:reading-edition-2",
+  "description": "Structural contract for berman.reading-edition/2. Dependency-free runtime readers additionally check identities, references, membership and bytes."
+}

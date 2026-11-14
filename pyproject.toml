@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "berman"
-version = "0.4.2"
+version = "0.4.3"
 description = "Prepare, capture, and preserve research alongside software development."
 readme = "README.md"
 license = "MIT"
@@ -80,13 +80,17 @@ exclude = [
     "src/berman/archive/package.py",
     "src/berman/archive/select.py",
     "src/berman/archive/stewart.py",
+    "src/berman/archive/streams.py",
     "src/berman/capture/__init__.py",
     "src/berman/capture/claude.py",
     "src/berman/capture/claude_router.py",
     "src/berman/capture/collector.py",
     "src/berman/capture/router.py",
     "src/berman/capture/runtime.py",
+    "src/berman/capture/transaction.py",
+    "src/berman/snapshots.py",
     "src/berman/files.py",
+    "src/berman/evidence.py",
     "src/berman/harnesses/__init__.py",
     "src/berman/harnesses/claude.py",
     "src/berman/harnesses/codex.py",
@@ -149,8 +153,9 @@ layers = [
     "berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
     "berman.records",
     "berman.config | berman.lifecycle",
-    "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.collector : berman.capture.claude : berman._legacy",
-    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.archive | berman.harnesses.probe | berman.harnesses.development",
+    "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman._legacy",
+    "berman.evidence : berman.snapshots : berman.archive",
+    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.harnesses.probe | berman.harnesses.development",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each

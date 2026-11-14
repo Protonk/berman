@@ -26,9 +26,11 @@ def main():
             kill()
         if mode == 'closing-copy' and target.endswith('/context/berman/preparation/INSTRUCTIONS.md'):
             kill()
-        if mode == 'capture-write' and target.endswith('/session/capture.json'):
+        if mode == 'capture-write' and target.endswith('/session/current.json'):
             kill()
         replace(source, destination, *args, **kwargs)
+        if mode == 'capture-committed' and target.endswith('/session/current.json'):
+            kill()
         if mode == 'reserve-after' and target.endswith('/operation.json'):
             kill()
         if mode == 'after-index' and target.endswith('/source-layout.json'):
@@ -42,6 +44,8 @@ def main():
         if mode == 'snapshot-before' and destination.name == 'initial-project':
             kill()
         if mode == 'quarantine-before' and quarantine:
+            kill()
+        if mode == 'capture-staged' and destination.parent.name == 'snapshots':
             kill()
         rename(source, destination, *args, **kwargs)
         if mode == 'quarantine-after' and quarantine:
@@ -63,7 +67,7 @@ def main():
     try:
         if mode in ('closing-copy', 'journal-after', 'migration-after', 'after-index'):
             result = workflow.finish('Explicit synthetic ending', 'run-001')
-        elif mode == 'capture-write':
+        elif mode in ('capture-write', 'capture-staged', 'capture-committed'):
             result = store.collector.hook(
                 {
                     'session_id': 'fixture-run-001',

@@ -7,7 +7,7 @@ import subprocess
 import sys
 import zipfile
 
-from berman import files, verify
+from berman import files, snapshots, verify
 from tests.integration.test_records import RecordTests
 from tests.support.paths import REPO
 from tests.support.sessions import start
@@ -115,32 +115,44 @@ class InterruptionTests(RecordTests):
                     b'Unpublished bytes retained for investigation',
                 )
 
-    def test_capture_death_is_unknown_until_retry_and_does_not_declare_completion(self):
-        self.workflow.new()
-        start(self.store, 'run-001')
-        source = self.store.home / 'sessions/fixture-run-001.jsonl'
-        with source.open('a') as stream:
-            stream.write(json.dumps({'type': 'event_msg', 'payload': {'message': 'durable later activity'}}) + '\n')
-        expected = source.read_bytes()
-        result = self.child('capture-write')
-        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        row = self.workflow.status()['runs'][0]
-        self.assertIn('capture', row['unknown'])
-        self.assertNotIn('without a snapshot yet', row['summary'])
-        self.store.collector.hook(
-            {
-                'session_id': 'fixture-run-001',
-                'turn_id': 'two',
-                'hook_event_name': 'Stop',
-                'transcript_path': str(source),
-            }
-        )
-        self.assertEqual((self.store.field / 'run-001/session/transcript.jsonl').read_bytes(), expected)
-        self.assertFalse(self.workflow.status()['runs'][0]['ending_declared'])
-        result = self.workflow.finish('Explicit synthetic ending', 'run-001')
-        self.assertTrue(result['recovered_writes'])
-        self.assertEqual(list((self.root / 'runs/run-001/session').glob('.capture-*')), [])
-        self.assertEqual(verify.recording_check(self.store)['status'], 'passed')
+    def test_capture_death_leaves_a_coherent_committed_snapshot_and_no_ending(self):
+        for boundary in ('capture-staged', 'capture-write', 'capture-committed'):
+            with self.subTest(boundary=boundary):
+                self.setUp()
+                self.workflow.new()
+                start(self.store, 'run-001')
+                session = self.store.field / 'run-001/session'
+                old = snapshots.read(session)['raw']
+                source = self.store.home / 'sessions/fixture-run-001.jsonl'
+                with source.open('a') as stream:
+                    stream.write(
+                        json.dumps({'type': 'event_msg', 'payload': {'message': 'durable later activity'}}) + '\n'
+                    )
+                expected = source.read_bytes()
+                result = self.child(boundary)
+                self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+                before = state(self.root), state(self.store.field)
+                self.assertEqual(snapshots.read(session)['raw'], expected if boundary == 'capture-committed' else old)
+                self.assertTrue(self.store.collector.status('run-001')['snapshot_consistent'])
+                self.assertFalse(self.workflow.status()['runs'][0]['ending_declared'])
+                self.assertEqual((state(self.root), state(self.store.field)), before)
+                self.store.collector.hook(
+                    {
+                        'session_id': 'fixture-run-001',
+                        'turn_id': 'two',
+                        'hook_event_name': 'Stop',
+                        'transcript_path': str(source),
+                    }
+                )
+                self.assertEqual(snapshots.read(session)['raw'], expected)
+                self.assertEqual(len(list((session / 'snapshots').iterdir())), 1)
+                self.assertFalse(self.workflow.status()['runs'][0]['ending_declared'])
+                retained = self.root / '.state/capture-staging/run-001'
+                if boundary != 'capture-committed':
+                    self.assertTrue(any(p.read_bytes() == expected for p in retained.rglob('transcript.jsonl')))
+                result = self.workflow.finish('Explicit synthetic ending', 'run-001')
+                self.assertEqual(list((self.root / 'runs/run-001/session').glob('.capture-*')), [])
+                self.assertEqual(verify.recording_check(self.store)['status'], 'passed')
 
 
 class ProcessContentionTests(RecordTests):

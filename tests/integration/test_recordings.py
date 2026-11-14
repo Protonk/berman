@@ -6,7 +6,8 @@ import shutil
 import struct
 import zipfile
 
-from berman import files, recordings, recovery, verify
+from berman import files, preserve, recordings, recovery, snapshots, verify
+from berman.archive import builder
 from tests.integration.test_records import RecordTests
 from tests.integration.test_interruptions import state
 from tests.support.sessions import start
@@ -18,7 +19,28 @@ class RecordingAuditTests(RecordTests):
         self.workflow.new()
         start(self.store, 'run-001', end=True)
         result = self.workflow.finish('Explicit synthetic ending', 'run-001')
-        self.package = Path(result['package']['path'])
+        # Exercise the bounded historical reader with a 0.4.2-format package.
+        original_package = Path(result['package']['path'])
+        original_package.unlink()
+        original_package.with_suffix('.zip.sha256').unlink()
+        shutil.rmtree(self.root / 'recordings')
+        entry = files.read(self.root / 'source-layout.json')['runs'][0]
+        payload = preserve.recording_payload(self.root / 'runs/run-001', entry)
+        prefix = preserve.namespace(self.store, self.store.record('run-001'))
+        self.package = self.root / 'archive/recordings/run-001.zip'
+        data = builder.make_zip(payload, prefix)
+        self.package.write_bytes(data)
+        self.package.with_suffix('.zip.sha256').write_text(f'{files.digest(data)}  {self.package.name}\n')
+        self.edit(
+            'operations/run-001/operation.json',
+            package={
+                'path': str(self.package),
+                'sha256': files.digest(data),
+                'bytes': len(data),
+                'members': len(payload),
+                'namespace': prefix,
+            },
+        )
         self.preserved = self.root / 'runs/run-001'
         self.assertEqual(verify.recording_check(self.store)['status'], 'passed')
 
@@ -121,8 +143,8 @@ class RecordingAuditTests(RecordTests):
         files.write(self.root / 'source-layout.json', {'runs': [entry]})
         result = self.audit()
         row = result['checks']['recordings']
-        self.assertEqual(row['status'], 'not-established')
-        self.assertIn('recordings', result['not_established'])
+        self.assertEqual(row['status'], 'passed')
+        self.assertTrue(row['details']['coverage']['unknown'])
         self.assertEqual(row['details']['problems'], [])
         self.assertIn('no operation record establishes an ending', str(row['details']['missing']))
 
@@ -136,7 +158,7 @@ class CaptureEvidenceTests(RecordTests):
     def test_false_json_capture_metadata_is_damage_and_reading_never_repairs_it(self):
         self.workflow.new()
         start(self.store, 'run-001')
-        path = self.store.field / 'run-001/session/capture.json'
+        path = snapshots.resolve(self.store.field / 'run-001/session') / 'capture.json'
         for value in ([], None, {}, False, 0, ['nonempty'], {'run': 'run-001'}):
             with self.subTest(value=value):
                 files.write(path, value)

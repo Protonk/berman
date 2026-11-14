@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
+import zlib
 
 from berman.capture import adapters
 from berman import presentation
@@ -38,10 +40,28 @@ def main(argv=None):
     commands.add_parser('version', help='show the software version and source identity')
     archive = commands.add_parser('archive', help='build or verify a reading edition')
     archive.add_argument('--verify', action='store_true')
+    archive.add_argument('--freshness', action='store_true', help='compare published inputs with current inputs separately from integrity')
+    archive.add_argument('--path', type=Path, help='verify this immutable edition outside any workspace')
     archive.add_argument('--edition', choices=('connections', 'stewart'),
                          help="default: the workspace's edition setting in berman.json, otherwise connections")
     archive.add_argument('--connection', action='append', default=[])
     archive.add_argument('--run', action='append', default=[])
+
+    recording = commands.add_parser('recording', help='verify, export or materialize a self-contained recording')
+    recording_commands = recording.add_subparsers(dest='recording_command', required=True)
+    for name in ('verify', 'materialize'):
+        sub = recording_commands.add_parser(name)
+        sub.add_argument('path', type=Path)
+        sub.add_argument('--sha256', help='expected package digest from a trusted separate record')
+        if name == 'materialize':
+            sub.add_argument('destination', type=Path)
+    exported = recording_commands.add_parser('export', help='write a new package; leave the source workspace unchanged')
+    exported.add_argument('--run', required=True)
+    exported.add_argument('--output', type=Path, required=True)
+    exported.add_argument('--historical', action='store_true', help='retain explicitly missing historical authority')
+    exported.add_argument('--collection-id', help='explicit agreed UUID for a historical source without collection.json')
+    imported = recording_commands.add_parser('import', help='retain a historical manifest and package beside unchanged originals')
+    imported.add_argument('--run', required=True)
 
     commands.add_parser('status', help='discover runs across connections and their next agreed roles without changing files')
     commands.add_parser('cheatsheet', help='print the commands that start fieldwork and development sessions now, '
@@ -129,6 +149,24 @@ def main(argv=None):
                       workspace.initialize(args.destination, args.project, args.connection, args.codex, args.claude))
             print(json.dumps(result, indent=2))
             return 0
+        if args.command == 'recording' and args.recording_command in ('verify', 'materialize'):
+            from berman import evidence
+            if args.recording_command == 'materialize':
+                result = evidence.materialize(args.path, args.destination, args.sha256)
+            elif args.path.is_dir():
+                if args.sha256:
+                    raise Decision('--sha256 names a package digest; verify the ZIP before materializing it')
+                result = evidence.verify_directory(args.path)
+            else:
+                result = evidence.verify_package(args.path, args.sha256)
+            show(args, None, result)
+            return 0
+        if args.command == 'archive' and args.path:
+            from berman.archive.builder import main as archive_main
+            if args.freshness or args.edition or args.connection or args.run:
+                raise Decision('--path verifies one published edition; selection and freshness need a workspace')
+            archive_main(['--verify', '--path', str(args.path)])
+            return 0
         selected = args.root or workspace.discover()
         if args.command == 'verify' and (args.software or selected is None):
             if args.native_access or args.record:
@@ -143,6 +181,7 @@ def main(argv=None):
             from berman.archive.builder import main as archive_main
             options = ['--root', str(selected), '--edition', args.edition or workspace.edition(selected)]
             options += ['--verify'] if args.verify else []
+            options += ['--freshness'] if args.freshness else []
             for kind in ('connection', 'run'):
                 for value in getattr(args, kind):
                     options += ['--' + kind, value]
@@ -156,6 +195,14 @@ def main(argv=None):
             show(args, 'verification', result)
             return verify.EXIT[result['verdict']]
         store = Store(args.root)
+        if args.command == 'recording':
+            from berman import recordings
+            if args.recording_command == 'import':
+                result = recordings.publish(store, args.run, historical=True)
+            else:
+                result = recordings.export(store, args.run, args.output, args.historical, args.collection_id)
+            show(args, None, result)
+            return 0
         workflow = Workflow(store)
         if args.command == 'status':
             result = workflow.status()
@@ -208,7 +255,7 @@ def main(argv=None):
             return 0
         show(args, {'new': 'prepared', 'cheatsheet': 'cheatsheet', 'status': 'status'}.get(args.command), result)
         return 0
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, EOFError, zipfile.BadZipFile, zlib.error, subprocess.SubprocessError) as exc:
         result = {'state': 'needs-attention', 'message': str(exc)}
         if workflow:
             try:

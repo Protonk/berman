@@ -102,11 +102,19 @@ def smoke(example, base):
                                 input=json.dumps(payload), cwd=unrelated, capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         assert 'systemMessage' not in json.loads(result.stdout), result.stdout
-    workflow.finish('Synthetic wheel test complete', run)
+    preserved = workflow.finish('Synthetic wheel test complete', run)
+    package = preserved['package']
+    detached = invoke('recording', 'verify', package['path'], '--sha256', package['sha256'])
+    assert detached['integrity'] == 'passed' and detached['run'] == run
+    view = base / 'portable source'
+    invoke('recording', 'materialize', package['path'], view, '--sha256', package['sha256'])
+    assert invoke('recording', 'verify', view)['manifest_sha256'] == detached['manifest_sha256']
     assert invoke('--root', study, '--json', 'status')['archived'] == 1
     built = invoke('--root', study, 'archive')
     checked = invoke('--root', study, 'archive', '--verify')
     assert checked['archive_sha256'] == built['archive_sha256']
+    assert invoke('archive', '--path', study / built['archive_path'])['archive_sha256'] == built['archive_sha256']
+    assert invoke('--root', study, 'archive', '--freshness')['freshness'] == 'current'
     with zipfile.ZipFile(study / built['archive_path']) as archive:
         names = archive.namelist()
         assert any('/runs/' in name for name in names)
@@ -124,6 +132,7 @@ def smoke(example, base):
             'python': environment['python'], 'dependencies': environment['dependencies'],
             'hooks_load_third_party_modules': False,
             'archive_verified': True, 'recordings_verified': True,
+            'detached_recording_and_edition_verified': True, 'portable_working_copy_verified': True,
             'callbacks': 'synthetic UserPromptSubmit, Stop, SessionEnd',
             'not_run': diagnostic['not_run'], 'not_established': diagnostic['not_established'],
             'never_checked': diagnostic['not_covered']}

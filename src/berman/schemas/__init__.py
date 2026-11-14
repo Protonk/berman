@@ -45,6 +45,9 @@ SUPPORTED = (
     'berman.software/1',
     'berman.verification/1',
     'berman.recovered-write/1',
+    'berman.recording/2',
+    'berman.capture-current/1',
+    'berman.reading-edition/2',
 )
 KINDS = {
     'object': 'an object',

@@ -2,6 +2,7 @@
 import contextlib
 import io
 from pathlib import Path
+import shutil
 import unittest
 from unittest import mock
 
@@ -381,6 +382,8 @@ class StatusLifecycleTests(Base):
         one = self.workflow.new()
         self.start(one['run'], self.berman)
         self.workflow.finish('The engagement ended')
+        # Historical records have no immutable manifest authority.
+        shutil.rmtree(self.root / 'recordings')
         layout_path = self.root / 'source-layout.json'
         layout = read(layout_path)
         write(layout_path, dict(layout, runs=[r for r in layout['runs'] if r['run'] != one['run']]))

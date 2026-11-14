@@ -19,7 +19,7 @@ import tempfile
 import uuid
 
 from berman.capture import adapters
-from berman import files
+from berman import files, snapshots
 from berman.files import Decision, digest_json, keep, read, write
 from berman.harnesses.codex import Codex
 from berman.lifecycle import SESSION_MATERIAL
@@ -310,7 +310,7 @@ def launch(store, path, model=None, max_budget_usd=None):
 
 def observe(trial, packet, status):
     """What collect requires of the native capture, and what is missing from it."""
-    captures = packet / 'session/captures.jsonl'
+    captures = snapshots.resolve(packet / 'session') / 'captures.jsonl'
     rows = [json.loads(line) for line in files.regular(captures).read_text().splitlines()] if captures.exists() else []
     events = [row.get('event') for row in rows]
     reply = files.digest(trial['expected_reply'].encode())
@@ -637,7 +637,7 @@ def record_capture(store, path):
         raise Decision(f'{run} is not indexed in {collection}')
     packet = collection / 'runs' / run
     fieldwork.verify_moved(packet, entry)
-    captures = packet / 'session/captures.jsonl'
+    captures = snapshots.resolve(packet / 'session') / 'captures.jsonl'
     events = {json.loads(line)['event'] for line in files.regular(captures).read_text().splitlines()}
     binding = read(packet / 'session/binding.json')
     if not set(REQUIRED_EVENTS) <= events or (binding.get('run'), binding.get('session_id')) != (run, trial['session_id']):

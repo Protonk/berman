@@ -1,0 +1,55 @@
+{
+  "collection_id": "7fafc98c-11e2-4acd-9035-408d9199fddd",
+  "containers": [
+    "runs/"
+  ],
+  "generated": [
+    "ARCHIVE-GUIDE.txt",
+    "manifest.csv",
+    "review/EDITION.json",
+    "review/accommodations.csv",
+    "review/artifacts.txt",
+    "review/chronology.csv",
+    "review/command-index.csv",
+    "review/commands.txt",
+    "review/decoded-blocks.jsonl",
+    "review/decoded-coverage.json",
+    "review/events.txt",
+    "review/evidence-map.csv",
+    "review/external-references.csv",
+    "review/recording-layouts.csv",
+    "review/run-001.txt",
+    "review/runtime-members.csv",
+    "review/source.txt",
+    "review/text-map.csv",
+    "review/transcript-map.csv"
+  ],
+  "inputs": {
+    "documents": [],
+    "originals": [],
+    "reader": {},
+    "recordings": [],
+    "streams": []
+  },
+  "meaning": "Pinned reading edition. Native evidence and reader coverage are distinct; publication declares no engagement ending.",
+  "members": [
+    {
+      "mode": 33188,
+      "path": "ARCHIVE-GUIDE.txt",
+      "sha256": "c064d7cb37a7d5c120bede383881e8c34592350c271a438cb7dc8cef5f1c2407",
+      "size": 2887,
+      "type": "file"
+    }
+  ],
+  "namespace": "berman-analysis/",
+  "runs": [
+    "run-001"
+  ],
+  "schema": "berman.wrong/1",
+  "selection": {
+    "connections": [],
+    "edition": "connections",
+    "runs": []
+  },
+  "summary": {}
+}

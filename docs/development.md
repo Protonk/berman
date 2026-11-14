@@ -5,7 +5,7 @@ Development uses Python 3.14 in a repository-local environment managed by
 version. From the repository root:
 
 ```sh
-uv sync
+uv sync --locked
 uv run ruff check
 uv run ruff format --check
 uv run lint-imports
@@ -33,7 +33,7 @@ It never runs the developer tests or requires this checkout.
 | --- | --- | --- | --- |
 | Ruff | development | Lint on everything but the frozen collector; formatting of files written since it was adopted. | `[tool.ruff]` in `pyproject.toml` |
 | Import Linter | development | Eight architectural contracts over the import graph. | `[tool.importlinter]` in `pyproject.toml` |
-| JSON Schema (`jsonschema`) | runtime | The structure of ten record families, where they are read and written. | `src/berman/schemas/` |
+| JSON Schema (`jsonschema`) | runtime | Thirteen packaged structural contracts; workspace records checked on access, standalone evidence contracts also checked by dependency-free readers. | `src/berman/schemas/` |
 | Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. | `tests/properties/`, `tests/support/properties.py` |
 | Rich | runtime | Operator-facing output on an interactive terminal. | `src/berman/presentation/terminal.py` |
 | Packaging | runtime | Python requirements, versions and environment markers for installation verification. | `src/berman/environment.py` |
@@ -50,7 +50,7 @@ defect requires a change, and then say what the change costs.
 | --- | --- | --- |
 | `src/berman/_legacy/capture_session.py` | The frozen historical collector. | Never changed. |
 | Each adapter's `implementation` list in `capture/adapters.py`: the hook entry points and what they import, `installation.py`, `files.py`, `harnesses/claude.py`; and four launcher helpers fingerprinted by their source | Hook trust and native capture. | Renewed qualification in every adopting study. |
-| `src/berman/archive/*.py` | A reading edition's identity. | A rebuilt edition. |
+| `src/berman/archive/*.py` | A reading edition's reader identity. | New editions name new reader bytes; published editions verify independently. |
 | `harnesses/codex.py`, `harnesses/probe.py`, `harnesses/development/launch.py`, `harnesses/development/probe.py` | Access receipts and installed launcher copies. | Rechecked automatically, or on reinstallation. |
 
 Ruff never formats these files, and a test keeps them on the formatter's
@@ -151,7 +151,7 @@ The division of labor:
 - A record that fails is invalid data. That stays distinct from a record that
   is missing, from an incomplete operation, whose record is valid at every
   step, and from a fact nobody recorded.
-- Hooks and the archive builder read their records directly and do not validate.
+- Hooks and the archive builder use explicit standard-library validators for committed captures and portable evidence. They never import jsonschema.
 - If `jsonschema` does not import, every record is refused with that reason;
   nothing is read unchecked.
 
@@ -272,7 +272,7 @@ live transcript source, runs Git, takes a lock, repairs a record or rebuilds a Z
 Concurrent preservation can produce an incomplete or inconsistent observation;
 rerun verification once the operation is idle.
 
-Absent historical ending or packaging authority is `not-established`; a missing
+Absent historical ending or packaging authority remains `coverage.unknown` while intact retained evidence can pass integrity; unfinished modern publication is `not-established`; a missing
 ZIP that an operation claims exists, contradictory ending records, changed bytes
 or a damaged inventory fail. Historical absences are not filled retrospectively.
 `--skip recordings` explicitly leaves this check unrun and the overall verdict
@@ -288,9 +288,8 @@ An adopting study should first run the candidate's read-only verification and
 review newly reported gaps. Restore missing evidence from known copies where
 available; decide and record any reconstruction separately. Never invent a past
 researcher ending. Earlier inventoried temporary files remain preserved as they
-were. These changes do not require rewriting analysis inputs, but scripts that
-enumerate verification checks or assume a passing archived count must account
-for the new check and its results.
+were. The 0.4.3 portable-recording changes below require analysis consumers of old
+snapshot paths and mutable archive filenames to adopt the new interfaces.
 
 `src/berman/_legacy/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
 Never edit it or install it directly. The exclusive router owns session locking
@@ -302,6 +301,46 @@ selection. Adopting another installation is explicit maintenance: changed
 capture bytes or hook commands require closed captures and renewed
 installation-specific qualification, including actual CLI trust review where
 applicable. Never reuse another study's receipts.
+
+### Version 0.4.3 candidate: portable evidence and atomic capture
+
+This is a prepared release candidate; a version string is not a publication or
+study adoption. New modules `evidence.py`, `snapshots.py` and
+`capture/transaction.py` separate portable recording contracts, capture commit
+publication and adapter behavior. The frozen collector remains byte-identical.
+`files.py`, `snapshots.py` and `capture/transaction.py` are included in adapter
+fingerprints. Their changes require renewed hook trust and native capture.
+
+The breaking changes and operational commands are documented in
+[portable recordings](usage.md#portable-recordings),
+[capture generations](usage.md#capture-generations) and
+[reading editions](usage.md#reading-editions). New recordings retain authoritative
+operation/migration copies and explicit stream/connection attribution outside
+untouched original packets. An old ZIP's boilerplate is authenticated by its
+recorded digest, not regenerated by the new writer. This fixes false damage
+reports for otherwise intact older recordings.
+
+Recording integrity, historical coverage, native readiness and edition freshness
+are different results. A historical unknown is neither an invented negative nor
+a corrupt byte. A missing promised package, contradictory retained evidence,
+changed membership or changed original custody metadata fails. New publication
+without its commit receipt is unfinished. Status does not replace the full audit.
+
+The tests cover detached pip-wheel entry points, portable source copies, retained
+authority after indexes disappear, deliberately damaged manifests and packages,
+real SIGKILL at capture publication boundaries, bounded append-only retention,
+non-prefix revisions and partial tails. Codex and Claude decoding retain source
+locators and native roles. Explicit process tests complement the Hypothesis
+model; they do not establish power-loss durability, callback delivery or capture
+completeness in native tools.
+
+Adoption requires a researcher maintenance window: close old captures with the
+pinned runtime, preserve the candidate wheel plus complete dependency wheelhouse,
+review historical exports and agree the collection UUID, then import manifests
+beside originals if desired. Rebuild an edition as a new publication. Update
+analysis attachment and snapshot readers. Renew actual CLI hook trust, native
+capture for every adopted adapter and native access. None of these study or
+native operations is performed by the software tests or by preparing a release.
 
 ### Version 0.4.2
 

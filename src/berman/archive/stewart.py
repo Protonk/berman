@@ -30,7 +30,7 @@ ASSIGNMENT_SOURCES = ("AUDITOR.md", "MAINTAINER.md", "PROMPT.md", "LAUNCH-PROFIL
 HISTORICAL_READING_ORDER = [
     "", "READING ORDER", "1. Recording instructions and narrative, reproduced below with original line numbers.",
     "2. Saved AUDITOR.md, MAINTAINER.md and PROMPT.md at the ASSIGNMENT SOURCE locations below.",
-    "3. review/manager-events.txt, review/commands.txt and review/chronology.csv for interactions and recorded times.",
+    "3. review/events.txt, review/commands.txt and review/chronology.csv for interactions and recorded times.",
     "4. review/evidence-map.csv for numbered exports, including preserved reports.",
     "5. review/accommodations.csv and review/source.txt for programs and source context.", "",
     "Manager conversation availability is listed below and in review/transcript-map.csv.",

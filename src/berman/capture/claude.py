@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import time
 
-from berman import files
+from berman import files, snapshots
 from berman.capture.runtime import Routed, capture as frozen
 from berman._legacy.api import RUN
 
@@ -102,6 +102,10 @@ class ClaudeCollector(Routed, frozen.Collector):
         return files.regular(path)
 
     def find_source(self, binding, supplied=None):
+        if supplied is None:
+            folder = snapshots.resolve(self.fieldwork / binding['run'] / 'session')
+            if (folder / 'capture.json').exists():
+                supplied = files.read(folder / 'capture.json').get('source_transcript')
         value = supplied or binding.get('transcript_path')
         if not value:
             raise ValueError('No Claude transcript path recorded; wait for a callback')
@@ -191,11 +195,16 @@ class ClaudeCollector(Routed, frozen.Collector):
 
     def capture(self, root, event):
         folder = root / 'session'
+        previous = snapshots.read(folder)
         if any((folder / name).exists() for name in ('finalized.json', 'ended.json')):
-            return files.read(folder / 'capture.json')
+            if previous is None:
+                raise ValueError('Closed capture has no committed snapshot')
+            return previous['metadata']
+        if previous and snapshots.pointer(folder) is None:
+            raise ValueError('An older active capture must be closed with its pinned runtime before adoption')
         binding = files.read(folder / 'binding.json')
         source = self.find_source(binding, event.get('transcript_path'))
-        old = files.read(folder / 'capture.json') if (folder / 'capture.json').exists() else {}
+        old = previous['metadata'] if previous else {}
         expected = event.get('last_assistant_message')
         expected_sha = files.digest(expected.encode()) if isinstance(expected, str) and expected else old.get('expected_last_assistant_sha256')
         for attempt in range(3):
@@ -212,15 +221,9 @@ class ClaudeCollector(Routed, frozen.Collector):
                 time.sleep(0.08)
                 continue
             break
-        previous = folder / 'transcript.jsonl'
-        prefix = None
-        if previous.exists():
-            prior = files.regular(previous).read_bytes()
-            prefix = data.startswith(prior)
-            if not prefix:
-                files.keep(folder / ('previous-' + files.digest(prior) + '.jsonl'), prior)
+        prefix = data.startswith(previous['raw']) if previous else None
         tail_name = 'partial-tail-' + files.digest(tail) + '.bin' if tail else None
-        record = {'schema': 'berman.session-capture/1', 'harness': 'claude', 'run': binding['run'],
+        record = {'schema': 'berman.session-capture/2', 'harness': 'claude', 'format': 'claude-jsonl/1', 'run': binding['run'],
                   'session_id': binding['session_id'], 'captured_at_utc': files.now(),
                   'event': event.get('hook_event_name', 'manual-refresh'), 'turn_id': None,
                   'source_transcript': str(source), 'source_size_at_read': len(raw),
@@ -232,22 +235,8 @@ class ClaudeCollector(Routed, frozen.Collector):
                   'expected_last_assistant_sha256': expected_sha, 'unparsed_jsonl_lines': malformed,
                   'reader_sha256': files.digest(readable),
                   'scope': 'Persisted parent session at capture time; no assertion of research completion or child coverage.'}
-        if binding.get('transcript_path') != str(source):
-            binding.setdefault('transcript_path_history', []).append({'previous': binding.get('transcript_path'),
-                            'current': str(source), 'updated_at_utc': files.now()})
-            binding['transcript_path'] = str(source)
-            files.atomic(folder / 'binding.json', files.json_bytes(binding))
-        files.atomic(previous, data)
-        if tail:
-            files.keep(folder / tail_name, tail)
-        files.atomic(folder / 'conversation.txt', readable)
-        files.atomic(folder / 'capture.json', files.json_bytes(record))
-        log = folder / 'captures.jsonl'
-        if log.exists():
-            files.regular(log)
-        with log.open('ab') as stream:
-            stream.write(json.dumps(record, ensure_ascii=False).encode() + b'\n')
-        return record
+        return snapshots.publish(folder, record, data, readable, tail,
+                                 self.analysis / '.state/capture-staging' / binding['run'])
 
     def command(self, name, run, **kwargs):
         if name in ('adopt', 'replace'):

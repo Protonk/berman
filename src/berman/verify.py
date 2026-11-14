@@ -264,7 +264,7 @@ def adapters(store, root, code):
 
 
 def archive(python, root, code, run):
-    """The builder's own --verify, which compares generated files and the archive and writes nothing.
+    """Verify a published edition against its retained member manifest; current inputs are a separate freshness check.
 
     Returns the check and its receipts by file name: the JSON summary when it passes, otherwise
     whatever output the builder produced.
@@ -286,7 +286,7 @@ def archive(python, root, code, run):
         built = json.loads(done.stdout)
     except ValueError:
         return row('failed', 'The archive builder printed no JSON summary', argv=argv, exit=0), output
-    return (row('passed', f'Generated files and {built.get("archive_path")} match their inputs '
+    return (row('passed', f'Published edition {built.get("archive_path")} matches its retained member manifest '
                           f'({built.get("zip_members")} members)', argv=argv, exit=0, builder=built),
             {RECEIPTS['archive']: done.stdout})
 
@@ -545,9 +545,10 @@ def recording_check(store):
         return row('failed', f'Preserved recording evidence cannot be inspected: {exc}')
     problems = [f'{run["run"]}: {problem}' for run in runs for problem in run['problems']]
     unknown = [f'{run["run"]}: {problem}' for run in runs for problem in run['unknown']]
-    status = 'failed' if problems else 'not-established' if unknown else 'passed'
+    unfinished = any(run.get('unfinished') for run in runs)
+    status = 'failed' if problems else 'not-established' if unfinished else 'passed'
     return row(status, f'{len(runs)} preserved run(s); {len(problems)} problem(s), {len(unknown)} unestablished fact(s)',
-               runs=runs, problems=problems, missing=unknown,
+               runs=runs, problems=problems, missing=unknown, coverage={'unknown': unknown},
                step='Inspect the named evidence; retain originals and record any repair separately' if problems or unknown else None)
 
 

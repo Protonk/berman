@@ -29,6 +29,7 @@ from berman import files
 from berman import lifecycle
 from berman import recipes
 from berman import support
+from berman import snapshots
 from berman import verify
 from berman import recovery as fieldwork
 from tests.integration.test_connections import Base
@@ -457,7 +458,7 @@ class CollectionTests(SupportBase):
             trial = self.prepare(name)
             self.launch(name)
             self.session(trial, **session)
-            conversation = (Path(trial['packet']) / 'session/conversation.txt').read_text()
+            conversation = (snapshots.resolve(Path(trial['packet']) / 'session') / 'conversation.txt').read_text()
             if 'tool_output' in session:
                 self.assertIn(trial['expected_reply'], conversation)  # A substring search would wrongly pass.
             with self.subTest(message=message), self.assertRaisesRegex(Decision, 'Not collected: .*' + message):
@@ -730,7 +731,7 @@ class RecordCaptureTests(SupportBase):
         ready = adapters.readiness(self.store, 'berman-codex')
         result = support.record_capture(self.store, 'experiments/trial')
         self.assertEqual(result['state'], 'recorded')
-        expected = {'path': 'experiments/trial/collection/runs/run-900101/session/captures.jsonl',
+        expected = {'path': (snapshots.resolve(self.root / 'experiments/trial/collection/runs/run-900101/session') / 'captures.jsonl').relative_to(self.root).as_posix(),
                     'required_events': ['Stop', 'SessionEnd'], 'run': 'run-900101', 'session_id': collected['session_id'],
                     'trial_receipt': 'experiments/trial/trial.json',
                     'implementation_sha256': adapters.implementation('berman-codex'),
@@ -790,7 +791,7 @@ class RecordCaptureTests(SupportBase):
             self.assertIn('capture code changed after this trial, so it cannot be linked',
                           self.workflow.status()['support_trials'][0]['next'])
         self.trust(captures=())
-        (folder / 'collection/runs/run-900101/session/conversation.txt').write_text('altered after preservation\n')
+        (snapshots.resolve(folder / 'collection/runs/run-900101/session') / 'conversation.txt').write_text('altered after preservation\n')
         with self.assertRaisesRegex(ValueError, 'inventory differs'):
             support.record_capture(self.store, 'experiments/trial')
         self.assertIsNone(read(path)['successful_capture'])

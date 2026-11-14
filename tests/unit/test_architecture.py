@@ -35,7 +35,7 @@ VIOLATIONS = (
     ('layers', 'records.py', 'from berman import workflow'),
     ('layers', 'config.py', 'from berman import lifecycle'),
     ('layers', 'capture/runtime.py', 'from berman import records'),
-    ('layers', 'archive/select.py', 'from berman import files'),
+    ('layers', 'archive/select.py', 'from berman import records'),
     ('layers', 'files.py', 'from berman import installation'),
     ('layers', 'schemas/__init__.py', 'from berman import files'),
     ('layers', 'harnesses/development/launch.py', 'from berman import files'),

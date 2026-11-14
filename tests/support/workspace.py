@@ -42,7 +42,8 @@ def workspace(root, base, project, documents=None, catalogue_runs=()):
     binary.chmod(0o755)
     real = {'python': sys.executable, 'codex': str(binary)}
     write(root / 'berman.json', {
-        'schema': 'berman.workspace/1', 'packet_root': str(base / 'fieldwork'), 'codex_home': str(base / 'codex'),
+        'schema': 'berman.workspace/1', 'collection_id': '7fafc98c-11e2-4acd-9035-408d9199fddd',
+        'packet_root': str(base / 'fieldwork'), 'codex_home': str(base / 'codex'),
         'python': real['python'], 'codex': real['codex'], 'default_connection': 'stewart', 'legacy_connection': 'stewart',
         'catalogue': 'connections/catalogue.json',
         'connections': {'stewart': {'definition': 'connections/stewart/connection.json', 'checkout': str(project),

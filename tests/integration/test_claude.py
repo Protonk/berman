@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from berman.capture import adapters
+from berman import snapshots
 from berman.harnesses import claude
 from berman.harnesses import claude_support as support
 from berman import support as support_trials
@@ -78,8 +79,8 @@ class ClaudeTests(unittest.TestCase):
         result = support_trials.collect(self.store, self.trial['evidence'])
         self.assertTrue(result['demonstrates_capture'])
         preserved = self.root / result['preserved_packet']
-        self.assertEqual((preserved / 'session/transcript.jsonl').read_bytes(), self.source.read_bytes())
-        self.assertIn('SOURCE: transcript.jsonl#L2 /message/content', (preserved / 'session/conversation.txt').read_text())
+        self.assertEqual((snapshots.resolve(preserved / 'session') / 'transcript.jsonl').read_bytes(), self.source.read_bytes())
+        self.assertIn('SOURCE: transcript.jsonl#L2 /message/content', (snapshots.resolve(preserved / 'session') / 'conversation.txt').read_text())
         cleaned = support_trials.cleanup(self.store, self.trial['evidence'], 'fixture completed')
         self.assertEqual(cleaned['phase'], 'cleaned')
         self.assertTrue(read(self.collector.registry(self.sid))['retired'])
@@ -105,12 +106,12 @@ class ClaudeTests(unittest.TestCase):
         self.message('assistant', 'reply')
         self.hook('Stop', last_assistant_message='reply')
         self.collector.command('finalize', self.run)
-        frozen = (self.packet / 'session/transcript.jsonl').read_bytes()
+        frozen = (snapshots.resolve(self.packet / 'session') / 'transcript.jsonl').read_bytes()
         self.message('assistant', 'later')
         self.hook('SessionEnd')
         result = self.collector.command('supplement', self.run, reason='later persisted activity')
-        self.assertEqual((self.packet / 'session/transcript.jsonl').read_bytes(), frozen)
-        self.assertIn(b'later', (Path(result['path']) / 'session/transcript.jsonl').read_bytes())
+        self.assertEqual((snapshots.resolve(self.packet / 'session') / 'transcript.jsonl').read_bytes(), frozen)
+        self.assertIn(b'later', (snapshots.resolve(Path(result['path']) / 'session') / 'transcript.jsonl').read_bytes())
 
     def test_file_tools_cover_aliases_ancestors_and_packet_exception(self):
         def allowed(tool, **args):

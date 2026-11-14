@@ -14,7 +14,7 @@ import uuid
 
 from berman.capture import adapters
 from berman.harnesses import claude
-from berman import files
+from berman import files, snapshots
 from berman.files import Decision, keep, read, write
 from berman.harnesses.codex import COMMON_CHECKS, project_checks
 from berman import recovery as fieldwork
@@ -310,7 +310,7 @@ def record_capture(store, path):
     paths += [p for p in packet.rglob('*') if p.is_file()]
     successful = {'run': trial['run'], 'session_id': trial['session_id'],
                   'implementation_sha256': current, 'required_events': support.REQUIRED_EVENTS,
-                  'path': support.relative(store, packet / 'session/captures.jsonl'),
+                  'path': support.relative(store, snapshots.resolve(packet / 'session') / 'captures.jsonl'),
                   'trial_receipt': support.relative(store, folder / 'trial.json')}
     basis = {'schema': claude.SCHEMA, 'adapter': ADAPTER,
              'implementation_sha256': current, 'helpers_sha256': trial['helpers_sha256'],
