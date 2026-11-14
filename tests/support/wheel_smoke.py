@@ -114,6 +114,7 @@ def smoke(example, base):
     diagnostic = invoke('--root', study, '--json', 'verify', expected=3)
     assert diagnostic['failed'] == []
     assert diagnostic['checks']['archive']['status'] == 'passed'
+    assert diagnostic['checks']['recordings']['status'] == 'passed'
     assert diagnostic['not_run'] == ['native-access']
     assert 'native-capture:berman-codex' in diagnostic['not_established']
     return {'version': initial['software']['version'], 'package': str(PACKAGE),
@@ -122,7 +123,8 @@ def smoke(example, base):
             'software_verification': software['verdict'], 'workspace_verification': diagnostic['verdict'],
             'python': environment['python'], 'dependencies': environment['dependencies'],
             'hooks_load_third_party_modules': False,
-            'archive_verified': True, 'callbacks': 'synthetic UserPromptSubmit, Stop, SessionEnd',
+            'archive_verified': True, 'recordings_verified': True,
+            'callbacks': 'synthetic UserPromptSubmit, Stop, SessionEnd',
             'not_run': diagnostic['not_run'], 'not_established': diagnostic['not_established'],
             'never_checked': diagnostic['not_covered']}
 

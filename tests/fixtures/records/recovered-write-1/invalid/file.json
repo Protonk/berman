@@ -1,0 +1,11 @@
+{
+  "schema": "berman.recovered-write/1",
+  "run": "run-001",
+  "reason": "Interrupted write",
+  "mode": "0o600",
+  "mtime_ns": 123,
+  "material": "material",
+  "kind": "file",
+  "bytes": 3,
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

@@ -84,5 +84,8 @@
     "failed must be an array, not a string (\"none\")",
     "not_covered is required",
     "record.files is required"
+  ],
+  "recovered-write-1/invalid/file.json": [
+    "source is required"
   ]
 }

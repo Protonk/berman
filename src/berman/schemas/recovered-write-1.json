@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:berman:schema:recovered-write-1",
+  "title": "berman.recovered-write/1",
+  "description": "Intent and inventory for an abandoned Berman write moved into .state/recovery/RUN/DIGEST/. The sibling material path must exist before the move counts as complete. This never authorizes alteration of inventoried or preserved originals.",
+  "type": "object",
+  "required": ["schema", "run", "source", "reason", "mode", "mtime_ns", "material", "kind"],
+  "properties": {
+    "schema": {"const": "berman.recovered-write/1"},
+    "run": {"type": "string", "pattern": "^run-[0-9]{3,6}$"},
+    "source": {"type": "string"},
+    "reason": {"type": "string", "minLength": 1},
+    "mode": {"type": "string"},
+    "mtime_ns": {"type": "integer"},
+    "material": {"const": "material"},
+    "kind": {"enum": ["file", "directory"]},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "bytes": {"type": "integer", "minimum": 0},
+    "entries": {"type": "array", "items": {"type": "object"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"const": "file"}}}, "then": {"required": ["bytes", "sha256"]}},
+    {"if": {"properties": {"kind": {"const": "directory"}}}, "then": {"required": ["entries"]}}
+  ]
+}

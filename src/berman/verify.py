@@ -1,9 +1,10 @@
 """Maintenance verification: each check reports one fact, and the result names what remains unestablished.
 
 Passing tests establish neither hook trust nor native capture, recorded trust is not native capture,
-and none of them is native sandbox access. By default verify runs only checks that are cheap,
-non-interactive and read-only. For the interactive steps (the actual-CLI /hooks review with
-record-trust, and a native support trial) it reports their recorded results and never performs them.
+and none of them is native sandbox access. By default verify runs non-interactive, read-only
+checks; recordings and archive checks perform full reads and can be slow. For the actual-CLI
+/hooks review with record-trust and a native support trial, it reports their recorded results
+and never performs them.
 Without --record or --native-access it creates or changes no file, takes no lock and runs no Git
 command. --native-access runs the real Codex binary against disposable Berman, packet and Codex roots
 and the real checkouts, as a preparation does; nothing outside its evidence folder is kept.
@@ -18,7 +19,7 @@ import sys
 import tempfile
 
 from berman.capture import adapters as capture_adapters
-from berman import environment, files
+from berman import environment, files, recordings
 from berman import schemas
 from berman.files import Decision, keep, read, write
 from berman.harnesses.codex import Codex
@@ -28,7 +29,7 @@ from berman.workspace import identity
 from berman.records import Store
 from berman.workflow import Workflow
 
-SKIPPABLE = ('archive',)
+SKIPPABLE = ('archive', 'recordings')
 EXIT = {'passed': 0, 'failed': 1, 'incomplete': 3}
 RECEIPTS = {'archive': 'archive-verify.json'}
 BUILDER_OUTPUT = {'stdout': 'archive-verify.stdout.txt', 'stderr': 'archive-verify.stderr.txt'}
@@ -54,6 +55,9 @@ MEANING = {
     'native-capture': 'A native session captured its required events with these implementation bytes. Trust alone '
                       'does not show this.',
     'archive': 'Generated reading aids and the cumulative archive match their inputs. verify never rebuilds them.',
+    'recordings': 'Preserved originals match their inventory; capture, migration and ending evidence agree; '
+                  'recording ZIPs exist and match their recorded hashes and exact inventoried contents. '
+                  'Missing historical authority is unestablished, never invented. No files are changed.',
     'native-access': "The native Codex sandbox gives each connection's assignment its intended access, checked in "
                      'disposable roots.',
 }
@@ -532,6 +536,21 @@ def verdict(checks):
     return 'passed'
 
 
+def recording_check(store):
+    if store is None:
+        return row('not-run', 'Depends on workspace')
+    try:
+        runs = recordings.audit(store)
+    except recordings.ERRORS as exc:
+        return row('failed', f'Preserved recording evidence cannot be inspected: {exc}')
+    problems = [f'{run["run"]}: {problem}' for run in runs for problem in run['problems']]
+    unknown = [f'{run["run"]}: {problem}' for run in runs for problem in run['unknown']]
+    status = 'failed' if problems else 'not-established' if unknown else 'passed'
+    return row(status, f'{len(runs)} preserved run(s); {len(problems)} problem(s), {len(unknown)} unestablished fact(s)',
+               runs=runs, problems=problems, missing=unknown,
+               step='Inspect the named evidence; retain originals and record any repair separately' if problems or unknown else None)
+
+
 def verify(root, skip=(), native=None, record=None, run=subprocess.run, code=PACKAGE):
     """Run every check not skipped and return the result; a failed check is reported, never raised.
 
@@ -553,6 +572,7 @@ def verify(root, skip=(), native=None, record=None, run=subprocess.run, code=PAC
     checks['frozen-collector'] = integrity(code)
     checks['recorded-hashes'] = recorded_hashes(root)
     checks['workspace'] = workspace(store, problem)
+    checks['recordings'] = skipped('recordings') if 'recordings' in skip else recording_check(store)
     checks.update(adapters(store, root, code))
     if 'archive' in skip:
         checks['archive'] = skipped('archive')

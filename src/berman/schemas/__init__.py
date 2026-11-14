@@ -18,9 +18,9 @@ given, so reading a preserved record cannot change it. A record that fails is in
 which stays distinct from a record that is absent, from an operation that is incomplete (its
 record is valid at every step) and from a fact nobody recorded (an optional field left out).
 
-Versions: a released schema keeps accepting what it accepted. Adding an optional field is
-compatible within a version. A change that would refuse a record the released schema took,
-or give a field another meaning, is a new name and a new file beside the old one.
+Before 1.0, point revisions may deliberately tighten validation, with documented adoption
+consequences and regression tests. Historical facts never change meaning silently; use a new
+schema name for a materially different record meaning. Validation never rewrites old evidence.
 
 This is the only module that imports jsonschema, and it does so when first used, so that a
 command which validates nothing, and `berman verify --software` in a damaged environment,
@@ -44,6 +44,7 @@ SUPPORTED = (
     'berman.new-request/1',
     'berman.software/1',
     'berman.verification/1',
+    'berman.recovered-write/1',
 )
 KINDS = {
     'object': 'an object',

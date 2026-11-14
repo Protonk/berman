@@ -201,6 +201,8 @@ def capture_state(evidence, registered):
     if evidence['location'] != 'active':
         return fact(None, unknown=[f'{evidence["location"]} packet has neither session/finalized.json nor session/ended.json'],
                     **detail)
+    if detail['consistent'] is False:
+        return fact(None, unknown=status.get('warnings') or ['capture bytes and metadata disagree'], **detail)
     last = detail['last_event']
     return fact('open', ['session/binding.json', f'last capture event {last}' if last else 'no snapshot yet'], **detail)
 

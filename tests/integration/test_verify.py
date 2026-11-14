@@ -30,7 +30,7 @@ from tests.integration.test_connections import Base
 BUILT = {'mode': 'verified', 'archive_path': 'archive/stewart-runs.zip', 'zip_members': 12, 'archive_sha256': '0' * 64}
 PASSING_ARCHIVE = (0, json.dumps(BUILT, indent=2) + '\n', '')
 FROZEN = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
-ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'hook-trust:berman-codex', 'native-capture:berman-codex',
+ORDER = [ 'frozen-collector', 'recorded-hashes', 'workspace', 'recordings', 'hook-trust:berman-codex', 'native-capture:berman-codex',
          'hook-trust:berman-claude', 'native-capture:berman-claude', 'archive', 'native-access']
 
 
@@ -320,7 +320,7 @@ class VerifyTests(Fixture, Base):
     def test_skip_leaves_checks_unrun_without_subprocesses(self):
         result = self.verify(skip=verify.SKIPPABLE, native=passing)
         self.assertEqual([argv[1:] for argv, _ in self.runner.calls], [['--version']])
-        self.assertEqual((result['verdict'], result['not_run']), ('incomplete', ['archive']))
+        self.assertEqual((result['verdict'], result['not_run']), ('incomplete', ['recordings', 'archive']))
         self.assertEqual(result['checks']['archive']['next'], 'berman verify without --skip archive')
         with self.assertRaisesRegex(Decision, 'Only these checks can be skipped'):
             self.verify(skip=['workspace'])
@@ -380,7 +380,8 @@ class VerifyTests(Fixture, Base):
         marker.write_text('{broken')
         result = self.verify(native=passing)
         workspace = result['checks']['workspace']
-        self.assertEqual((result['verdict'], result['failed'], workspace['status']), ('failed', ['workspace'], 'failed'))
+        self.assertEqual((result['verdict'], result['failed'], workspace['status']),
+                         ('failed', ['workspace', 'recordings'], 'failed'))
         self.assertEqual(workspace['details']['outstanding_runs'], ['run-900101'])
         self.assertEqual(len(workspace['details']['problems']), 1)
         self.assertTrue(workspace['details']['problems'][0].startswith('every connection: Invalid operation record'))

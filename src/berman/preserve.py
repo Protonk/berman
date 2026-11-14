@@ -13,10 +13,15 @@ from berman.lifecycle import declaration, declared
 from berman.recipes import snapshot
 
 
-def copy_tree(source, target):
+def copy_tree(source, target, store=None, run=None):
     """Copy a selected tree once; verify every retained byte on retries."""
     if not source.exists():
         return
+    if store is not None:
+        # A real selected project file may itself have the temporary-looking name. Keep it.
+        expected = {path.relative_to(source) for path in source.rglob('*')}
+        paths = [path for path in target.rglob('.capture-*') if path.relative_to(target) not in expected]
+        fieldwork.quarantine(store.root, run, paths, 'Abandoned closing-context copy before migration')
     for path in sorted(source.rglob('*')):
         if path.is_symlink():
             raise Decision(f'Unexpected symlink in preparation material: {path}')
@@ -32,11 +37,9 @@ def namespace(store, record):
     return 'berman-analysis/'
 
 
-def package(store, run):
-    layout = read(store.root / 'source-layout.json')
-    entry = next(e for e in layout['runs'] if e['run'] == run)
-    root = store.root / 'runs' / run
-    fieldwork.verify_moved(root, entry)
+def recording_payload(root, entry):
+    """The exact recording contents, for writing and independent read-only verification."""
+    run = entry['run']
     payload = {}
     # Existing archive codec preserves modes, symlinks, directory entries and bytes.
     for item in entry['entries']:
@@ -54,6 +57,15 @@ def package(store, run):
     payload['recording-inventory.json'] = (files.json_bytes(entry), stat.S_IFREG | 0o644)
     payload['RECORDING.txt'] = (b'Berman recording package. Contains the preserved packet and its migration inventory.\n'
                               b'Full reading editions are built separately with archive/builder.py.\n', stat.S_IFREG | 0o644)
+    return payload
+
+
+def package(store, run):
+    layout = read(store.root / 'source-layout.json')
+    entry = next(e for e in layout['runs'] if e['run'] == run)
+    root = store.root / 'runs' / run
+    fieldwork.verify_moved(root, entry)
+    payload = recording_payload(root, entry)
     prefix = namespace(store, store.record(run))
     data = builder.make_zip(payload, prefix)
     builder.verify_zip(data, payload, prefix)
@@ -129,6 +141,10 @@ def preserve(store, record):
             # An inventory already exists: never add material after that boundary.
             fieldwork.migrate(collector, run)
         else:
+            recovered = fieldwork.generated_residue(store, run)
+            if recovered:
+                record['recovered_writes'] = sorted(set(record.get('recovered_writes', []) + recovered))
+                store.save(record)
             try:
                 collector.command('finalize', run, reason=record['ending'].get('allow_incomplete'))
             except ValueError as exc:
@@ -140,7 +156,9 @@ def preserve(store, record):
             closing = folder / 'closing-project'
             snapshot(Path(record['project']), record['documents'], closing)
             destination = store.field / run / 'context/berman'
-            copy_tree(closing, destination / 'closing-project')
+            fieldwork.quarantine(store.root, run, destination.glob('.capture-*'),
+                                 'Abandoned closing-context record before migration')
+            copy_tree(closing, destination / 'closing-project', store, run)
             preparation = folder / 'preparation'
             if not preparation.exists() and not record.get('connection'):
                 # Only runs predating operation records kept preparation evidence in inquiry/.
@@ -148,7 +166,7 @@ def preserve(store, record):
                 if len(candidates) > 1:
                     raise Decision(f'{run}: several historical preparation records need selection')
                 preparation = candidates[0] if candidates else preparation
-            copy_tree(preparation, destination / 'preparation')
+            copy_tree(preparation, destination / 'preparation', store, run)
             keep(destination / 'COLLECTION.txt',
                  b'Berman collected selected project documents after the declared engagement ending.\n'
                  b'Timestamps and Git state describe collection time. Missing handoffs or documents\n'
@@ -168,7 +186,8 @@ def preserve(store, record):
     record['package'] = package(store, run)
     record['phase'] = 'archived'
     store.save(record)
-    return {'run': run, 'state': 'archived', 'package': record['package']}
+    receipts = fieldwork.recovered_writes(store.root, run)
+    return {'run': run, 'state': 'archived', 'package': record['package'], 'recovered_writes': receipts}
 
 
 def finishable(row, reason):

@@ -104,6 +104,9 @@ def snapshot(project, names, target, require_stable_git=True):
 
 def prepare(store, record):
     run = record['run']
+    recovered = fieldwork.generated_residue(store, run)
+    if recovered:
+        record['recovered_writes'] = sorted(set(record.get('recovered_writes', []) + recovered))
     folder = store.folder(run)
     project = Path(record['project'])
     packet = store.field / run

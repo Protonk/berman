@@ -12,6 +12,7 @@ import uuid
 from berman.capture import adapters
 from berman import workspace
 from berman import files
+from berman import recovery
 from berman.files import Decision, keep, read, write
 from berman.installation import command as module_command
 from berman.recipes import compose, prepare, recipe, snapshot
@@ -285,6 +286,9 @@ class Workflow:
                       'capture': adapters.reservation(connection.capture),
                       'harness': store.harness_identity(connection.capture, run, connection.entry.get('fieldwork_model')),
                       'retained_open_runs': []}
+            recovered = recovery.generated_residue(store, run)
+            if recovered:
+                record['recovered_writes'] = recovered
             store.save(record)
         return record
 
@@ -393,7 +397,10 @@ class Workflow:
                     'preserved': preserved, 'retained_open_runs': retained,
                     'launch': command, 'packet': str(packet), 'preparation': str(self.store.folder(run) / 'preparation'),
                     'checks_passed': readiness['passed'], 'checks_reused': readiness.get('reused', False),
-                    'warnings': list(preflight.get('warnings', [])) if isinstance(preflight, dict) else [],
+                    'warnings': (list(preflight.get('warnings', [])) if isinstance(preflight, dict) else []) +
+                                ([f'Interrupted writes retained in {self.store.root / ".state/recovery" / run}']
+                                 if record.get('recovered_writes') else []),
+                    'recovered_writes': record.get('recovered_writes', []),
                     'request': str(self.request_path) if self.request_path else None,
                     'next': 'Launch when wanted. After the first reply, berman status reports whether capture has begun.'}
 

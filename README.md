@@ -53,6 +53,9 @@ assigning a plan or qualifying an installation.
 `berman verify --software` checks the installed package. To check a configured
 study, use `berman --root /path/to/study verify`. Developer tests run separately;
 neither software verification nor tests establish native access or capture.
+Study verification includes a read-only audit of preserved originals, ending
+evidence and recording ZIPs. Missing historical authority stays unestablished;
+verification never invents an ending or repairs preserved material.
 
 On an interactive terminal, `status`, `verify`, `cheatsheet` and the result of
 `new` are laid out for reading. Redirected to a file or a pipe they print the

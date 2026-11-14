@@ -13,10 +13,97 @@ import tempfile
 import time
 
 from berman import files
+from berman import schemas
 from berman._legacy import api as legacy
 
 # A notes-layout support packet records this protocol and connection identity; recipes never name them.
 SUPPORT_PROTOCOL, SUPPORT_CONNECTION = 'support-trial/1', 'support-trial'
+
+
+def quarantine(analysis, run, paths, reason):
+    """Retain abandoned writer-owned material outside packets before any inventory exists.
+
+    Callers select only Berman-owned temporary namespaces and hold the appropriate operation
+    or capture lock. A durable intent precedes the same-filesystem rename; neither a crash
+    nor a retry deletes the source. The material's presence beside the receipt establishes
+    whether the move completed. Never use this on an inventoried or preserved tree.
+    """
+    retained = []
+    for source in sorted(set(paths)):
+        if not source.exists() and not source.is_symlink():
+            continue
+        journal = analysis / 'migrations' / (run + '.json')
+        if journal.exists() or journal.is_symlink():
+            raise files.Decision(f'Recovery never cleans material after migration inventory: {journal}')
+        if source.is_relative_to(analysis / 'runs'):
+            raise files.Decision('Recovery never moves material from preserved runs')
+        if source.is_dir():
+            entries = files.inventory(source)
+            content = {'kind': 'directory', 'entries': entries}
+        else:
+            data = files.regular(source).read_bytes()
+            content = {'kind': 'file', 'bytes': len(data), 'sha256': files.digest(data)}
+        state = source.stat()
+        receipt = {'schema': 'berman.recovered-write/1', 'run': run, 'source': str(source),
+                   'reason': reason, 'mode': oct(stat.S_IMODE(state.st_mode)), 'mtime_ns': state.st_mtime_ns,
+                   'material': 'material', **content}
+        schemas.validate('berman.recovered-write/1', receipt)
+        directory = analysis / '.state/recovery' / run / files.digest_json(receipt)
+        if any(p.is_symlink() for p in (directory, *directory.parents)):
+            raise files.Decision(f'Symlink in recovery destination: {directory}')
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / 'material'
+        if target.exists() or target.is_symlink():
+            raise files.Decision(f'Both recovery source and retained material exist: {source}; {target}')
+        files.keep(directory / 'receipt.json', files.json_bytes(receipt))
+        os.rename(source, target)
+        verify_recovered(target, receipt)
+        retained.append(str(directory / 'receipt.json'))
+    return retained
+
+
+def verify_recovered(target, receipt):
+    """Verify retained bytes and metadata; a damaged recovery copy needs attention too."""
+    if receipt['kind'] == 'file':
+        data = files.regular(target).read_bytes()
+        matches = len(data) == receipt['bytes'] and files.digest(data) == receipt['sha256']
+    else:
+        matches = files.inventory(target) == receipt['entries']
+    state = target.stat()
+    if not matches or oct(stat.S_IMODE(state.st_mode)) != receipt['mode'] or state.st_mtime_ns != receipt['mtime_ns']:
+        raise files.Decision(f'Recovered material differs from its receipt: {target}')
+
+
+def generated_residue(store, run):
+    """Only operation-owned atomic writes and unpublished snapshot/packet staging directories.
+
+    Published project snapshots can contain arbitrarily named project files, including names
+    beginning .capture-. They are never swept. Notes and other participant files are not visited.
+    """
+    folder = store.folder(run)
+    preparation = folder / 'preparation'
+    paths = list(folder.glob('.capture-*')) + list(folder.glob('.snapshot-*'))
+    paths += list(preparation.glob('.snapshot-*'))
+    for path in preparation.rglob('.capture-*'):
+        first = path.relative_to(preparation).parts[0]
+        if first != 'initial-project' and not first.startswith('.snapshot-'):
+            paths.append(path)
+    paths += list(store.field.glob('.' + run + '-prepare-*'))
+    quarantine(store.root, run, paths, 'Abandoned unpublished preparation or operation write')
+    return recovered_writes(store.root, run)
+
+
+def recovered_writes(analysis, run):
+    """Completed recovery moves, including a prior process killed just after the rename."""
+    result = []
+    for path in sorted((analysis / '.state/recovery' / run).glob('*/receipt.json')):
+        receipt = schemas.validate('berman.recovered-write/1', files.read(path), path)
+        if (path.parent / receipt['material']).exists():
+            verify_recovered(path.parent / receipt['material'], receipt)
+            result.append(str(path))
+        elif not Path(receipt['source']).exists():
+            raise files.Decision(f'Recovery source and retained material are both missing: {path}')
+    return result
 
 
 @contextmanager
@@ -155,9 +242,17 @@ def migrate(collector, run, plan=False):
         files.safe_directory(destination.parent)
         if source.stat().st_dev != destination.parent.stat().st_dev:
             raise ValueError('Cross-filesystem migration is refused; no copy or deletion was attempted')
+        recovered = []
+        if not plan:
+            with collector.locked():
+                paths = [path for name in ('session', 'session-history', 'session-supplements')
+                         for path in (source / name).rglob('.capture-*')]
+                recovered = quarantine(collector.analysis, run, paths, 'Abandoned capture write before migration')
         entry = migration_entry(source, run, destination)
         journal = {'schema': 'stewart.migration/1', 'source': str(source), 'destination': str(destination),
                    'phase': 'inventoried', 'entry': entry}
+        if recovered:
+            journal['recovered_writes'] = recovered
     if plan:
         return {'run': run, 'source': str(source), 'destination': str(destination), 'phase': journal['phase'],
                 'entries': len(entry['entries']), 'git_pointers': entry['git_pointers'],

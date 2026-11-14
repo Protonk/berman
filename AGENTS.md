@@ -25,17 +25,23 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new
   module a layer.
-- A schema refuses only structure the code would crash on or silently misread,
-  and requires only what loading a record reads. Rules about phases, identities
-  and agreement between records stay in Python. Validation never changes the
-  value it checks. A record that loaded before must still load; refusing more
-  needs a new schema version and the researcher's decision.
-- What a command accepts, prints, refuses and returns is the researcher's to
-  change. Propose such a change; do not make it as part of other work.
+- Before 1.0, point revisions may deliberately change behavior and record
+  requirements. Prefer the simplest robust implementation over compatibility
+  machinery. Document changes and brief the researcher when adoption needs
+  repair, a user response or changes to analysis. Preserve original bytes and
+  the meaning of historical evidence; never invent a missing ending or silently
+  rewrite old records. Validation never changes the value it checks.
+- CLI behavior may change as part of an authorized corrective task. Describe
+  the change and test its consequences rather than retaining a known defect.
   `berman.presentation.plain` is what a pipe, a file and `BERMAN_OUTPUT=plain`
   receive, pinned byte for byte by tests/fixtures/presentation; an interactive
   terminal gets the Rich rendering of the same result. `--json`, exit codes and
   redirected text must not depend on whether a terminal is attached.
+- `berman verify` includes a read-only `recordings` audit. Missing historical
+  authority is unestablished, not a passing assertion. Interrupted writer-owned
+  material goes into `.state/recovery` before inventory; nothing already
+  inventoried is cleaned retrospectively. Notes and selected project documents
+  can have temporary-looking filenames and must remain intact.
 - Property tests are derandomized by default. Pin a failure found with
   `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
 - Workspace selection is silent. Run inside a study's repository, or with

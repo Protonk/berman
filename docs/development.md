@@ -33,7 +33,7 @@ It never runs the developer tests or requires this checkout.
 | --- | --- | --- | --- |
 | Ruff | development | Lint on everything but the frozen collector; formatting of files written since it was adopted. | `[tool.ruff]` in `pyproject.toml` |
 | Import Linter | development | Eight architectural contracts over the import graph. | `[tool.importlinter]` in `pyproject.toml` |
-| JSON Schema (`jsonschema`) | runtime | The structure of nine record families, where they are read and written. | `src/berman/schemas/` |
+| JSON Schema (`jsonschema`) | runtime | The structure of ten record families, where they are read and written. | `src/berman/schemas/` |
 | Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. | `tests/properties/`, `tests/support/properties.py` |
 | Rich | runtime | Operator-facing output on an interactive terminal. | `src/berman/presentation/terminal.py` |
 | Packaging | runtime | Python requirements, versions and environment markers for installation verification. | `src/berman/environment.py` |
@@ -114,6 +114,7 @@ wheel, covered by the software identity and checked by
 | `berman.new-request/1` | a combined request | on every read and before every write |
 | `berman.software/1` | `berman version`, `software.json` | by tests |
 | `berman.verification/1` | `berman --json verify` and kept results | by tests |
+| `berman.recovered-write/1` | retained interrupted-write receipts | before writing and when reading recovery receipts |
 
 The rule for what a schema refuses:
 
@@ -154,10 +155,11 @@ The division of labor:
 - If `jsonschema` does not import, every record is refused with that reason;
   nothing is read unchecked.
 
-A released schema keeps accepting what it accepted. Adding an optional field is
-compatible within a version. A change that would refuse a record the released
-schema took, or give a field another meaning, is a new name and a new file
-beside the old one. `tests/fixtures/records/` holds valid and invalid fixtures
+Before 1.0, point revisions may deliberately tighten validation or change CLI
+behavior. Such changes need documented adoption consequences and regression
+tests. A historical fact must never acquire a different meaning silently, and
+validation never rewrites a record. Give a materially different record meaning
+a distinct schema name. `tests/fixtures/records/` holds valid and invalid fixtures
 for every schema, with the exact problems each invalid one must report; the
 valid operation records include the shapes earlier workflows wrote.
 
@@ -234,6 +236,61 @@ use isolated module execution. The operator's cheatsheet uses `berman` on PATH
 with an explicit workspace root. Probes are copied into disposable sandboxes.
 
 ## Compatibility and qualification
+
+Before 1.0, point revisions are useful adoption boundaries, not a promise that
+every earlier behavior survives. Prefer a simple, robust corrective change over
+compatibility machinery. Describe changed refusals, output and verification
+scope, and any response an adopting study needs. Preserved evidence is never
+rewritten to make a new check pass.
+
+### Unreleased: interruption recovery and preserved-evidence verification
+
+The normal suite now kills real child processes before and after reservation,
+snapshot publication, packet placement, capture writes, closing-context copies,
+migration, inventory publication and recovery moves. Separate process tests hold
+one connection's lock while testing same-connection refusal and another
+connection's progress. These deterministic tests complement the Hypothesis
+machine; they establish no power-loss durability or native callback delivery.
+
+Before inventory, retries move abandoned writes from Berman-owned temporary
+namespaces to `.state/recovery/RUN/DIGEST/`. A validated `receipt.json` records
+the source, reason, hash or inventory, mode and mtime before the atomic move.
+The sibling `material` must exist and match that receipt before recovery is
+reported complete. A receipt without material is an unfinished recovery intent.
+Preparation results and finish results name retained receipts. Recovery never
+sweeps notes or published project snapshots, and never cleans an inventoried
+packet or anything beneath `runs/`. Temporary-looking project and participant
+filenames remain original material.
+
+`berman verify` now includes a required, read-only `recordings` check. It checks
+all indexed or physically preserved runs and archived operation claims: original
+bytes and recorded metadata, the current capture snapshot and its closure,
+migration journal agreement, matching researcher ending declarations, and each
+recorded ZIP's existence, digest, size, sidecar, exact contents and modes.
+Historical mtimes are checked only where recorded. The check never contacts a
+live transcript source, runs Git, takes a lock, repairs a record or rebuilds a ZIP.
+Concurrent preservation can produce an incomplete or inconsistent observation;
+rerun verification once the operation is idle.
+
+Absent historical ending or packaging authority is `not-established`; a missing
+ZIP that an operation claims exists, contradictory ending records, changed bytes
+or a damaged inventory fail. Historical absences are not filled retrospectively.
+`--skip recordings` explicitly leaves this check unrun and the overall verdict
+incomplete. This check performs full reads and hashing and may be slow on large
+collections. Status remains a fast discovery view, not a complete recording audit.
+
+False or malformed capture metadata is now reported as damage, and retained
+snapshot files with no metadata as missing evidence. Inconsistent snapshots
+produce unknown capture state rather than the claim that no snapshot has yet
+been made. Reading changes none of these files.
+
+An adopting study should first run the candidate's read-only verification and
+review newly reported gaps. Restore missing evidence from known copies where
+available; decide and record any reconstruction separately. Never invent a past
+researcher ending. Earlier inventoried temporary files remain preserved as they
+were. These changes do not require rewriting analysis inputs, but scripts that
+enumerate verification checks or assume a passing archived count must account
+for the new check and its results.
 
 `src/berman/_legacy/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
 Never edit it or install it directly. The exclusive router owns session locking

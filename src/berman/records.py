@@ -31,6 +31,29 @@ def packet_evidence(root):
             'session_material': any((root / name).exists() for name in SESSION_MATERIAL)}
 
 
+def capture_metadata(root, run):
+    """Read a snapshot's minimum evidence, distinguishing absence from damage.
+
+    The collector's historical status reader treated false JSON values as no metadata. Do
+    this check before calling it, without changing the collector or any preserved bytes.
+    """
+    path = root / 'session/capture.json'
+    if not path.exists() and not path.is_symlink():
+        if any((root / 'session' / name).exists() for name in
+               ('transcript.jsonl', 'captures.jsonl', 'conversation.txt', 'finalized.json')):
+            raise Decision(f'{run}: missing capture metadata for retained session evidence: {path}')
+        return None
+    value = read(path)
+    if not isinstance(value, dict) or not value:
+        raise Decision(f'{run}: damaged capture metadata at {path}: expected a nonempty object')
+    for name in ('sha256', 'session_id', 'captured_at_utc', 'event'):
+        if not isinstance(value.get(name), str) or not value[name]:
+            raise Decision(f'{run}: damaged capture metadata at {path}: {name} must be nonempty text')
+    if value.get('run') != run or type(value.get('saved_bytes')) is not int or value['saved_bytes'] < 0:
+        raise Decision(f'{run}: damaged capture metadata at {path}: invalid run or saved_bytes')
+    return value
+
+
 def unpublished(folder):
     """Whether an operations folder is only what a reservation left when its record never landed.
 
@@ -433,6 +456,7 @@ class Store:
             root = archived
         elif active.exists():
             location, root = 'active', active
+            capture_metadata(root, run)
             status = self.collector_for(record).status(run)
             state = status['state']
             if state in ('damaged', 'unbound-session-files', 'identity-collision'):

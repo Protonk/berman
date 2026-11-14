@@ -16,8 +16,9 @@ as an operator would retry it. Whatever the order:
 
 An interruption is modelled as an OSError raised from berman.files.atomic. That is the write
 every durable record goes through, and the frozen collector's own writes are not interrupted.
-A process killed outright would also skip cleanup that an exception still runs; that case is
-not modelled.
+A process killed outright also skips cleanup that an exception still runs. That case is covered
+by tests/integration/test_interruptions.py, including actual process contention across connections;
+it is not modelled by this state machine.
 """
 
 from pathlib import Path

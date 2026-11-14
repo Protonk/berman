@@ -97,6 +97,35 @@ allocates no second run and declares no second ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
 Use the workflow rather than manually repeating profile, packet or migration steps.
 
+When retrying interrupted preparation or preservation, Berman retains abandoned
+writer-owned temporary files under `.state/recovery/RUN/`, with receipts naming
+their origins and recording their bytes and metadata. Results identify these
+receipts. A receipt's sibling `material` is the retained copy; a receipt alone
+means the move did not finish. This recovery happens before inventory, and does
+not remove anything from an already preserved run. Keep the recovery directory
+with the study; it is not automatically included in a reading edition.
+
+## Verify preserved recordings
+
+`berman verify` includes a required `recordings` check, separately from checking
+the generated reading edition. It reads preserved runs and their inventories,
+capture records, migration journals, ending declarations and recording ZIPs.
+It checks bytes and recorded metadata, agreement between records, and ZIP
+contents. It never repairs, rebuilds or makes a new engagement-ending decision.
+
+A recorded ZIP that is missing or changed fails verification. Old material
+without an operation record or a contemporary ending/package assertion is
+reported as unestablished. These are different results. Preserve the originals
+while investigating; an old missing declaration cannot be supplied by inference.
+Restore lost artifacts from known copies or record a deliberate reconstruction
+separately. Temporary files already included in an older inventory stay there.
+
+Use `berman --json verify --skip archive` to inspect recording evidence without
+checking the generated edition. `--skip recordings` omits the full recording
+audit; any skipped required check leaves the overall verdict incomplete.
+Status and its archived count are discovery information, not a substitute for
+this audit. The audit does not establish native access, hook trust or capture.
+
 ## Reading editions
 
 Build a generic edition explicitly against a workspace:
