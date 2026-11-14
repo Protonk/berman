@@ -18,7 +18,7 @@ given, so reading a preserved record cannot change it. A record that fails is in
 which stays distinct from a record that is absent, from an operation that is incomplete (its
 record is valid at every step) and from a fact nobody recorded (an optional field left out).
 
-Before 1.0, point revisions may deliberately tighten validation, with documented adoption
+Any release may deliberately tighten validation, with documented adoption
 consequences and regression tests. Historical facts never change meaning silently; use a new
 schema name for a materially different record meaning. Validation never rewrites old evidence.
 

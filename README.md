@@ -87,4 +87,7 @@ The [development guide](docs/development.md) covers tests, packaging and
 compatibility. [Source provenance](docs/provenance/origin.json) records where this code began;
 the original research ledger retains its history separately.
 
+Releases are numbered `0.YY.N` by year and serial; the number implies nothing
+about compatibility ([release numbering](docs/development.md#release-numbering)).
+
 Berman is released under the [MIT License](LICENSE).

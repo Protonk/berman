@@ -155,9 +155,9 @@ The division of labor:
 - If `jsonschema` does not import, every record is refused with that reason;
   nothing is read unchecked.
 
-Before 1.0, point revisions may deliberately tighten validation or change CLI
-behavior. Such changes need documented adoption consequences and regression
-tests. A historical fact must never acquire a different meaning silently, and
+Any release may deliberately tighten validation or change CLI behavior
+([release numbering](#release-numbering)). Such changes need documented
+adoption consequences and regression tests. A historical fact must never acquire a different meaning silently, and
 validation never rewrites a record. Give a materially different record meaning
 a distinct schema name. `tests/fixtures/records/` holds valid and invalid fixtures
 for every schema, with the exact problems each invalid one must report; the
@@ -213,7 +213,29 @@ cd /tmp && /tmp/berman-check/bin/python /tmp/berman-check/wheel_smoke.py --examp
 ```
 
 Version metadata lives in `pyproject.toml` and is read from the installed
-distribution. A version ending in `.dev0` marks a tree between releases.
+distribution. The tree between releases keeps the number of the last release;
+`berman version` tells two trees apart by their source digests.
+
+## Release numbering
+
+This project uses experimental calendar-serial versions: `0.YY.N`, where `YY` is the two-digit release year and `N` is the sequential release number within that year, beginning at 1.
+
+Versions identify released artifacts. They do not encode change severity, compatibility, maturity, or development progress.
+
+- Any `0.*` release may make arbitrary breaking changes, including within the same calendar year.
+- Never select a version number based on whether a change is breaking, additive, or corrective.
+- Never increment the version merely because source code, tests, or an interface changed.
+- Increment the serial only when explicitly preparing a new release artifact.
+- Do not introduce pre-release stages, migration guarantees, or compatibility accommodations without explicit authorization.
+- Released artifacts and Git tags are immutable. A replacement requires a new release number.
+- At the first release of a new calendar year, advance `YY` and reset `N` to 1.
+
+A release is a deliberate artifact boundary, not a declaration that the software has become more stable. Do not infer compatibility between releases.
+
+Version `1.0.0` is reserved for an explicit future decision to establish a stable public contract.
+
+Releases through 0.4.4 were numbered before this scheme, and their numbers
+carry no meaning under it. The first release numbered this way is 0.26.1.
 
 ## Code map
 
@@ -237,11 +259,20 @@ with an explicit workspace root. Probes are copied into disposable sandboxes.
 
 ## Compatibility and qualification
 
-Before 1.0, point revisions are useful adoption boundaries, not a promise that
-every earlier behavior survives. Prefer a simple, robust corrective change over
-compatibility machinery. Describe changed refusals, output and verification
-scope, and any response an adopting study needs. Preserved evidence is never
-rewritten to make a new check pass.
+A release is a useful adoption boundary, not a promise that any earlier
+behavior survives ([release numbering](#release-numbering)). Prefer a simple,
+robust corrective change over compatibility machinery. Describe changed
+refusals, output and verification scope, and any response an adopting study
+needs. Preserved evidence is never rewritten to make a new check pass.
+
+### Version 0.26.1: release numbering
+
+The first release under [calendar-serial numbering](#release-numbering). It
+changes the version number and this guidance and nothing in how Berman behaves:
+every source file is byte for byte what 0.4.4 shipped, except one sentence of
+a docstring in `schemas/__init__.py`. A study on 0.4.4 has no reason in this
+release to adopt it, and a basis recorded for 0.4.4's fingerprinted bytes still
+names them.
 
 ### Version 0.4.4: one opening message
 

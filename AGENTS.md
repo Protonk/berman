@@ -25,9 +25,15 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new
   module a layer.
-- Before 1.0, point revisions may deliberately change behavior and record
-  requirements. Prefer the simplest robust implementation over compatibility
-  machinery. Document changes and brief the researcher when adoption needs
+- Versions are `0.YY.N`: the release year and a serial within it. They name
+  released artifacts and say nothing about compatibility or severity. Never
+  choose or increment a version because of what a change does; increment the
+  serial only when explicitly asked to prepare a release, and never move or
+  reuse a released tag (docs/development.md#release-numbering).
+- Any release may deliberately change behavior and record requirements. Prefer
+  the simplest robust implementation over compatibility machinery, and add no
+  pre-release stage, migration guarantee or compatibility accommodation unless
+  asked. Document changes and brief the researcher when adoption needs
   repair, a user response or changes to analysis. Preserve original bytes and
   the meaning of historical evidence; never invent a missing ending or silently
   rewrite old records. Validation never changes the value it checks.
