@@ -316,221 +316,38 @@ any text a fieldworker still needs into INSTRUCTIONS.md. Recipes kept only as a
 record of earlier runs can stay as they are; they are refused only if a plan
 selects them.
 
-### Version 0.4.3: interruption recovery and preserved-evidence verification
+### Adopting a release in a study
 
-The normal suite now kills real child processes before and after reservation,
-snapshot publication, packet placement, capture writes, closing-context copies,
-migration, inventory publication and recovery moves. Separate process tests hold
-one connection's lock while testing same-connection refusal and another
-connection's progress. These deterministic tests complement the Hypothesis
-machine; they establish no power-loss durability or native callback delivery.
+Publishing a release adopts it nowhere, and none of the development checks
+qualifies a native installation. A study that adopts a release decides, and
+does, the following under its own procedure:
 
-Before inventory, retries move abandoned writes from Berman-owned temporary
-namespaces to `.state/recovery/RUN/DIGEST/`. A validated `receipt.json` records
-the source, reason, hash or inventory, mode and mtime before the atomic move.
-The sibling `material` must exist and match that receipt before recovery is
-reported complete. A receipt without material is an unfinished recovery intent.
-Preparation results and finish results name retained receipts. Recovery never
-sweeps notes or published project snapshots, and never cleans an inventoried
-packet or anything beneath `runs/`. Temporary-looking project and participant
-filenames remain original material.
-
-`berman verify` now includes a required, read-only `recordings` check. It checks
-all indexed or physically preserved runs and archived operation claims: original
-bytes and recorded metadata, the current capture snapshot and its closure,
-migration journal agreement, matching researcher ending declarations, and each
-recorded ZIP's existence, digest, size, sidecar, exact contents and modes.
-Historical mtimes are checked only where recorded. The check never contacts a
-live transcript source, runs Git, takes a lock, repairs a record or rebuilds a ZIP.
-Concurrent preservation can produce an incomplete or inconsistent observation;
-rerun verification once the operation is idle.
-
-Absent historical ending or packaging authority remains `coverage.unknown` while intact retained evidence can pass integrity; unfinished modern publication is `not-established`; a missing
-ZIP that an operation claims exists, contradictory ending records, changed bytes
-or a damaged inventory fail. Historical absences are not filled retrospectively.
-`--skip recordings` explicitly leaves this check unrun and the overall verdict
-incomplete. This check performs full reads and hashing and may be slow on large
-collections. Status remains a fast discovery view, not a complete recording audit.
-
-False or malformed capture metadata is now reported as damage, and retained
-snapshot files with no metadata as missing evidence. Inconsistent snapshots
-produce unknown capture state rather than the claim that no snapshot has yet
-been made. Reading changes none of these files.
-
-An adopting study should first run the new version's read-only verification and
-review newly reported gaps. Restore missing evidence from known copies where
-available; decide and record any reconstruction separately. Never invent a past
-researcher ending. Earlier inventoried temporary files remain preserved as they
-were. The 0.4.3 portable-recording changes below require analysis consumers of old
-snapshot paths and mutable archive filenames to adopt the new interfaces.
+- **A read of existing records before any write.** `berman status` and a plain
+  `berman verify` only read. Run them with the new release first: a record it
+  refuses is reported there, with its place.
+- **Closed captures.** An active capture is closed with the runtime that opened
+  it before another release replaces that runtime.
+- **An environment with dependencies.** Keep the dependency wheels with the
+  adoption record so the environment can be rebuilt from recorded bytes:
+  `python -m pip download WHEEL -d wheelhouse`, then
+  `python -m pip install --no-index --find-links wheelhouse berman==VERSION`.
+  One dependency, `rpds-py`, is a compiled wheel for one platform and Python.
+- **A recorded identity.** `berman version` and a workspace's software.json name
+  the version, the digest of every source and schema file, and the interpreter
+  and dependency versions. A later change to an installed dependency changes
+  `berman version` and no source digest.
+- **Hook trust, native capture and native access.** Changed fingerprinted bytes
+  or hook commands need renewed qualification in that installation, including
+  an actual CLI trust review where applicable. Unchanged bytes can leave a
+  recorded basis mechanically valid; whether that is sufficient is the study's
+  decision. Never reuse another study's receipts.
 
 `src/berman/_legacy/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
 Never edit it or install it directly. The exclusive router owns session locking
 and chooses the collector. Historical markers and schema names remain readable.
 
-New operation records carry the package version, runtime source digests and
-the environment they ran in. A workspace's software.json records its initial
-selection. Adopting another installation is explicit maintenance: changed
-capture bytes or hook commands require closed captures and renewed
-installation-specific qualification, including actual CLI trust review where
-applicable. Never reuse another study's receipts.
-
-### Version 0.4.3: portable evidence and atomic capture
-
-Publishing this software does not adopt it in an existing study.
-New modules `evidence.py`, `snapshots.py` and
-`capture/transaction.py` separate portable recording contracts, capture commit
-publication and adapter behavior. The frozen collector remains byte-identical.
-`files.py`, `snapshots.py` and `capture/transaction.py` are included in adapter
-fingerprints. Their changes require renewed hook trust and native capture.
-
-The breaking changes and operational commands are documented in
-[portable recordings](usage.md#portable-recordings),
-[capture generations](usage.md#capture-generations) and
-[reading editions](usage.md#reading-editions). New recordings retain authoritative
-operation/migration copies and explicit stream/connection attribution outside
-untouched original packets. An old ZIP's boilerplate is authenticated by its
-recorded digest, not regenerated by the new writer. This fixes false damage
-reports for otherwise intact older recordings.
-
-Recording integrity, historical coverage, native readiness and edition freshness
-are different results. A historical unknown is neither an invented negative nor
-a corrupt byte. A missing promised package, contradictory retained evidence,
-changed membership or changed original custody metadata fails. New publication
-without its commit receipt is unfinished. Status does not replace the full audit.
-
-The tests cover detached pip-wheel entry points, portable source copies, retained
-authority after indexes disappear, deliberately damaged manifests and packages,
-real SIGKILL at capture publication boundaries, bounded append-only retention,
-non-prefix revisions and partial tails. Codex and Claude decoding retain source
-locators and native roles. Explicit process tests complement the Hypothesis
-model; they do not establish power-loss durability, callback delivery or capture
-completeness in native tools.
-
-Adoption requires a researcher maintenance window: close old captures with the
-pinned runtime, preserve the released wheel plus complete dependency wheelhouse,
-review historical exports and agree the collection UUID, then import manifests
-beside originals if desired. Rebuild an edition as a new publication. Update
-analysis attachment and snapshot readers. Renew actual CLI hook trust, native
-capture for every adopted adapter and native access. None of these study or
-native operations is performed by the software tests or by preparing a release.
-
-### Version 0.4.2
-
-Version 0.4.2 requires Python 3.14 and adds two runtime dependencies,
-`jsonschema` and `rich`. Earlier versions declared Python 3.11 or later; a
-launcher defect made that untrue, and it is no longer claimed.
-
-What a command accepts and returns is as in 0.4.1. A workspace that worked
-still works, and redirected output, `--json` and exit codes are unchanged. The
-differences are these:
-
-- **Additions to output.** `berman version`, `software.json` and each new
-  operation record's `software` gain `environment`: the interpreter version and
-  the installed version of every distribution the declared dependencies require.
-  `files_sha256` also covers the packaged schema files. `berman verify --software`
-  gains the checks `dependencies` and `schemas`, two more lines in its text and
-  two more entries in its JSON.
-- **Clearer refusals of what already failed.** A missing or mistyped field that
-  loading reads is reported with its file and place, where 0.4.1 printed a bare
-  key name or a traceback.
-- **New refusals, of what was misread.** A list given as text in a connection
-  or recipe, and an operation record whose structure no workflow wrote, are
-  refused. [Record schemas](#record-schemas) lists them.
-- **Two recovery fixes.** A reservation whose first write failed no longer
-  leaves a folder that blocks later preparations. And `berman finish --run RUN`,
-  interrupted after its packet had migrated, can be retried while another
-  engagement is open.
-- **A terminal rendering.** On an interactive terminal, `status`, `verify`,
-  `cheatsheet` and the result of `new` are laid out with Rich: check statuses
-  and lifecycle facts are told apart by word and mark, `status` shows the
-  evidence for each fact or why it is unknown, and `cheatsheet` groups commands
-  by whether they can be typed now. `BERMAN_OUTPUT=plain` keeps the 0.4.1 text.
-
-The fingerprinted capture implementation, the archive builder and the frozen
-collector are byte for byte what 0.4.1 shipped. A basis recorded for those bytes
-still names them.
-
-### What adopting 0.4.2 in a study needs
-
-The independent integration review prompted corrections on the development
-branch after the original 0.4.2 revision. These changes do not adopt that branch
-in a study:
-
-- Software verification now checks applicable transitive requirements, version
-  constraints and `Requires-Python`, using the additional `packaging` dependency.
-  Markers are evaluated for this interpreter and requested extras. Missing
-  package files and the APIs Berman imports are checked explicitly; surviving
-  distribution metadata alone cannot establish a pass. This is a compatibility
-  and import check, not a hash attestation of dependency bytes or their origin.
-- Import-time exceptions from a damaged `jsonschema` installation refuse records
-  with an explanation. Import-time exceptions from Rich fall back to plain text,
-  preserving the result and exit code already computed.
-- Boolean plan-step identities and false catalogue values (`0`, `[]`, `{}`)
-  accepted by 0.4.1 are accepted again, without rewriting historical records.
-- Narrow terminals show lifecycle facts vertically and fold long evidence
-  instead of truncating it. Commands containing control characters use shell
-  escapes that preserve the argument bytes; ordinary commands, redirected text
-  and JSON retain their previous forms. The renderer tests specify both console
-  dimensions so their outcome does not depend on the runner's `TERM`.
-
-The Import Linter contracts cover static imports, including deferred imports.
-They do not detect arbitrary dynamic loading or filesystem calls through an
-otherwise allowed module; code review and runtime import checks remain necessary.
-The installed-wheel smoke test checks hooks in an isolated interpreter. Neither
-those checks nor dependency compatibility establish native qualification.
-
-None of the development checks qualifies a native installation. A study that
-adopts this version still decides, and does, the following under its own
-procedure:
-
-- **An environment with dependencies.** Installing one wheel with `--no-index`
-  no longer works. Keep the dependency wheels with the adoption record so the
-  environment can be rebuilt from recorded bytes:
-  `python -m pip download WHEEL -d wheelhouse`, then
-  `python -m pip install --no-index --find-links wheelhouse berman==VERSION`.
-  One dependency, `rpds-py`, is a compiled wheel for one platform and Python.
-- **A recorded identity that includes the environment.** `berman version`
-  differs from a `software.json` written by 0.4.1 in its version, its digests
-  and the new `environment`. A later change to an installed dependency changes
-  `berman version` and no source digest.
-- **A read of existing records before any write.** `berman status` and a plain
-  `berman verify` only read. Run them with the new version first: a record this
-  version refuses is reported there, with its place.
-- **Hook trust, native capture and native access.** Unchanged capture bytes can
-  leave a recorded basis mechanically valid. Whether that is sufficient, and
-  whether to renew it, is the study's decision. The hook command changes if the
-  runtime interpreter's path does.
-
-### Earlier versions
-
-The 0.2 package removes the checkout launcher and symlink installer. Install with
-pip instead. Reading editions use `berman --root PATH archive`; this command and
-archive verification use the active package interpreter. The workspace's
-`runtime_python` runs native harness callbacks and must have the chosen package
-installed; `python` runs sandbox probes and project checks. `init` records both
-explicitly, and disposable access checks retain the distinction.
-`berman verify --skip archive` remains available;
-the former test-suite skip options are removed.
-
-Version 0.4 removes the `legacy-codex` adapter: its routing, its packet layout
-with `narrative.md` and `scratch/` placeholders, its registry handling, the
-`berman.configuration/1` input format and the low-level `prepare` command that
-produced its packets. The frozen collector file stays, because both current
-collectors are built on it; `tests/support/frozen_packets.py` builds its own
-packet layout so that its capture, finalization, supplement and migration
-behavior is still exercised directly. The router, runtime and collector bytes
-changed, so an installation that adopts 0.4 renews hook trust and native
-capture.
-
-Version 0.3 added what adopting the package in an existing study needed. An
-installation maintains one adapter per harness. berman.json
-gains `runtime_python` (the interpreter generated hook commands name),
-`qualified_adapters` (adapters verification requires whether or not a connection
-selects them) and `edition` (the reading edition the workspace maintains).
-`berman capture definition` prints or writes the workspace hook template.
-Operation records name `runtime_python` when it differs from `python`, and a
-later change to it is refused like any other installation change.
+Notes on releases before 0.4.4 were removed from this guide; Git history keeps
+them.
 
 ## Preserved material
 

@@ -323,7 +323,7 @@ How these stand at the close is recorded in the last entries of the log.
     runtime was touched, nothing was tagged, pushed or published. The version
     was then `0.5.0.dev0`; see the entries below. What a study must still do
     to adopt it is in the
-    [development guide](../development.md#what-adopting-042-in-a-study-needs).
+    [development guide](../development.md#adopting-a-release-in-a-study).
 - **13 November 2026, independent review.** A reviewer given only the runtime
   diff ran 0.4.1 and this tree side by side on disposable workspaces. It found
   the recovery fixes, plain and JSON output, the terminal renderer and hook
