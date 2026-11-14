@@ -305,8 +305,9 @@ class ProductPreparationTests(unittest.TestCase):
     def prepare(self, run='run-900002', coverage=('notes',), **kwargs):
         options = dict(marker='Berman-Fieldwork-Run: ', connection='orchard')
         options.update(kwargs)
-        return fieldwork.prepare(self.collector, run, 'Discuss the plans.', self.base, 'fixture revision',
-                                 list(coverage), self.source, **options)
+        options.setdefault('project_name', 'Orchard')
+        options.setdefault('head', 'f' * 40)
+        return fieldwork.prepare(self.collector, run, self.base, list(coverage), self.source, **options)
 
     def test_a_notes_packet_names_its_marker_connection_and_destination(self):
         root = Path(self.prepare()['path'])

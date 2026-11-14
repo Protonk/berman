@@ -14,17 +14,50 @@ authentication and qualification are separate operator steps. Configure executab
 paths in berman.json. For Claude use CLAUDE_CONFIG_DIR naming that private home.
 
 The generated connection selects README.md and AGENTS.md as context and has no
-research plan. Choose the actual documents, commission and project checks for
-your project. A recipe uses schema berman.recipe/2, declares its connections and
-recording protocol, and names INSTRUCTIONS.md plus COMMISSION.md. Instructions
-contain exactly one `{{notes_directory}}` placeholder. The synthetic files under
-[minimal study example](../examples/minimal-study/README.md) shows the formats; these are
-examples for software testing, not research assignments to adopt automatically.
+research plan. Choose the actual documents and project checks for your project.
+A recipe uses schema berman.recipe/2, declares its connections and recording
+protocol, and names INSTRUCTIONS.md, which contains exactly one
+`{{notes_directory}}` placeholder. The
+[minimal study example](../examples/minimal-study/README.md) holds the baseline
+recipe and shows the formats.
 
 A plan uses berman.research-plan/1, an id, a connection and ordered steps with
 an id and recipe. Select its relative path in the connection's berman.json entry
 only when those engagements are wanted. Instructions are retained at reservation;
 changing a recipe does not change an already prepared assignment.
+
+## What a fieldworker receives
+
+A fieldworker's packet is its run directory under the packet root. It holds
+INSTRUCTIONS.md (the recipe's instructions with the notes directory filled in),
+ASSIGNMENT.md (the opening message), run.json and an empty `notes/`.
+`berman launch` submits ASSIGNMENT.md as the session's first message.
+
+The opening message is the same for every fieldworker. Only the run, the paths,
+the connection's name and the commit observed at preparation vary:
+
+```text
+Berman-Fieldwork-Run: run-NNN
+
+Your working directory is `PROJECT`. This assignment was prepared when NAME was at commit HEAD; the project may have moved since, so work from the checkout as you find it.
+
+Your run directory is `PACKET`. You can read and write everything in it, although the folder containing it is otherwise closed to you.
+
+As a fieldworker you have specific instructions, in `PACKET/INSTRUCTIONS.md`. Read them now, directly rather than asking for a copy, and follow them as you work.
+```
+
+The first line is the capture marker; a `berman-claude` packet opens with
+`Berman-Claude-Fieldwork-Run:`. Berman says nothing else to the fieldworker.
+Anything a study wants said about the project, how the work begins or what to
+attend to belongs in the recipe's INSTRUCTIONS.md. Before 0.4.4 a connection's
+commission and a recipe's research commission were appended to this message; the
+[development guide](development.md#version-044-one-opening-message) says what an
+adopting study changes.
+
+The baseline recipe in the minimal study example asks for plain accounts of work
+in progress, under the `work-accounts/1` protocol. Start a study's own recipe
+from it and change what the study needs. The baseline does not tell the
+fieldworker that the session is being recorded.
 
 ## Adapters and interpreters
 

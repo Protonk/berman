@@ -1,8 +1,7 @@
 Berman-Fieldwork-Run: run-001
 
-Your working directory is `<BASE>/stewart`. The revision or study target is: Synthetic development; preparation-time HEAD b2693747e4c12043e0d2de54527ae25b1d43a638.
-Read `<BASE>/fieldwork/run-001/INSTRUCTIONS.md` before beginning and follow its recording requirements.
+Your working directory is `<BASE>/stewart`. This assignment was prepared when Stewart was at commit b2693747e4c12043e0d2de54527ae25b1d43a638; the project may have moved since, so work from the checkout as you find it.
 
-Maintain this synthetic example project.
+Your run directory is `<BASE>/fieldwork/run-001`. You can read and write everything in it, although the folder containing it is otherwise closed to you.
 
-Also record what you notice while working.
+As a fieldworker you have specific instructions, in `<BASE>/fieldwork/run-001/INSTRUCTIONS.md`. Read them now, directly rather than asking for a copy, and follow them as you work.

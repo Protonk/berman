@@ -31,8 +31,7 @@
     "checks must be an array, not an object"
   ],
   "recipe-2/invalid/connections-as-text.json": [
-    "connections must be an array, not a string (\"orchard\")",
-    "research_commission is required"
+    "connections must be an array, not a string (\"orchard\")"
   ],
   "recipe-2/invalid/files-not-paths.json": [
     "coverage must be an array, not a string (\"notes\")",

@@ -202,9 +202,7 @@ class ProcessContentionTests(RecordTests):
         )
         files.write(self.root / 'berman.json', config)
         definition = files.read(self.root / 'connections/stewart/connection.json')
-        files.write(
-            self.root / 'connections/other.json', dict(definition, id='other', commission='stewart/COMMISSION.md')
-        )
+        files.write(self.root / 'connections/other.json', dict(definition, id='other'))
         plan = files.read(self.root / 'plans/stewart-fieldwork-roles/plan.json')
         files.write(self.root / 'plans/other.json', dict(plan, id='other', connection='other', commitment=None))
         self.edit('plans/stewart-fieldwork-roles/plan.json', commitment=None)

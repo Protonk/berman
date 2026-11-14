@@ -8,8 +8,6 @@
     "README.md",
     "COORDINATOR-HANDOFF.md"
   ],
-  "commission": "COMMISSION.md",
-  "revision": "Synthetic development; preparation-time HEAD {head}",
   "checks": [
     {
       "id": "stewart_cargo_metadata",

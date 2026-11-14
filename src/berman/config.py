@@ -18,6 +18,8 @@ CAPTURE_ADAPTERS = ('berman-codex', 'berman-claude')
 REMOVED_ADAPTERS = {'legacy-codex': 'berman-codex'}
 # Keys that would let a connection or installation entry place packets elsewhere.
 PACKET_ROOT_KEYS = ('packet_root', 'fieldwork', 'packets')
+# Text that used to be appended to the opening message.
+RETIRED = ('commission', 'revision')
 
 
 class Complete(Decision):
@@ -65,7 +67,7 @@ class Connection:
                              f'to {REMOVED_ADAPTERS[self.capture]} in berman.json. Recorded runs keep their packets')
         if self.capture not in CAPTURE_ADAPTERS:
             raise ValueError(f'Unknown capture adapter for {ident}: {self.capture}')
-        self.name = self.definition.get('name', self.id)
+        self.name = self.definition.get('name') or self.id  # Null is read as absent.
         plan = entry.get('plan')
         self.plan = None if plan is None else Plan(store, plan)
         if self.plan and self.plan.connection != self.id:
@@ -73,15 +75,6 @@ class Connection:
 
     def documents(self):
         return list(self.definition['documents'])
-
-    def commission(self):
-        return regular(inside(self.folder, self.definition['commission'], 'Commission')).read_text()
-
-    def revision(self, head):
-        template = self.definition['revision']
-        if template.count('{head}') != 1:
-            raise ValueError(f'Connection {self.id} revision text must contain one {{head}} placeholder')
-        return template.replace('{head}', head)
 
     def checks(self):
         return list(self.definition.get('checks', []))
@@ -91,15 +84,19 @@ class Connection:
 
     def files(self):
         """Every researcher-controlled file this description depends on."""
-        names = [self.definition_path, inside(self.folder, self.definition['commission'], 'Commission')]
+        names = [self.definition_path]
         return {str(p.relative_to(self.store.root)): digest(regular(p).read_bytes()) for p in names}
 
     def reservation(self):
         """The resolved description retained in each new run record."""
+        retired = [key for key in RETIRED if key in self.definition]
+        if retired:
+            raise Decision(f'Connection {self.id} names {" and ".join(retired)}, which no longer reaches a fieldworker: '
+                           'the opening message is the same for every connection. Move anything a fieldworker needs '
+                           f'into the recipe\'s instructions and remove {" and ".join(retired)} from {self.definition_path}')
         return {'id': self.id, 'name': self.name, 'definition': str(self.definition_path.relative_to(self.store.root)),
                 'files_sha256': self.files(), 'digest': digest_json(self.files()),
                 'version': self.definition.get('version'), 'documents': self.documents(),
-                'commission': self.commission(), 'revision_template': self.definition['revision'],
                 'checks': self.checks(), 'readers': self.definition.get('readers', []),
                 'checkout': str(self.checkout)}
 

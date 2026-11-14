@@ -1,8 +1,19 @@
 # A minimal study
 
-These synthetic files illustrate a recipe and a one-step research plan for a
+These files hold the baseline recipe and a one-step research plan for a
 connection named `example`. They contain no project recordings or qualification
-receipts. Adapt the commission and instructions to an agreed study before use.
+receipts.
+
+The baseline recipe gives a fieldworker one task: plain accounts of work in
+progress. Its [instructions](recipes/baseline/INSTRUCTIONS.md) are everything a
+recipe says to a fieldworker; the opening message that points to them is the
+same for every recipe and is shown in the
+[fieldwork guide](../../docs/usage.md#what-a-fieldworker-receives). Start a
+study's own recipe from the baseline and change what the study needs: the
+focus, what to attend to, how the project work begins. Keep exactly one
+`{{notes_directory}}` placeholder.
+
+The baseline does not tell the fieldworker that the session is being recorded.
 
 Initialize a workspace with `berman init /path/to/study --project /path/to/project
 --connection example`. Copy the `recipes/` and `plans/` directories beside its

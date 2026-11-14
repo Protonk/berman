@@ -9,7 +9,6 @@
   ],
   "recording_protocol": "participant-inquiry/1",
   "instructions": "INSTRUCTIONS.md",
-  "research_commission": "COMMISSION.md",
   "source": "synthetic fixture",
   "meaning": "Synthetic instructions for compatibility tests."
 }

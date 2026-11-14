@@ -15,7 +15,7 @@ from berman import files
 from berman import recovery
 from berman.files import Decision, keep, read, write
 from berman.installation import command as module_command
-from berman.recipes import compose, prepare, recipe, snapshot
+from berman.recipes import prepare, recipe, snapshot
 from berman.preserve import finish, finishable, preserve
 from berman.harnesses.codex import Harnesses
 from berman.lifecycle import (BEFORE_SESSION, CANCELLATION, SESSION_MATERIAL, authorized, declared, describe,
@@ -273,13 +273,11 @@ class Workflow:
         store = self.store
         with store.lock('global', wait=30):
             run = store.allocate(self.rows())
-            commission = compose(connection.commission(), selected['research_commission']) \
-                if 'research_commission' in selected else selected['commission']
             record = {'schema': 'berman.operation/1', 'run': run, 'phase': 'reserved',
                       'software': workspace.identity(),
                       'reserved_at_utc': files.now(), 'workspace': {'root': str(store.root), 'tag': store.tag},
                       'connection': connection.reservation(), 'plan': connection.plan.reservation(step),
-                      'step': step['id'], 'recipe': selected, 'commission': commission,
+                      'step': step['id'], 'recipe': selected,
                       'recording_protocol': selected['metadata']['recording_protocol'],
                       'project': str(connection.checkout), 'documents': connection.documents(),
                       'packet_root': str(store.field), 'packet': str(store.field / run),

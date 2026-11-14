@@ -1,4 +1,4 @@
-"""Versioned worker guidance, its composition with a connection's commission, and project snapshots."""
+"""Versioned worker guidance, its rendering into a packet, and project snapshots."""
 import os
 from pathlib import Path
 import re
@@ -13,10 +13,12 @@ from berman import recovery as fieldwork
 
 
 PROTOCOLS = ('work-accounts/1', 'participant-inquiry/1')
+# Text that used to be appended to the opening message.
+RETIRED = ('research_commission', 'commission')
 
 
 def recipe(store, name, connection):
-    """Recipe 2 wording is written for named connections and adds to the connection's commission."""
+    """Recipe 2 wording is written for named connections; its instructions are all a recipe says to a fieldworker."""
     if not re.fullmatch(r'[a-z][a-z0-9-]*', name):
         raise ValueError('Invalid recipe name')
     folder = store.root / 'recipes' / name
@@ -29,21 +31,20 @@ def recipe(store, name, connection):
     if connection.id not in meta.get('connections', []):
         raise Decision(f'Recipe {name} is worded for {", ".join(meta.get("connections", [])) or "no connection"}, '
                        f'not {connection.id}; introduce a separately versioned recipe')
+    retired = [key for key in RETIRED if key in meta]
+    if retired:
+        raise Decision(f'Recipe {name} names {" and ".join(retired)}, which no longer reaches a fieldworker: the opening '
+                       'message is the same for every recipe. Move anything a fieldworker needs into its instructions '
+                       f'and remove {" and ".join(retired)} from {folder / "recipe.json"}')
     schemas.validate('berman.recipe/2', meta, folder / 'recipe.json')
     result = {'metadata': meta}
-    for key in ('instructions', 'research_commission'):
-        path = Path(meta[key])
-        if path.is_absolute() or '..' in path.parts:
-            raise ValueError('Recipe file must stay within its directory')
-        result[key] = files.regular(folder / path).read_text()
+    path = Path(meta['instructions'])
+    if path.is_absolute() or '..' in path.parts:
+        raise ValueError('Recipe file must stay within its directory')
+    result['instructions'] = files.regular(folder / path).read_text()
     if result['instructions'].count('{{notes_directory}}') != 1:
         raise ValueError('Instructions must contain exactly one notes_directory placeholder')
     return result
-
-
-def compose(connection_commission, research_commission):
-    """The project commission, then the selected research instructions' commission."""
-    return connection_commission.rstrip('\n') + '\n\n' + research_commission
 
 
 def git_state(project):
@@ -116,13 +117,6 @@ def prepare(store, record):
     instructions = record['recipe']['instructions'].replace('{{notes_directory}}', str(packet / 'notes') + '/')
     source = folder / 'preparation/INSTRUCTIONS.md'
     keep(source, instructions.encode())
-    # Records reserved before connections retain the recipe's complete commission.
-    commission = record.get('commission', record['recipe'].get('commission'))
-    keep(folder / 'preparation/COMMISSION.md', commission.encode())
-    if record.get('connection'):
-        template = record['connection']['revision_template']
-    else:
-        template = store.connection(store.legacy_connection).definition['revision']
     capture_record = record.get('capture')
     if not capture_record:
         raise Decision(f'{run}: the reservation names no capture adapter; it predates the current adapters and cannot be prepared')
@@ -134,11 +128,16 @@ def prepare(store, record):
     if protocol is None:
         raise Decision('Reserved recipe needs a recording protocol before preparing its packet')
     if not packet.exists():
-        fieldwork.prepare(store.collector_for(record), run, commission, project,
-                          template.replace('{head}', context['head']), ['notes'], source, recording_protocol=protocol,
+        connection = record.get('connection') or {}
+        if record.get('commission') or not connection:
+            # Its commission would be dropped without a word, or it predates connections and names no project.
+            raise Decision(f'{run} was reserved by an earlier version whose opening message carried a commission; '
+                           'cancel this unused preparation and run berman new')
+        fieldwork.prepare(store.collector_for(record), run, project, ['notes'], source, recording_protocol=protocol,
                           marker=capture_record['marker'], layout=capture_record['layout'],
-                          connection=(record.get('connection') or {}).get('id'),
-                          harness='Claude Code' if record.get('harness', {}).get('id') == 'claude' else 'Codex CLI')
+                          connection=connection.get('id'),
+                          harness='Claude Code' if record.get('harness', {}).get('id') == 'claude' else 'Codex CLI',
+                          project_name=connection.get('name') or connection['id'], head=context['head'])
     if read(packet / 'run.json').get('recording_protocol') != protocol:
         raise Decision(f'{run}: packet protocol differs from its recipe; cancel this unused preparation and run berman new')
     # A retry must never replace an existing or worker-edited assignment.

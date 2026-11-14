@@ -126,8 +126,8 @@ The rule for what a schema refuses:
 - A field Berman only stores or prints is not constrained, null is read as
   absent, and every object stays open to fields the schema does not name.
 - A field only a later command reads is not required at load. A connection
-  without `documents`, `commission` and `revision` loads and serves
-  development; preparing fieldwork for it fails then, as before.
+  without `documents` loads and serves development; preparing fieldwork for it
+  fails then, as before.
 
 So a workspace or record that version 0.4.1 loaded still loads, with one class
 of exception: a list given as text, which was read character by character
@@ -242,6 +242,48 @@ every earlier behavior survives. Prefer a simple, robust corrective change over
 compatibility machinery. Describe changed refusals, output and verification
 scope, and any response an adopting study needs. Preserved evidence is never
 rewritten to make a new check pass.
+
+### Version 0.4.4: one opening message
+
+The opening message a fieldworker receives is now written entirely by Berman
+and is the same for every connection and recipe; the
+[fieldwork guide](usage.md#what-a-fieldworker-receives) shows it. It names the
+working directory, the connection's name and the commit observed at
+preparation, the run directory and its access, and the instructions. The access
+sentence used to be supplied by individual recipes.
+
+This is a breaking change. Three researcher inputs are retired: a connection's
+`commission` file and `revision` text, and a recipe's `research_commission`
+file. None of them reaches a fieldworker any more.
+
+- `berman new` refuses a connection that still names `commission` or `revision`
+  and a recipe that still names `research_commission` or `commission`, saying
+  which file to change. It does not ignore them: text a researcher wrote for a
+  fieldworker must not silently go undelivered. `status`, `verify` and
+  development still load such a connection.
+- New operation records carry no `commission`, their retained connection no
+  `commission` or `revision_template`, and no `preparation/COMMISSION.md` is
+  written. A packet's run.json records `manager.project` and `manager.head` in
+  place of `manager.revision`, and no `assignment_sha256`. Earlier records and
+  packets keep what they have and stay readable.
+- A packet prepared by an earlier version keeps its opening message and
+  launches unchanged. A reservation made by an earlier version whose packet was
+  never created is refused: cancel it and run `berman new` again.
+- Support trials use the same message, without the commit sentence.
+- `berman init` writes a connection with no commission.
+
+The minimal study example now holds the baseline recipe: plain accounts of work
+in progress. The baseline does not tell the fieldworker that the session is
+being recorded.
+
+The fingerprinted capture implementation, the archive builder, the probes, the
+launcher scripts and the frozen collector are byte for byte what 0.4.3 shipped.
+
+A study that adopts this version removes `commission` and `revision` from each
+connection.json and writes its recipes without a research commission, moving
+any text a fieldworker still needs into INSTRUCTIONS.md. Recipes kept only as a
+record of earlier runs can stay as they are; they are refused only if a plan
+selects them.
 
 ### Version 0.4.3: interruption recovery and preserved-evidence verification
 

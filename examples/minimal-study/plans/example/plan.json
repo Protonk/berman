@@ -2,7 +2,7 @@
   "schema": "berman.research-plan/1",
   "id": "example",
   "connection": "example",
-  "steps": [{"id": "first-account", "recipe": "work-account"}],
+  "steps": [{"id": "first-account", "recipe": "baseline"}],
   "commitment": "Example only; select after agreeing the engagement.",
   "relationships": []
 }

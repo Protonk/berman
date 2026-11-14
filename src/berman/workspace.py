@@ -90,10 +90,7 @@ def initialize(destination, project, connection, codex=None, claude=None):
                                          'name': connection, 'meaning': 'Portable identity of this evidence collection.'})
         write(stage / f'connections/{connection}/connection.json', {
             'schema': 'berman.connection/1', 'id': connection, 'name': connection, 'version': 1,
-            'documents': ['README.md', 'AGENTS.md'], 'commission': 'COMMISSION.md',
-            'revision': 'Project work; preparation-time HEAD {head}', 'checks': [], 'readers': []})
-        (stage / f'connections/{connection}/COMMISSION.md').write_text(
-            'Agree the development work and research instructions before assigning an engagement.\n')
+            'documents': ['README.md', 'AGENTS.md'], 'checks': [], 'readers': []})
         write(stage / 'connections/catalogue.json', {'schema': 'berman.run-catalogue/1', 'runs': [], 'support_collections': []})
         write(stage / 'source-layout.json', {'runs': []})
         write(stage / 'software.json', identity())

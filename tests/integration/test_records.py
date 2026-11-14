@@ -16,6 +16,7 @@ from unittest import mock
 
 from berman import cli, files, preserve, schemas, verify
 from berman.files import Decision, json_bytes, read, write
+from berman.recipes import prepare
 from berman.records import Store
 from berman.workflow import Workflow
 from tests.support.sessions import start
@@ -402,12 +403,54 @@ class ResearcherInputTests(RecordTests):
         with self.assertRaisesRegex(Decision, 'No research plan assigns fieldwork for connection tools'):
             self.workflow.new(connection='tools')
 
+    def test_text_the_opening_message_no_longer_carries_is_refused_not_ignored(self):
+        connection, recipe = 'connections/stewart/connection.json', 'recipes/work-accounts/recipe.json'
+        originals = {name: (self.root / name).read_bytes() for name in (connection, recipe)}
+        for relative, changes, message in (
+            (
+                connection,
+                {'commission': 'COMMISSION.md'},
+                'Connection stewart names commission, which no longer reaches',
+            ),
+            (
+                connection,
+                {'revision': 'Stewart at {head}'},
+                'Connection stewart names revision, which no longer reaches',
+            ),
+            (connection, {'commission': 'COMMISSION.md', 'revision': 'x {head}'}, 'names commission and revision,'),
+            (recipe, {'research_commission': 'COMMISSION.md'}, 'Recipe work-accounts names research_commission, which'),
+            (recipe, {'commission': 'COMMISSION.md'}, 'Recipe work-accounts names commission, which no longer reaches'),
+        ):
+            path = self.edit(relative, **changes)
+            self.load()
+            with self.subTest(changes=changes):
+                self.assertEqual(self.command('status')[0], 0, 'reading must still work')
+                with self.assertRaisesRegex(Decision, message) as caught:
+                    self.workflow.new()
+                self.assertIn(str(path), str(caught.exception))
+                self.assertEqual(self.store.discover(), [], 'a refused input allocated a run')
+            path.write_bytes(originals[relative])
+        self.load()
+        self.assertEqual(self.workflow.new()['run'], 'run-001')
+
+    def test_an_unprepared_reservation_that_carried_a_commission_is_refused(self):
+        run = self.workflow.new()['run']
+        record = self.store.record(run)
+        shutil.rmtree(self.store.field / run)
+        record.update(phase='reserved', commission='Discuss the work with me.')
+        self.store.save(record)
+        with self.assertRaisesRegex(
+            Decision, f'{run} was reserved by an earlier version .* cancel this unused preparation'
+        ):
+            prepare(self.store, self.store.record(run))
+        self.assertFalse((self.store.field / run).exists())
+
     def test_a_recipe_is_refused_when_selected_and_earlier_wording_is_kept(self):
         relative = 'recipes/work-accounts/recipe.json'
         path, original = self.root / relative, (self.root / relative).read_bytes()
-        self.edit(relative, research_commission=...)
+        self.edit(relative, instructions=...)
         with self.assertRaisesRegex(
-            schemas.InvalidRecord, f'{path} does not satisfy berman.recipe/2: research_commission is required'
+            schemas.InvalidRecord, f'{path} does not satisfy berman.recipe/2: instructions is required'
         ):
             self.workflow.new()
         self.assertEqual(self.store.discover(), [], 'a refused recipe allocated a run')

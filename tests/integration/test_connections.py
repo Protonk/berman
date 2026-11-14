@@ -37,16 +37,13 @@ def orchard(root, base, relationship=INQUIRY_RELATIONSHIP, default='stewart'):
     write(root / 'connections/orchard/connection.json', {
         'schema': 'berman.connection/1', 'id': 'orchard', 'name': 'Orchard', 'version': 1,
         'description': 'A disposable second repository with no Stewart bootstrap or auditor.',
-        'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'commission': 'COMMISSION.md',
-        'revision': 'Orchard maintenance; preparation-time HEAD {head}', 'checks': [], 'readers': []})
-    (root / 'connections/orchard/COMMISSION.md').write_text('Help maintain the orchard project with me.\n')
+        'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'checks': [], 'readers': []})
     recipe = root / 'recipes/orchard-accounts'
     write(recipe / 'recipe.json', {'schema': 'berman.recipe/2', 'id': 'orchard-accounts', 'connections': ['orchard'],
                                    'coverage': ['notes'], 'recording_protocol': 'work-accounts/1',
-                                   'instructions': 'INSTRUCTIONS.md', 'research_commission': 'COMMISSION.md',
+                                   'instructions': 'INSTRUCTIONS.md',
                                    'source': 'fixture', 'meaning': 'fixture'})
     (recipe / 'INSTRUCTIONS.md').write_text('# Orchard accounts\n\nWrite accounts of the work in `{{notes_directory}}`.\n')
-    (recipe / 'COMMISSION.md').write_text('Also keep accounts of the work as the instructions describe.\n')
     write(root / 'plans/orchard-study/plan.json', {
         'schema': 'berman.research-plan/1', 'id': 'orchard-study', 'connection': 'orchard',
         'steps': [{'id': 'orchard-first', 'recipe': 'orchard-accounts'}, {'id': 'orchard-second', 'recipe': 'orchard-accounts'}],
@@ -178,12 +175,25 @@ class SecondConnectionTests(Base):
         self.assertEqual(packet.parent, self.store.field)
         assignment = (packet / 'ASSIGNMENT.md').read_text()
         self.assertTrue(assignment.startswith('Berman-Fieldwork-Run: run-002\n'))
-        self.assertIn('Help maintain the orchard project with me.\n\nAlso keep accounts', assignment)
+        head = read(self.store.folder(one['run']) / 'preparation/initial-project/snapshot.json')['head']
+        self.assertEqual(assignment.split('\n\n')[1:], [
+            f'Your working directory is `{self.base / "orchard"}`. This assignment was prepared when Orchard was at '
+            f'commit {head}; the project may have moved since, so work from the checkout as you find it.',
+            f'Your run directory is `{packet}`. You can read and write everything in it, although the folder '
+            'containing it is otherwise closed to you.',
+            f'As a fieldworker you have specific instructions, in `{packet}/INSTRUCTIONS.md`. Read them now, directly '
+            'rather than asking for a copy, and follow them as you work.\n'])
         self.assertNotIn('Stewart', assignment)
+        record = self.store.record(one['run'])
+        self.assertNotIn('commission', record)
+        self.assertFalse({'commission', 'revision_template'} & set(record['connection']))
+        self.assertFalse((self.store.folder(one['run']) / 'preparation/COMMISSION.md').exists())
         self.assertIn(str(packet / 'notes') + '/', (packet / 'INSTRUCTIONS.md').read_text())
         self.assertFalse((packet / 'narrative.md').exists() or (packet / 'scratch').exists())
         meta = read(packet / 'run.json')
         self.assertEqual((meta['schema'], meta['connection']), ('berman.run-preparation/1', 'orchard'))
+        self.assertEqual((meta['manager']['project'], meta['manager']['head']), ('Orchard', head))
+        self.assertFalse({'assignment_sha256'} & set(meta) or 'revision' in meta['manager'])
         snap = read(self.store.folder(one['run']) / 'preparation/initial-project/snapshot.json')
         self.assertEqual([r['path'] for r in snap['files']], ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'])
         self.assertTrue(snap['files'][-1]['missing'])
@@ -259,7 +269,7 @@ class SecondConnectionTests(Base):
         # Within Stewart, a started run without a plan association still needs an explicit relationship.
         instructions = self.base / 'unplanned-instructions.md'
         instructions.write_text(f'Write accounts in `{self.store.field}/run-010/notes/`.\n')
-        fieldwork.prepare(self.berman, 'run-010', 'Unplanned', self.store.connections['stewart'].checkout, 'fixture',
+        fieldwork.prepare(self.berman, 'run-010', self.store.connections['stewart'].checkout,
                           ['notes'], instructions, marker=MARKER, connection='stewart')
         # A session bound outside any reservation: the collector itself would refuse it without a record.
         write(self.store.field / 'run-010/session/binding.json', {'run': 'run-010', 'session_id': 'unplanned-session'})

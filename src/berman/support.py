@@ -32,8 +32,6 @@ COLLECTED = ('collected', 'collected-incomplete')
 CLOSED = ('cleaned', 'abandoned')
 REQUIRED_EVENTS = ['Stop', 'SessionEnd']
 PROBLEMS = (OSError, ValueError, KeyError, TypeError)
-ASSIGNMENT = 'Perform the one-response support check described in INSTRUCTIONS.md.'
-REVISION = 'native support trial of {adapter} capture; not a research engagement and not a study of any project'
 RETIREMENT = ('Closed native support trial preserved in a separate collection; future resumption must not refresh '
               'this frozen packet.')
 LIMITATIONS = 'Codex folder-trust entries are left in Codex configuration; Berman does not edit it.'
@@ -239,7 +237,7 @@ def prepare(store, path, adapter, harness=None):
         source = folder / 'SUPPORT-INSTRUCTIONS.txt'
         keep(source, instructions(packet, trial['expected_reply']).encode())
         if not packet.exists():
-            fieldwork.prepare(store.collector_for(record), run, ASSIGNMENT, project, REVISION.format(adapter=adapter),
+            fieldwork.prepare(store.collector_for(record), run, project,
                               ['notes'], source, recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=a['marker'],
                               layout=a['layout'], connection=fieldwork.SUPPORT_CONNECTION)
         harness.install_profile(run, project, folder)

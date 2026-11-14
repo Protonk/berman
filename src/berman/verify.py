@@ -326,15 +326,12 @@ def fixture_connection(root, base, plans):
     write(folder / 'connection.json', {
         'schema': 'berman.connection/1', 'id': FIXTURE, 'name': 'Native check fixture', 'version': 1,
         'description': 'A disposable project that exercises the notes layout natively; never launched.',
-        'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'commission': 'COMMISSION.md',
-        'revision': 'Native access fixture; preparation-time HEAD {head}', 'checks': [], 'readers': []})
-    (folder / 'COMMISSION.md').write_text('Help maintain the disposable native-check project.\n')
+        'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'checks': [], 'readers': []})
     write(recipe / 'recipe.json', {
         'schema': 'berman.recipe/2', 'id': FIXTURE, 'connections': [FIXTURE], 'coverage': ['notes'],
-        'recording_protocol': 'work-accounts/1', 'instructions': 'INSTRUCTIONS.md', 'research_commission': 'COMMISSION.md',
+        'recording_protocol': 'work-accounts/1', 'instructions': 'INSTRUCTIONS.md',
         'source': 'berman verify --native-access', 'meaning': 'Native access fixture; never launched.'})
     (recipe / 'INSTRUCTIONS.md').write_text('# Native check fixture\n\nWrite accounts of the work in `{{notes_directory}}`.\n')
-    (recipe / 'COMMISSION.md').write_text('Also keep accounts of the work as the instructions describe.\n')
     write(plan / 'plan.json', {
         'schema': 'berman.research-plan/1', 'id': FIXTURE, 'connection': FIXTURE,
         'steps': [{'id': 'native-check', 'recipe': FIXTURE}],

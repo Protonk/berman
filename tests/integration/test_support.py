@@ -361,7 +361,7 @@ class ReservationTests(SupportBase):
         self.assertTrue((packet / 'notes').is_dir())
         self.assertFalse((packet / 'narrative.md').exists() or (packet / 'scratch').exists())
         with self.assertRaisesRegex(ValueError, 'reserved for native support-trial packets'):
-            fieldwork.prepare(self.berman, 'run-000050', 'x', self.base / 'stewart', 'rev', ['notes'],
+            fieldwork.prepare(self.berman, 'run-000050', self.base / 'stewart', ['notes'],
                               self.folder('notes') / 'SUPPORT-INSTRUCTIONS.txt', recording_protocol='support-trial/1',
                               marker=collector.MARKER, layout='notes', connection='orchard')
         self.assertFalse((self.store.field / 'run-000050').exists())

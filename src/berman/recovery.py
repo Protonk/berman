@@ -126,8 +126,24 @@ def workspace_lock(analysis, wait=30):
         os.close(fd)
 
 
-def prepare(collector, run, assignment, manager_cwd, revision, coverage, instructions_from=None, recording_protocol=None,
-            marker=None, layout='notes', connection=None, harness='Codex CLI'):
+def opening(marker, run, manager_cwd, root, project_name=None, head=None):
+    """The opening message: the same for every fieldworker, whatever the connection or recipe.
+
+    Only the run, the paths, the connection's name and the commit observed at preparation vary. A support
+    trial studies no project and gives neither a name nor a commit.
+    """
+    prepared = (f' This assignment was prepared when {project_name} was at commit {head}; the project may have moved '
+                'since, so work from the checkout as you find it.') if head else ''
+    return (marker + run + '\n\n'
+            f'Your working directory is `{manager_cwd}`.{prepared}\n\n'
+            f'Your run directory is `{root}`. You can read and write everything in it, although the folder '
+            'containing it is otherwise closed to you.\n\n'
+            f'As a fieldworker you have specific instructions, in `{root}/INSTRUCTIONS.md`. Read them now, directly '
+            'rather than asking for a copy, and follow them as you work.\n')
+
+
+def prepare(collector, run, manager_cwd, coverage, instructions_from=None, recording_protocol=None,
+            marker=None, layout='notes', connection=None, harness='Codex CLI', project_name=None, head=None):
     """Prepare a notes packet: INSTRUCTIONS.md, ASSIGNMENT.md, run.json and an empty notes/ directory.
 
     Packets of the removed legacy-codex adapter also carried narrative.md and scratch/ placeholders;
@@ -135,8 +151,8 @@ def prepare(collector, run, assignment, manager_cwd, revision, coverage, instruc
     """
     if not legacy.RUN.fullmatch(run):
         raise ValueError('Run must have 3 to 6 digits')
-    if not assignment.strip() or not revision.strip():
-        raise ValueError('Assignment and revision are required; use an explicit description such as not-applicable for a support trial')
+    if bool(project_name and project_name.strip()) != bool(head and head.strip()):
+        raise ValueError('Name the project and its observed commit together, or neither for a support trial')
     files.safe_directory(manager_cwd)
     if layout != 'notes' or set(coverage) != {'notes'}:
         raise ValueError('Packets use the notes layout with notes coverage; the narrative and scratch layout was removed')
@@ -165,16 +181,11 @@ def prepare(collector, run, assignment, manager_cwd, revision, coverage, instruc
             raise ValueError('Notes instructions must not carry the old narrative or scratch destinations')
         if 'git-commands.log' in text:
             raise ValueError('Source instructions require a Git log, which notes coverage does not provide')
-        opening = (marker + run + '\n\n'
-                   f'Your working directory is `{manager_cwd}`. The revision or study target is: {revision}.\n'
-                   f'Read `{root}/INSTRUCTIONS.md` before beginning and follow its recording requirements.\n\n'
-                   + assignment.rstrip() + '\n')
         metadata = {'schema': 'berman.run-preparation/1', 'run': run, 'prepared_at_utc': files.now(),
-                    'manager': {'cwd': str(manager_cwd), 'revision': revision, 'harness': harness,
+                    'manager': {'cwd': str(manager_cwd), 'project': project_name, 'head': head, 'harness': harness,
                                 'model': 'selected by operator; not set by this packet'},
                     'coverage': coverage, 'instructions_from': str(source),
                     'source_instructions_sha256': files.digest(source.read_bytes()),
-                    'assignment_sha256': files.digest(assignment.encode()),
                     'recording_protocol': recording_protocol or 'work-accounts/1',
                     'collector_layout': {'notes/': 'Requested participant accounts and selected supporting copies.'},
                     'connection': connection, 'capture_marker': marker.strip()}
@@ -182,7 +193,7 @@ def prepare(collector, run, assignment, manager_cwd, revision, coverage, instruc
         try:
             (staging / 'notes').mkdir()
             (staging / 'INSTRUCTIONS.md').write_text(text)
-            (staging / 'ASSIGNMENT.md').write_text(opening)
+            (staging / 'ASSIGNMENT.md').write_text(opening(marker, run, manager_cwd, root, project_name, head))
             (staging / 'run.json').write_bytes(files.json_bytes(metadata))
             staging.rename(root)
         finally:

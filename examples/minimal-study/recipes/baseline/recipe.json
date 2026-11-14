@@ -1,0 +1,10 @@
+{
+  "schema": "berman.recipe/2",
+  "id": "baseline",
+  "connections": ["example"],
+  "coverage": ["notes"],
+  "recording_protocol": "work-accounts/1",
+  "instructions": "INSTRUCTIONS.md",
+  "source": "Berman's minimal study example",
+  "meaning": "A baseline fieldworker task: plain accounts of work in progress. A study's own recipes start from it and change what they need. It does not tell the fieldworker that the session is being recorded."
+}

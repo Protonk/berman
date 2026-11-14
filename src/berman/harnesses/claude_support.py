@@ -49,8 +49,7 @@ def prepare(store, path):
                       'After completing the requested calls, reply exactly ' + trial['expected_reply'] + '\n').encode())
         packet = Path(record['packet'])
         if not packet.exists():
-            fieldwork.prepare(store.collector_for(record), run, support.ASSIGNMENT, connection.checkout,
-                              support.REVISION.format(adapter=ADAPTER), ['notes'], source,
+            fieldwork.prepare(store.collector_for(record), run, connection.checkout, ['notes'], source,
                               recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=adapters.ADAPTERS[ADAPTER]['marker'],
                               layout='notes', connection=fieldwork.SUPPORT_CONNECTION, harness='Claude Code')
         harness = claude.Claude(store)
