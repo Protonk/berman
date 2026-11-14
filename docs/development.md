@@ -243,7 +243,7 @@ compatibility machinery. Describe changed refusals, output and verification
 scope, and any response an adopting study needs. Preserved evidence is never
 rewritten to make a new check pass.
 
-### Unreleased: interruption recovery and preserved-evidence verification
+### Version 0.4.3: interruption recovery and preserved-evidence verification
 
 The normal suite now kills real child processes before and after reservation,
 snapshot publication, packet placement, capture writes, closing-context copies,
@@ -284,7 +284,7 @@ snapshot files with no metadata as missing evidence. Inconsistent snapshots
 produce unknown capture state rather than the claim that no snapshot has yet
 been made. Reading changes none of these files.
 
-An adopting study should first run the candidate's read-only verification and
+An adopting study should first run the new version's read-only verification and
 review newly reported gaps. Restore missing evidence from known copies where
 available; decide and record any reconstruction separately. Never invent a past
 researcher ending. Earlier inventoried temporary files remain preserved as they
@@ -302,10 +302,10 @@ capture bytes or hook commands require closed captures and renewed
 installation-specific qualification, including actual CLI trust review where
 applicable. Never reuse another study's receipts.
 
-### Version 0.4.3 candidate: portable evidence and atomic capture
+### Version 0.4.3: portable evidence and atomic capture
 
-This is a prepared release candidate; a version string is not a publication or
-study adoption. New modules `evidence.py`, `snapshots.py` and
+Publishing this software does not adopt it in an existing study.
+New modules `evidence.py`, `snapshots.py` and
 `capture/transaction.py` separate portable recording contracts, capture commit
 publication and adapter behavior. The frozen collector remains byte-identical.
 `files.py`, `snapshots.py` and `capture/transaction.py` are included in adapter
@@ -335,7 +335,7 @@ model; they do not establish power-loss durability, callback delivery or capture
 completeness in native tools.
 
 Adoption requires a researcher maintenance window: close old captures with the
-pinned runtime, preserve the candidate wheel plus complete dependency wheelhouse,
+pinned runtime, preserve the released wheel plus complete dependency wheelhouse,
 review historical exports and agree the collection UUID, then import manifests
 beside originals if desired. Rebuild an edition as a new publication. Update
 analysis attachment and snapshot readers. Renew actual CLI hook trust, native
