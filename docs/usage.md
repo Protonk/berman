@@ -1,7 +1,7 @@
 # Running fieldwork
 
 A fieldwork workspace holds berman.json, named connections, versioned recipes,
-executable research plans, operations and preserved runs. The software checkout
+optional research plans, operations and preserved runs. The software checkout
 is independent. Select a workspace with `berman --root PATH status` or run the
 command from within that workspace's repository.
 
@@ -21,10 +21,20 @@ protocol, and names INSTRUCTIONS.md, which contains exactly one
 [minimal study example](../examples/minimal-study/README.md) holds the baseline
 recipe and shows the formats.
 
-A plan uses berman.research-plan/1, an id, a connection and ordered steps with
-an id and recipe. Select its relative path in the connection's berman.json entry
-only when those engagements are wanted. Instructions are retained at reservation;
-changing a recipe does not change an already prepared assignment.
+A researcher can assign a recipe directly with `berman new --recipe NAME`,
+adding `--connection NAME` when needed. Without a recipe argument, a fresh
+assignment comes from the selected plan. Without either, Berman asks for a
+recipe choice; it never chooses a default.
+
+A plan is optional. It uses berman.research-plan/1, an id, a connection and
+ordered steps with an id and recipe. Select its relative path in the connection's
+berman.json entry when those engagements are wanted. Direct assignments neither
+consume its steps nor depend on its commitments or relationships; those fields
+are study annotations. A missing or invalid selected plan is reported by status,
+cheatsheet and workspace verification, while direct assignment, retained retries,
+named launch, preservation and development remain available with otherwise valid
+inputs. Instructions are retained at reservation; changing a plan or recipe does
+not change an already reserved assignment.
 
 ## What a fieldworker receives
 
@@ -96,7 +106,11 @@ operator's decision. Claude uses separately qualified per-launch settings.
 
 ## Engagements
 
-`berman new` prepares the next assigned step without choosing a run number.
+`berman new --recipe NAME` prepares a direct assignment without choosing a run
+number. Bare `berman new` prepares the selected plan's next step or retries an
+unused preparation. Preparation results and status identify the retained recipe
+and assignment origin (`direct` or `plan`). Historical missing origins remain
+unrecorded rather than being inferred.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
 starts a prepared session. `berman status` reports outstanding work.
 
@@ -130,6 +144,32 @@ allocates no second run and declares no second ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
 Use the workflow rather than manually repeating profile, packet or migration steps.
 
+An open engagement requires the existing choice when preparing another:
+`berman new --recipe NAME --keep-open` retains it, and
+`berman new --recipe NAME --finish-previous 'why it ended'` declares its actual
+ending before preserving it. A selected plan can supply the recipe when that
+argument is omitted. The cheatsheet labels commands containing `RECIPE` as
+templates requiring a recipe choice, separately from runnable prepared sessions.
+While an unused preparation or pending combined request binds the assignment,
+the cheatsheet offers the retained launch or retry rather than a fresh recipe
+template.
+
+An unused preparation retains its exact recipe, instructions and assignment
+origin even if its source plan or recipe is edited or removed. Retry with bare
+`berman new`; a repeated `--recipe NAME` must match the retained recipe id.
+Changing assignment bytes requires cancelling the unused preparation and making
+a new assignment. Existing harness, checkout, workspace and access checks still
+apply to the reservation.
+
+A combined finish/preparation request binds the next reserved run before
+declaring the previous engagement ended. An interrupted request resumes that
+same target and reason; a conflicting recipe, ending reason or `--keep-open`
+is refused before further changes. Cancelling its unused target cancels further
+preparation by that request, preserving any ending already declared. Pending
+historical `berman.new-request/1` requests must be settled with their original
+installation before adopting this request contract; completed historical
+requests remain readable unchanged.
+
 When retrying interrupted preparation or preservation, Berman retains abandoned
 writer-owned temporary files under `.state/recovery/RUN/`, with receipts naming
 their origins and recording their bytes and metadata. Results identify these
@@ -139,6 +179,15 @@ not remove anything from an already preserved run. Keep the recovery directory
 with the study; it is not automatically included in a reading edition.
 
 ## Verify preserved recordings
+
+`berman verify --native-access` separately checks access using explicitly
+diagnostic instructions in disposable workspaces. By default it checks every
+configured Codex connection, including connections without a study plan, and a
+synthetic target. It retains each connection's actual checkout, selected
+documents and project checks; it copies no study plan and chooses no research
+recipe. It launches no fieldworker or model and establishes neither hook trust
+nor native capture. Claude uses its separate bounded support trial. A direct
+research preparation still performs its own readiness checks.
 
 `berman verify` includes a required `recordings` check, separately from checking
 the generated reading edition. It reads preserved runs and their inventories,

@@ -11,7 +11,7 @@ research decision and end by an explicit declaration; a session callback alone
 never declares the research complete.
 
 This repository contains the reusable software. Each study keeps its own
-project connections, research plans, instructions, recordings and analysis.
+project connections, optional research plans, instructions, recordings and analysis.
 You can develop and test Berman using the included synthetic examples.
 
 ## Getting started
@@ -47,8 +47,11 @@ berman --root /path/to/study status
 `init` creates separate harness homes inside the study, an empty inventory and a
 connection with no assigned plan. It installs no hooks, changes no project files
 and starts no session. The [minimal study example](examples/minimal-study/README.md)
-shows the configuration formats. Read [the fieldwork guide](docs/usage.md) before
-assigning a plan or qualifying an installation.
+shows the configuration formats. After configuring and qualifying the installation,
+choose a recipe directly with `berman new --recipe NAME`. A selected research plan
+can instead supply ordered assignments to bare `berman new`; connecting a project
+alone assigns nothing. Read [the fieldwork guide](docs/usage.md) before preparing
+fieldwork.
 
 `berman verify --software` checks the installed package. To check a configured
 study, use `berman --root /path/to/study verify`. Developer tests run separately;

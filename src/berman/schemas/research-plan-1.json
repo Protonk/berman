@@ -2,23 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:research-plan-1",
   "title": "berman.research-plan/1",
-  "description": "Which engagements are wanted for one connection, in order (plan.json). Loading reads the plan's id and connection, each step's id and each relationship's plan. A step's recipe is read when that step is next, so a later step may not have one yet. Identities, unique step identities and the plan's agreement with its connection are judged by berman.config. Fields Berman only stores or prints are not constrained.",
+  "description": "Optional ordered assignments for one connection. Step identity and plan ownership are checked by berman.config. Commitment and relationship text are study annotations, not operational preconditions.",
   "type": "object",
-  "required": ["schema", "id", "connection", "steps"],
+  "required": [
+    "schema",
+    "id",
+    "connection",
+    "steps"
+  ],
   "properties": {
-    "schema": {"const": "berman.research-plan/1"},
+    "schema": {
+      "const": "berman.research-plan/1"
+    },
     "steps": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id"]
-      }
-    },
-    "relationships": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["plan"]
+        "required": [
+          "id"
+        ]
       }
     }
   }

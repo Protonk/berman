@@ -72,6 +72,7 @@ def main(argv=None):
         sub.add_argument('--connection', help='connection to operate within; an explicit --run determines its own')
         return sub
     new = selecting('new', 'settle authorized preservation and prepare the next fieldworker')
+    new.add_argument('--recipe', help='directly assign this recipe; on retry, check the retained recipe id')
     disposition = new.add_mutually_exclusive_group()
     disposition.add_argument('--finish-previous', metavar='REASON', help='declare the single previous engagement finished')
     disposition.add_argument('--keep-open', action='store_true', help='retain existing engagements for continuation')
@@ -209,7 +210,7 @@ def main(argv=None):
         elif args.command == 'cheatsheet':
             result = workflow.cheatsheet()
         elif args.command == 'new':
-            result = workflow.new(args.finish_previous, args.keep_open, args.connection)
+            result = workflow.new(args.finish_previous, args.keep_open, args.connection, recipe_name=args.recipe)
         elif args.command == 'finish':
             result = workflow.finish(args.reason, args.run, args.allow_incomplete, args.connection)
         elif args.command == 'supplement':

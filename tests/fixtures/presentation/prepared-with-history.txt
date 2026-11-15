@@ -1,5 +1,6 @@
 Preserved run-005: /synthetic/study/archive/recordings/run-005.zip
 run-006 (orchard) ready using participant-inquiry. Prior native checks reused; configuration unchanged.
+Assignment: participant-inquiry; origin: plan
 Warning: Claude CLI changed since qualification.
 Launch when ready:
 

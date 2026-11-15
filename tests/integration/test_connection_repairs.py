@@ -258,7 +258,8 @@ class ReviewRegressionTests(Base):
         # With every start indicator unreadable, status reports uncertainty, not the repeat.
         self.berman.registry(event['session_id']).write_text('{broken registry')
         status = self.workflow.status()
-        self.assertIn('starting state is unknown', status['next_recipe'])
+        self.assertIsNone(status['next_recipe'])
+        self.assertIn('starting state is unknown', status['connections']['stewart']['plan_error'])
         row = next(r for r in status['runs'] if r['run'] == one['run'])
         self.assertIn('registered', row['unknown'])
         self.assertEqual(row['lifecycle']['registered']['unknown'], row['problems'])

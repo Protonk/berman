@@ -6,6 +6,23 @@ behavior. A fresh installation still needs
 native access and capture qualification for its actual CLI versions and platform.
 The separated source has not inherited another installation's trust.
 
+Research plans are optional ordered assignments. Their `commitment` and
+`relationships` fields are annotations; Berman no longer enforces cross-project
+promises. A study can retain such promises in its own practice. Direct assignment
+requires an explicit recipe choice, and a broken selected plan remains visible
+without preventing retained work or a direct assignment with valid inputs.
+
+Pending historical `berman.new-request/1` combined requests need settlement with
+their original installation before adoption. Berman reads completed historical
+requests unchanged; it does not infer a reserved assignment for a pending old
+request. New requests reserve the target before declaring the previous ending.
+
+Native access verification checks all configured Codex connections using a
+diagnostic recipe in disposable roots, including connections without plans. A
+passing diagnostic establishes the checked sandbox access with those instructions,
+not that a study assignment was supplied, that hooks are trusted or that native
+capture works. No fieldworker or model is launched by this diagnostic.
+
 Native sandbox access is primarily developed for macOS. Ordinary development
 launchers remain a Stewart-specific compatibility adapter, described in
 [their guide](development-launchers.md). Named fieldwork connections

@@ -567,6 +567,14 @@
       "items": {
         "type": "object"
       }
+    },
+    "assignment_origin": {
+      "enum": [
+        "direct",
+        "plan",
+        null
+      ],
+      "description": "Explicit origin of a new assignment; missing historical origin remains unknown."
     }
   }
 }

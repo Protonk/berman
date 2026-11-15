@@ -61,6 +61,16 @@ def validate_record(value, run):
 def research(value):
     """Problems in a research engagement's record."""
     problems = []
+    origin = value.get('assignment_origin')
+    if origin is not None:
+        if origin not in ('direct', 'plan'):
+            problems.append('assignment_origin must be direct or plan')
+        elif origin == 'direct' and (value.get('plan') is not None or value.get('step') is not None):
+            problems.append('a direct assignment cannot claim a plan or step')
+        elif origin == 'plan':
+            plan = value.get('plan')
+            if not isinstance(plan, dict) or not plan.get('id') or 'step' not in plan or plan['step'] != value.get('step'):
+                problems.append('a planned assignment needs its plan identity and matching step')
     phase = value.get('phase')
     if phase not in PHASES:
         problems.append(f'unknown phase {phase!r}')
@@ -116,18 +126,27 @@ PURPOSES = {None: research, 'support-trial': support}
 
 def validate_request(value):
     """A combined new-run request unchanged, or ValueError naming its problems."""
-    if not isinstance(value, dict) or value.get('schema') != 'berman.new-request/1':
-        raise ValueError('not a berman.new-request/1 record')
+    if not isinstance(value, dict) or value.get('schema') not in ('berman.new-request/1', 'berman.new-request/2'):
+        raise ValueError('not a berman.new-request/1 or berman.new-request/2 record')
+    reserved = value['schema'] == 'berman.new-request/2'
     problems = []
-    if value.get('state') not in ('pending', 'complete'):
+    states = ('pending', 'complete', 'cancelled') if reserved else ('pending', 'complete')
+    if value.get('state') not in states:
         problems.append(f'unknown state {value.get("state")!r}')
     for key in ('previous_run', 'result_run'):
         run = value.get(key)
-        if (run is not None or key == 'previous_run') and not (isinstance(run, str) and RUN.fullmatch(run)):
+        if (reserved or run is not None or key == 'previous_run') and not (isinstance(run, str) and RUN.fullmatch(run)):
             problems.append(f'{key} is not a run identity')
-    for key in ('finish_reason', 'step'):
-        if not isinstance(value.get(key), str) or not value[key]:
+    for key in (('finish_reason', 'connection') if reserved else ('finish_reason', 'step')):
+        if not isinstance(value.get(key), str) or not (value[key].strip() if reserved else value[key]):
             problems.append(f'{key} is missing')
+    if reserved and value.get('previous_run') == value.get('result_run'):
+        problems.append('previous_run and result_run must differ')
+    if reserved and value.get('state') == 'cancelled':
+        cancellation = value.get('cancellation')
+        if (not isinstance(cancellation, dict) or not isinstance(cancellation.get('reason'), str)
+                or not cancellation['reason'].strip() or not isinstance(cancellation.get('at_utc'), str)):
+            problems.append('a cancelled request needs a reason and at_utc')
     if problems:
         raise ValueError('; '.join(problems))
     return value

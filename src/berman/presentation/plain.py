@@ -72,7 +72,17 @@ def cheatsheet(result):
             lines += ['      ' + dev['command'] + ' --check' for dev in conn['development']]
         lines.append('')
         commands, fieldwork = conn['commands'], conn['fieldwork']
+        recipe_choice = not conn['next_recipe'] and not (
+            fieldwork['ready'] or fieldwork['incomplete'] or conn.get('pending_requests')
+        )
         lines.append('  Fieldwork:')
+        if conn.get('plan_error'):
+            lines.append('    plan needs attention: ' + conn['plan_error'])
+        for path in conn.get('pending_requests', []):
+            lines.append('    pending combined request: ' + path)
+        if conn.get('pending_requests'):
+            lines.append('    resume the recorded request with:')
+            lines.append('      ' + commands['new'])
         if conn['operation_in_progress']:
             lines.append('    an operation is in progress on this connection; wait for it, then ' + commands['status'])
         for item in fieldwork['attention']:
@@ -84,17 +94,26 @@ def cheatsheet(result):
             lines.append(f'    {run} has an incomplete preparation; complete it with:')
             lines.append('      ' + commands['new'])
         for run, finish, supplement in zip(fieldwork['open'], commands['finish'], commands['supplement'], strict=True):
-            lines.append(f'    {run} is an open engagement. When the researcher says it has ended:')
-            lines.append('      ' + finish)
-            lines.append('    or end it while preparing the next fieldworker:')
-            lines.append('      ' + commands['finish_previous'])
-            lines.append('    or keep it open while preparing another:')
-            lines.append('      ' + commands['keep_open'])
+            if conn.get('pending_requests'):
+                lines.append(f'    {run} is an open engagement; resume the recorded request before another choice.')
+            else:
+                lines.append(f'    {run} is an open engagement. When the researcher says it has ended:')
+                lines.append('      ' + finish)
+                lines.append(
+                    '    or end it while preparing the next fieldworker'
+                    + (' (choose a recipe; replace RECIPE):' if recipe_choice else ':')
+                )
+                lines.append('      ' + commands['finish_previous'])
+                lines.append(
+                    '    or keep it open while preparing another'
+                    + (' (choose a recipe; replace RECIPE):' if recipe_choice else ':')
+                )
+                lines.append('      ' + commands['keep_open'])
             lines.append('    retain later activity without ending it:')
             lines.append('      ' + supplement)
         for run in fieldwork['ending']:
             lines.append(f'    {run} has a declared ending in progress; ' + commands['status'] + ' shows its state')
-        if not any(fieldwork.values()):
+        if not any(fieldwork.values()) and not conn.get('pending_requests'):
             if conn['next_recipe']:
                 lines.append(
                     f'    nothing outstanding; the next agreed role is {conn["next_recipe"]}. Prepare it with:'
@@ -103,9 +122,13 @@ def cheatsheet(result):
                 lines.append('    then start it with the launch command that new prints')
             else:
                 lines.append('    nothing outstanding; ' + (conn['next_note'] or 'no next role'))
-                lines.append('    a fieldworker needs a research plan that assigns one; development stays available')
         elif conn['next_recipe'] and not fieldwork['ready'] and not fieldwork['incomplete']:
             lines.append(f'    the next agreed role after these is {conn["next_recipe"]}')
+        if commands.get('new_direct') and not (
+            fieldwork['ready'] or fieldwork['incomplete'] or conn.get('pending_requests')
+        ):
+            lines.append('    Direct assignment template (choose a recipe; replace RECIPE):')
+            lines.append('      ' + commands['new_direct'])
         lines.append('')
     lines.append(result['meaning'])
     return '\n'.join(lines)
@@ -127,7 +150,11 @@ def status(result):
         lines.append('Workspace needs attention: ' + problem)
     for name, row in result['connections'].items():
         busy = '; an operation is in progress' if row['operation_in_progress'] else ''
-        lines.append(f'{name}: next fieldwork role: {row["next_recipe"]}{busy}')
+        lines.append(f'{name}: next planned fieldwork role: {row["next_recipe"] or "none"}{busy}')
+        if row.get('plan_error'):
+            lines.append('  plan needs attention: ' + row['plan_error'])
+        if not row['next_recipe'] and row.get('next_note'):
+            lines.append('  ' + row['next_note'])
         for problem in row['blocked_by']:
             lines.append('  needs attention: ' + problem)
         for path in row['pending_requests']:
@@ -136,6 +163,7 @@ def status(result):
         lines.append('No outstanding engagements or preparations.')
     for row in result['runs']:
         lines.append(f'{row["run"]} ({row["connection"]}): {row["summary"]}')
+        lines.append('  ' + assignment(row))
         if row['last_capture']:
             lines.append(f'  Capture at {row["last_capture"]}; consistent: {row["capture_consistent"]}')
         lines += [f'  {name} unknown: {reason}' for name, reason in unknown_reasons(row)]
@@ -160,6 +188,14 @@ def prepared(result):
         else 'Native checks passed in this preparation.'
     )
     lines.append(f'{result["run"]} ({result["connection"]}) ready using {result["recipe"]}. {checks}')
+    lines.append(assignment(result))
     lines += ['Warning: ' + warning for warning in result.get('warnings', [])]
     lines.append('Launch when ready:\n\n' + result['launch'])
     return '\n'.join(lines)
+
+
+def assignment(row):
+    """Expose retained assignment facts without inferring missing historical origin."""
+    return (
+        f'Assignment: {row.get("recipe") or "not recorded"}; origin: {row.get("assignment_origin") or "not recorded"}'
+    )

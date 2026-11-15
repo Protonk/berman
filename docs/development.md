@@ -33,7 +33,7 @@ It never runs the developer tests or requires this checkout.
 | --- | --- | --- | --- |
 | Ruff | development | Lint on everything but the frozen collector; formatting of files written since it was adopted. | `[tool.ruff]` in `pyproject.toml` |
 | Import Linter | development | Eight architectural contracts over the import graph. | `[tool.importlinter]` in `pyproject.toml` |
-| JSON Schema (`jsonschema`) | runtime | Thirteen packaged structural contracts; workspace records checked on access, standalone evidence contracts also checked by dependency-free readers. | `src/berman/schemas/` |
+| JSON Schema (`jsonschema`) | runtime | Packaged structural contracts; workspace records checked on access, standalone evidence contracts also checked by dependency-free readers. | `src/berman/schemas/` |
 | Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. | `tests/properties/`, `tests/support/properties.py` |
 | Rich | runtime | Operator-facing output on an interactive terminal. | `src/berman/presentation/terminal.py` |
 | Packaging | runtime | Python requirements, versions and environment markers for installation verification. | `src/berman/environment.py` |
@@ -107,11 +107,12 @@ wheel, covered by the software identity and checked by
 | --- | --- | --- |
 | `berman.workspace/1` | `berman.json` | when a workspace loads |
 | `berman.connection/1` | `connection.json` | when a workspace loads |
-| `berman.research-plan/1` | `plan.json` | when a workspace loads |
+| `berman.research-plan/1` | `plan.json` | when a selected plan is inspected or supplies a fresh assignment |
 | `berman.run-catalogue/1` | the run catalogue | when a workspace loads |
 | `berman.recipe/2` | `recipe.json` | when a recipe is selected |
 | `berman.operation/1` | `operations/RUN/operation.json` | on every read and before every write |
-| `berman.new-request/1` | a combined request | on every read and before every write |
+| `berman.new-request/2` | a combined request naming an already reserved target | on every read and before every write |
+| `berman.new-request/1` | a historical combined request | completed records read unchanged; pending records require settlement with the original installation |
 | `berman.software/1` | `berman version`, `software.json` | by tests |
 | `berman.verification/1` | `berman --json verify` and kept results | by tests |
 | `berman.recovered-write/1` | retained interrupted-write receipts | before writing and when reading recovery receipts |
@@ -125,6 +126,8 @@ The rule for what a schema refuses:
   check's timeout may be text, a plan's step identities may be numbers.
 - A field Berman only stores or prints is not constrained, null is read as
   absent, and every object stays open to fields the schema does not name.
+- A plan's `commitment` and `relationships` are study annotations, not
+  operational preconditions; their shapes do not constrain assignment.
 - A field only a later command reads is not required at load. A connection
   without `documents` loads and serves development; preparing fieldwork for it
   fails then, as before.
@@ -278,6 +281,46 @@ behavior survives ([release numbering](#release-numbering)). Prefer a simple,
 robust corrective change over compatibility machinery. Describe changed
 refusals, output and verification scope, and any response an adopting study
 needs. Preserved evidence is never rewritten to make a new check pass.
+
+### Unreleased: optional study plans
+
+`new --recipe NAME` reserves a direct assignment. Bare `new` uses an optional
+plan for a fresh assignment or retries retained work. New operations record
+assignment origin explicitly; missing historical origins retain their meaning.
+Direct encounters do not advance a plan, and only that plan's own recorded
+assignments participate in its sequence checks. Plan resolution is deferred to
+selection or inspection, so a missing or invalid selected plan remains a visible
+problem without blocking otherwise valid direct work or retained retries.
+
+The cross-project commitment gate is removed. `commitment` and `relationships`
+remain readable study annotations. This deliberately changes operational
+restrictions; studies that use those promises must manage them in their own
+practice. Connecting a project alone still assigns no fieldworker.
+
+New combined requests use `berman.new-request/2`: the exact target assignment
+is reserved before its run is named in the request and before the previous
+ending is declared. Interruption tests cover reservation, request publication,
+ending, preservation, preparation and cancellation. Cancelling an unused target
+cancels further preparation by a pending request without undoing an ending.
+Completed historical `/1` requests stay readable unchanged. Pending `/1`
+requests must be settled with their original installation before adoption;
+the new software reports this recovery requirement rather than guessing a
+target. Do not rewrite historical requests to satisfy the new contract.
+
+Native access verification now checks every configured Codex connection,
+including plan-free connections, with a reserved diagnostic recipe in disposable
+roots. It retains actual checkout/document/access checks without copying a study
+plan or choosing research instructions. Reserved-name collisions are refused.
+Receipts identify diagnostic instructions. This launches neither a fieldworker
+nor a model and establishes no hook trust or native capture; a later adopting
+study renews only arrangements changed by the new bytes under its own procedure.
+
+Plain and terminal output now identify assignment recipe and origin, show
+selected-plan errors separately, and label direct-assignment commands containing
+`RECIPE` as templates requiring a choice. These are deliberate changes to the
+redirected-text fixtures; machine output carries the corresponding result fields.
+No release number, package, adoption or native qualification follows from this
+checkout change.
 
 ### Version 0.26.2: keeping release artifacts
 

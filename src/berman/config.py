@@ -6,6 +6,7 @@ Local installation settings (checkout locations, the shared packet root, executa
 berman.json and are kept apart from the reusable connection description.
 """
 from pathlib import Path
+from functools import cached_property
 import re
 
 from berman import schemas
@@ -68,10 +69,15 @@ class Connection:
         if self.capture not in CAPTURE_ADAPTERS:
             raise ValueError(f'Unknown capture adapter for {ident}: {self.capture}')
         self.name = self.definition.get('name') or self.id  # Null is read as absent.
-        plan = entry.get('plan')
-        self.plan = None if plan is None else Plan(store, plan)
-        if self.plan and self.plan.connection != self.id:
-            raise ValueError(f'Research plan {self.plan.id} belongs to {self.plan.connection}, not {self.id}')
+
+    @cached_property
+    def plan(self):
+        """Read a selected plan only when choosing or describing planned work."""
+        path = self.entry.get('plan')
+        plan = None if path is None else Plan(self.store, path)
+        if plan and plan.connection != self.id:
+            raise ValueError(f'Research plan {plan.id} belongs to {plan.connection}, not {self.id}')
+        return plan
 
     def documents(self):
         return list(self.definition['documents'])
@@ -119,8 +125,6 @@ class Plan:
         self.ids = [s['id'] for s in self.steps]
         if len(self.ids) != len(set(self.ids)):
             raise ValueError('Duplicate instruction-sequence step')
-        self.commitment = self.data.get('commitment')
-        self.relationships = {r['plan']: r for r in self.data.get('relationships', [])}
 
     def reservation(self, step):
         return {'id': self.id, 'path': str(self.path.relative_to(self.store.root)) if self.path else None,
@@ -129,6 +133,8 @@ class Plan:
     def claims(self, row):
         """Whether a run record is associated with this plan (explicitly, or by a pre-plan step id)."""
         record = row['record'] or {}
+        if record.get('assignment_origin') == 'direct':
+            return False
         plan = record.get('plan')
         if plan:
             return plan.get('id') == self.id
@@ -137,8 +143,8 @@ class Plan:
     def next_step(self, rows):
         consumed = {}
         for row in rows:
-            if row['connection'] != self.connection:
-                continue  # Another project's runs neither advance nor invalidate this plan.
+            if row['connection'] != self.connection or not self.claims(row):
+                continue  # Only this plan's recorded assignments affect its sequence.
             record = row['record'] or {}
             started = row['started']
             if started is None:
@@ -151,17 +157,13 @@ class Plan:
                 if step not in self.ids or step in consumed:
                     raise Decision(f'Conflicting sequence claim for {step}; inspect the run records')
                 consumed[step] = row['run']
-            elif record.get('plan'):
-                continue  # Explicitly associated with a different plan for this connection.
-            elif not self.store.catalogue.predates_plans(row['run'], self.connection):
-                raise Decision(f'{row["run"]} began outside the recorded research plan; assign its relationship before advancing')
         for step in self.steps:
             if step['id'] not in consumed:
                 if any(later in consumed for later in self.ids[self.ids.index(step['id']) + 1:]):
                     raise Decision('The recorded fieldwork roles were started out of sequence; inspect their relationship')
                 return step
         raise Complete(f'The agreed fieldwork sequence is complete (plan {self.id}). Record the next instruction choice '
-                       'in a research plan before preparing another run')
+                       'in a plan or choose a recipe with berman new --recipe NAME')
 
     def fulfilled(self, rows):
         """True only when every step has been started; a conflict leaves fulfilment undetermined."""

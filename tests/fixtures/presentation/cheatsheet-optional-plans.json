@@ -1,0 +1,137 @@
+{
+  "berman": "berman",
+  "workspace_problems": [],
+  "meaning": "Commands use berman on PATH and select this workspace explicitly. Nothing was changed; launching still verifies the packet.",
+  "connections": [
+    {
+      "id": "orchard",
+      "name": "Orchard",
+      "default": true,
+      "checkout": "/synthetic/orchard",
+      "plan": null,
+      "next_recipe": null,
+      "next_note": "Choose a recipe with berman new --recipe NAME",
+      "operation_in_progress": false,
+      "fieldwork": {
+        "ready": [],
+        "incomplete": [],
+        "open": [],
+        "ending": [],
+        "attention": []
+      },
+      "commands": {
+        "status": "berman --root '/synthetic/study with spaces' status",
+        "new": "berman --root '/synthetic/study with spaces' new",
+        "launch": [],
+        "finish": [],
+        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended'",
+        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open",
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --recipe RECIPE"
+      },
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
+    },
+    {
+      "id": "broken",
+      "name": "Broken",
+      "default": false,
+      "checkout": "/synthetic/orchard",
+      "plan": "plans/missing/plan.json",
+      "next_recipe": null,
+      "next_note": "Selected plan needs attention; choose a recipe directly",
+      "operation_in_progress": false,
+      "fieldwork": {
+        "ready": [
+          "run-010"
+        ],
+        "incomplete": [],
+        "open": [],
+        "ending": [],
+        "attention": []
+      },
+      "commands": {
+        "status": "berman --root '/synthetic/study with spaces' status",
+        "new": "berman --root '/synthetic/study with spaces' new --connection broken",
+        "launch": [
+          "berman --root '/synthetic/study with spaces' launch --run run-010 --connection broken"
+        ],
+        "finish": [],
+        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended'",
+        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open",
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection broken --recipe RECIPE"
+      },
+      "development": [],
+      "plan_error": "Research plan is missing: plans/missing/plan.json",
+      "pending_requests": []
+    },
+    {
+      "id": "exhausted",
+      "name": "Exhausted",
+      "default": false,
+      "checkout": "/synthetic/orchard",
+      "plan": "complete-plan",
+      "next_recipe": null,
+      "next_note": "Research plan complete-plan is complete",
+      "operation_in_progress": false,
+      "fieldwork": {
+        "ready": [],
+        "incomplete": [],
+        "open": [],
+        "ending": [],
+        "attention": []
+      },
+      "commands": {
+        "status": "berman --root '/synthetic/study with spaces' status",
+        "new": "berman --root '/synthetic/study with spaces' new --connection exhausted",
+        "launch": [],
+        "finish": [],
+        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended'",
+        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open",
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection exhausted --recipe RECIPE"
+      },
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
+    },
+    {
+      "id": "open",
+      "name": "Open",
+      "default": false,
+      "checkout": "/synthetic/orchard",
+      "plan": null,
+      "next_recipe": null,
+      "next_note": "Choose a recipe with berman new --recipe NAME",
+      "operation_in_progress": false,
+      "fieldwork": {
+        "ready": [],
+        "incomplete": [],
+        "open": [
+          "run-011"
+        ],
+        "ending": [],
+        "attention": []
+      },
+      "commands": {
+        "status": "berman --root '/synthetic/study with spaces' status",
+        "new": "berman --root '/synthetic/study with spaces' new --connection open",
+        "launch": [],
+        "finish": [
+          "berman finish --run run-011 --reason 'why the engagement ended'"
+        ],
+        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection open --recipe RECIPE",
+        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection open --recipe RECIPE",
+        "supplement": [
+          "berman supplement --run run-011 --reason 'why this activity is retained'"
+        ],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection open --recipe RECIPE"
+      },
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
+    }
+  ]
+}

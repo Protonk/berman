@@ -44,10 +44,10 @@ MEANING = {
     'schemas': 'The packaged record schemas are present, well formed and named for their own record families.',
     'recorded-hashes': 'Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and '
                        'inquiry/*/MANIFEST.json keep their recorded bytes.',
-    'workspace': "This workspace's berman.json, catalogue, connections and plans load with this code, and berman status "
+    'workspace': "This workspace's berman.json, catalogue and connections load with this code, and berman status "
                  'reports no problem: none in the workspace, on an outstanding run (one with no connection blocks every '
-                 "connection) or on a support trial. Each connection's next step is listed, not judged, even when its plan "
-                 'refuses one.',
+                 "connection), on a support trial or in a selected plan. Plans are optional; a next step is listed "
+                 'without judging its purpose, and plan sequence conflicts remain visible problems.',
     'hook-trust': 'The installed hooks match a definition reviewed in the actual CLI for these implementation bytes '
                   '(Codex), or the per-launch template, in-session bytes, helpers and settings policy match the '
                   'qualified support trial (Claude, which needs no review). verify reads that record; it never '
@@ -58,8 +58,8 @@ MEANING = {
     'recordings': 'Preserved originals match their inventory; capture, migration and ending evidence agree; '
                   'recording ZIPs exist and match their recorded hashes and exact inventoried contents. '
                   'Missing historical authority is unestablished, never invented. No files are changed.',
-    'native-access': "The native Codex sandbox gives each connection's assignment its intended access, checked in "
-                     'disposable roots.',
+    'native-access': 'The native Codex sandbox gives each configured Codex connection its intended access, checked '
+                     'with diagnostic instructions in disposable roots; no study assignment is supplied.',
 }
 NOT_COVERED = [
     'Developer regression tests (run separately from the source checkout).',
@@ -89,19 +89,19 @@ TRIAL_NEXT = ("A native support trial for {name}, with the researcher's approval
               'berman capture record-capture --trial experiments/NAME; '
               'berman support-trial cleanup --evidence experiments/NAME --reason TEXT')
 FIXTURE = 'native-check-fixture'
+DIAGNOSTIC_RECIPE = 'native-access-diagnostic'
 ACCESS_ONLY = 'Native access only; hook trust and native capture are reported separately by berman verify.'
 ACCESS_EVIDENCE = ('readiness.json', 'profile.config.toml', 'checks', 'ASSIGNMENT.md', 'INSTRUCTIONS.md')
 ACCESS_SCOPE = ('Disposable Berman, packet and Codex configuration roots (only config.toml and hooks.json copied); real '
-                "checkouts with their declared project checks; each connection prepared by berman new at its plan's first "
-                'step, with a commitment the real workspace has fulfilled left out of its plan copy. No model request, '
-                'session registration or live run.')
+                'Codex checkouts with their selected documents and declared project checks; each connection prepared '
+                'by direct assignment of diagnostic instructions, without study plans or recipes. No model request, '
+                'session registration or real engagement.')
 ACCESS_NOT_ESTABLISHED = [
     'Hook trust and native capture; berman verify reports them separately as hook-trust:* and native-capture:*.',
     'Access with the real packet root, Codex home and profiles; every real berman new and launch rechecks it.',
-    "Each plan's next step; a recipe changes the assignment text, not the access profile.",
+    'Delivery of a study assignment or its instructions; diagnostic instructions exercise the same access policy.',
     'A model request, Codex folder trust or a live session.',
 ]
-FIXTURE_RELATIONSHIP = 'Native access fixture only; prepared in a disposable workspace and never launched.'
 
 
 def row(status, summary, required=True, step=None, **details):
@@ -205,6 +205,7 @@ def workspace(store, problem):
     # for every connection, though no connection's blocked_by lists it.
     problems = (status['workspace_problems']
                 + [f'{name}: {p}' for name, c in connections.items() for p in c['blocked_by']]
+                + [f'{name}: {c["plan_error"]}' for name, c in connections.items() if c.get('plan_error')]
                 + [f'{"every connection" if r["connection"] is None else r["connection"] + " (not registered)"}: {p}'
                    for r in status['runs'] if r['connection'] not in connections for p in r['problems']]
                 + [f'support trial: {p}' for t in status['support_trials'] for p in t['problems']])
@@ -309,13 +310,10 @@ def checkout_state(path):
         return {'error': f'{type(exc).__name__}: {exc}'}
 
 
-def fixture_connection(root, base, plans):
-    """A disposable Git project on berman-codex's notes layout, related to every selected commitment."""
+def fixture_connection(root, base):
+    """A disposable Git project on berman-codex's notes layout, without a study assignment."""
     project = base / FIXTURE
-    folder, recipe, plan = (root / kind / FIXTURE for kind in ('connections', 'recipes', 'plans'))
-    taken = [str(p.relative_to(root)) for p in (folder, recipe, plan) if p.exists()]
-    if taken:
-        raise Decision(f'The native access fixture would replace researcher inputs: {", ".join(taken)}')
+    folder = root / 'connections' / FIXTURE
     (project / 'notes').mkdir(parents=True)
     (project / 'GUIDE.md').write_text('How the disposable native-check project works.\n')
     (project / 'notes/plan.txt').write_text('A plan kept in the disposable project.\n')
@@ -327,57 +325,47 @@ def fixture_connection(root, base, plans):
         'schema': 'berman.connection/1', 'id': FIXTURE, 'name': 'Native check fixture', 'version': 1,
         'description': 'A disposable project that exercises the notes layout natively; never launched.',
         'documents': ['GUIDE.md', 'notes/plan.txt', 'HANDOFF.md'], 'checks': [], 'readers': []})
-    write(recipe / 'recipe.json', {
-        'schema': 'berman.recipe/2', 'id': FIXTURE, 'connections': [FIXTURE], 'coverage': ['notes'],
-        'recording_protocol': 'work-accounts/1', 'instructions': 'INSTRUCTIONS.md',
-        'source': 'berman verify --native-access', 'meaning': 'Native access fixture; never launched.'})
-    (recipe / 'INSTRUCTIONS.md').write_text('# Native check fixture\n\nWrite accounts of the work in `{{notes_directory}}`.\n')
-    write(plan / 'plan.json', {
-        'schema': 'berman.research-plan/1', 'id': FIXTURE, 'connection': FIXTURE,
-        'steps': [{'id': 'native-check', 'recipe': FIXTURE}],
-        'relationships': [{'plan': name, 'relationship': FIXTURE_RELATIONSHIP} for name in plans]})
     return {'definition': f'connections/{FIXTURE}/connection.json', 'checkout': str(project),
-            'plan': f'plans/{FIXTURE}/plan.json', 'capture': 'berman-codex'}
+            'capture': 'berman-codex'}
 
 
-def fulfilled_commitments(store, names):
-    """Selected plans whose commitment the real workspace has fulfilled, and why that is unknown if it is."""
-    try:
-        rows = store.discover()
-    except PROBLEMS as exc:
-        return [], f'{type(exc).__name__}: {exc}'
-    plans = [store.connections[n].plan for n in names]
-    return sorted(p.id for p in plans if p.commitment and p.fulfilled(rows)), None
-
-
-def disposable_workspace(store, base, names, synthetic, fulfilled=()):
-    """Copies of researcher inputs and Codex configuration only.
+def disposable_workspace(store, base, names, synthetic):
+    """Connection definitions and Codex configuration, with an explicit diagnostic recipe.
 
     No verification evidence, run, catalogue entry, credential, session or registry is copied, so
-    nothing here can stand for the real workspace's history or its capture readiness. Having no runs,
-    the disposable workspace would count every commitment unfulfilled, so a plan named in fulfilled is
-    copied without its commitment: preparation then asks for the relationships real preparation asks for.
+    nothing here can stand for the real workspace's history or its capture readiness. Study plans
+    and recipes are neither loaded nor copied; diagnostic instructions exercise the real access policy.
     """
     root, home = base / 'berman', base / 'codex'
+    reserved = [Path('recipes') / DIAGNOSTIC_RECIPE]
+    if synthetic:
+        reserved.append(Path('connections') / FIXTURE)
+    taken = [p.as_posix() for p in reserved if (store.root / p).exists() or (store.root / p).is_symlink()]
+    if taken:
+        raise Decision(f'The native access diagnostic namespace collides with researcher inputs: {", ".join(taken)}')
     home.mkdir()
-    shutil.copytree(store.root / 'recipes', root / 'recipes')
     entries = {}
     for name in names:
         conn = store.connections[name]
-        shutil.copytree(conn.folder, root / conn.folder.relative_to(store.root), dirs_exist_ok=True)
-        plan = conn.plan.path.relative_to(store.root)
-        if conn.plan.id in fulfilled:
-            write(root / plan, {k: v for k, v in conn.plan.data.items() if k != 'commitment'})
-        else:
-            (root / plan).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(conn.plan.path, root / plan)
-        entries[name] = {'definition': conn.definition_path.relative_to(store.root).as_posix(),
-                         'checkout': str(conn.checkout), 'plan': plan.as_posix(), 'capture': conn.capture}
+        definition = conn.definition_path.relative_to(store.root)
+        (root / definition).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(conn.definition_path, root / definition)
+        entries[name] = {'definition': definition.as_posix(), 'checkout': str(conn.checkout), 'capture': conn.capture}
         if 'documents' in conn.entry:
             entries[name]['documents'] = conn.entry['documents']
     if synthetic:
-        entries[FIXTURE] = fixture_connection(root, base, [p.id for p in (store.connections[n].plan for n in names)
-                                                           if p.commitment and p.id not in fulfilled])
+        entries[FIXTURE] = fixture_connection(root, base)
+    recipe = root / 'recipes' / DIAGNOSTIC_RECIPE
+    if recipe.exists() or recipe.is_symlink():
+        raise Decision(f'The native access diagnostic would replace researcher inputs: recipes/{DIAGNOSTIC_RECIPE}')
+    write(recipe / 'recipe.json', {
+        'schema': 'berman.recipe/2', 'id': DIAGNOSTIC_RECIPE, 'connections': list(entries), 'coverage': ['notes'],
+        'recording_protocol': 'work-accounts/1', 'instructions': 'INSTRUCTIONS.md',
+        'source': 'berman verify --native-access',
+        'meaning': 'Diagnostic instructions for disposable native access checks; no study assignment or live engagement.'})
+    (recipe / 'INSTRUCTIONS.md').write_text('# Native access diagnostic\n\n'
+        'These instructions exercise access checks only; no fieldworker is launched. '
+        'The diagnostic notes directory is `{{notes_directory}}`.\n')
     for name in ('config.toml', 'hooks.json'):
         if (store.home / name).is_file():
             shutil.copyfile(store.home / name, home / name)
@@ -414,7 +402,7 @@ def retain(fixture, run, target):
 def native_access(store, folder, connections=None, synthetic=True, harness=None):
     """Prepare each connection in disposable roots and run the real native access check; returns the report.
 
-    connections defaults to every configured connection with a research plan; synthetic adds the
+    connections defaults to every configured Codex connection; synthetic adds the
     native-check-fixture connection. harness builds the harness for the disposable store (default
     Disposable). The report and each connection's evidence go into folder, which the caller chooses
     (no path policy here). A connection whose preparation or check fails is reported, not raised;
@@ -424,39 +412,31 @@ def native_access(store, folder, connections=None, synthetic=True, harness=None)
     if folder.exists() and any(folder.iterdir()):
         raise Decision(f'Native access evidence goes into an empty folder: {folder}')
     if connections is None:
-        names = [c.id for c in store.connections.values() if c.plan]
-        unplanned = [c.id for c in store.connections.values() if not c.plan]
+        names = list(store.connections)
     else:
-        names, unplanned = list(dict.fromkeys(connections)), []
+        names = list(dict.fromkeys(connections))
         unknown = [n for n in names if n not in store.connections]
         if unknown:
             raise Decision(f'Unknown connection {", ".join(unknown)}; registered connections: '
                            + ', '.join(sorted(store.connections)))
-        if any(store.connections[n].plan is None for n in names):
-            raise Decision('Native access is checked through a preparation; choose connections that have a research plan')
     if synthetic and FIXTURE in store.connections:
         raise Decision(f'A configured connection is named {FIXTURE}; check it with synthetic=False')
     claude = [n for n in names if store.connections[n].capture == 'berman-claude']
     if connections is not None and claude:
         raise Decision('Claude native access uses an explicit bounded berman-claude support trial, not the Codex sandbox probe')
     names = [n for n in names if n not in claude]
-    fulfilled, unknown = fulfilled_commitments(store, names)
     report = {'schema': 'berman.native-access-check/1', 'checked_at_utc': files.now(), 'scope': ACCESS_SCOPE,
               'codex': str(store.codex), 'codex_version': None, 'python': str(store.python),
               'harness_sha256': {rel: files.digest((PACKAGE / rel).read_bytes())
                                  for rel in ('harnesses/codex.py', 'harnesses/probe.py')},
-              'fulfilled_commitments': fulfilled,
+              'diagnostic_recipe': DIAGNOSTIC_RECIPE,
               'connections': {}, 'access_passed': False, 'disposable_roots_removed': False,
               'not_established': ACCESS_NOT_ESTABLISHED + [f'{n}: Claude access is qualified by its separate bounded '
-                                                           'support trial, not this Codex probe' for n in claude]
-                                 + [f'{n}: no research plan assigns fieldwork, so no preparation '
-                                                           'checked its access' for n in unplanned]
-                                 + ([f'Which commitments the real workspace has fulfilled ({unknown}); every commitment '
-                                     'stayed in the disposable plan copies'] if unknown else [])}
+                                                           'support trial, not this Codex probe' for n in claude]}
     results = report['connections']
     with tempfile.TemporaryDirectory(prefix='berman-native-roots-') as temporary:
         base = Path(temporary).resolve()
-        fixture = Store(disposable_workspace(store, base, names, synthetic, fulfilled))
+        fixture = Store(disposable_workspace(store, base, names, synthetic))
         checker = (harness or Disposable)(fixture)
         try:
             report['codex_version'] = checker.invoke([str(fixture.codex), '--version'], base, check=True,
@@ -472,7 +452,7 @@ def native_access(store, folder, connections=None, synthetic=True, harness=None)
                      'project_checks': [c['id'] for c in conn.checks()]}
             workflow = Workflow(fixture, checker)
             try:
-                prepared = workflow.new(connection=name)
+                prepared = workflow.new(connection=name, recipe_name=DIAGNOSTIC_RECIPE)
                 entry.update(run=prepared['run'], recipe=prepared['recipe'], access_passed=prepared['checks_passed'] is True)
             except PROBLEMS + (IndexError, subprocess.SubprocessError) as exc:
                 entry['error'] = f'{type(exc).__name__}: {exc}'

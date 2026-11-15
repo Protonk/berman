@@ -1,0 +1,9 @@
+0 archived runs. Default connection: orchard
+orchard: next planned fieldwork role: none
+  Choose a recipe with berman new --recipe NAME
+broken: next planned fieldwork role: none
+  plan needs attention: Research plan is missing: plans/missing/plan.json
+  Selected plan needs attention; choose a recipe directly
+exhausted: next planned fieldwork role: none
+  Research plan complete-plan is complete
+No outstanding engagements or preparations.

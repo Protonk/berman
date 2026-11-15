@@ -1,7 +1,7 @@
-"""Presentation: redirected text unchanged, terminal text complete and literal, machine output untouched.
+"""Presentation: redirected text pinned, terminal text complete and literal, machine output untouched.
 
 tests/fixtures/presentation holds synthetic command results as JSON, and beside each the text
-the 0.4.1 renderers printed for it. That text is the contract for redirected output. The
+the deliberately pinned plain text, originally taken from 0.4.1. That text is the contract for redirected output. The
 terminal rendering is free to lay the same results out differently, so it is held to a different
 standard: it shows every word the plain text shows, keeps each distinction legible without
 color, and interprets nothing in the recorded text it displays.
@@ -102,7 +102,7 @@ class PlainTests(unittest.TestCase):
             presentation.show('verification', result, out)
         self.assertEqual(out.getvalue(), plain.verification(result) + '\n')
 
-    def test_plain_text_is_what_version_0_4_printed(self):
+    def test_plain_text_matches_the_deliberate_redirected_output_contract(self):
         self.assertGreaterEqual(len(CASES), 9)
         for name, result in CASES.items():
             with self.subTest(case=name):
@@ -149,6 +149,103 @@ class PlainTests(unittest.TestCase):
 
 
 class TerminalTests(unittest.TestCase):
+    def test_optional_plans_leave_prepared_launches_available_and_templates_need_a_choice(self):
+        result = CASES['cheatsheet-optional-plans']
+        for rendered in (plain.cheatsheet(result), shown('cheatsheet', result)):
+            absent = rendered[rendered.index('Orchard (orchard') : rendered.index('Broken (broken')]
+            self.assertIn('Choose a recipe with berman new --recipe NAME', absent)
+            self.assertIn('Direct assignment template (choose a recipe; replace RECIPE)', absent)
+            self.assertNotIn('Available now', absent)
+            broken = rendered[rendered.index('Broken (broken') : rendered.index('Exhausted (exhausted')]
+            self.assertIn('plan needs attention: Research plan is missing:', broken)
+            self.assertIn('run-010 is prepared and unstarted', broken)
+            self.assertIn(result['connections'][1]['commands']['launch'][0], broken)
+            self.assertNotIn('Direct assignment template', broken)
+            exhausted = rendered[rendered.index('Exhausted (exhausted') : rendered.index('Open (open')]
+            self.assertIn('Research plan complete-plan is complete', exhausted)
+            self.assertNotIn('plan needs attention:', exhausted)
+            opened = rendered[rendered.index('Open (open') :]
+            self.assertIn('preparing the next fieldworker (choose a recipe; replace RECIPE):', opened)
+            self.assertIn('new --keep-open --connection open --recipe RECIPE', opened)
+
+    def test_assignment_origin_is_reported_without_inventing_a_historical_origin(self):
+        result = CASES['status-busy']
+        for rendered in (plain.status(result), shown('status', result)):
+            for origin in ('direct', 'plan', 'not recorded'):
+                self.assertIn('origin: ' + origin, rendered)
+            self.assertIn('Assignment: work-accounts; origin: not recorded', rendered)
+        for case in ('prepared-fresh', 'prepared-with-history'):
+            result = CASES[case]
+            for rendered in (plain.prepared(result), shown('prepared', result)):
+                self.assertIn(f'Assignment: {result["recipe"]}; origin: {result["assignment_origin"]}', rendered)
+
+    def test_pending_request_keeps_the_recorded_retry_instead_of_a_fresh_recipe_template(self):
+        result = json.loads(json.dumps(CASES['cheatsheet-optional-plans']))
+        conn = result['connections'][0]
+        result['connections'] = [conn]
+        conn['pending_requests'] = ['/synthetic/study/requests/one.json']
+        conn['fieldwork']['incomplete'] = ['run-012']
+        conn['fieldwork']['open'] = ['run-011']
+        conn['plan_error'] = 'Research plan is missing: plans/missing/plan.json'
+        conn['commands']['finish'] = ['berman finish --run run-011 --reason REASON']
+        conn['commands']['supplement'] = ['berman supplement --run run-011 --reason REASON']
+        for rendered in (plain.cheatsheet(result), shown('cheatsheet', result)):
+            self.assertIn('pending combined request:', rendered)
+            self.assertIn('resume the recorded request with:', rendered)
+            self.assertIn('plan needs attention:', rendered)
+            self.assertIn('run-012 has an incomplete preparation; complete it with:', rendered)
+            self.assertIn(conn['commands']['new'], rendered)
+            self.assertNotIn('Direct assignment template', rendered)
+            self.assertNotIn('nothing outstanding', rendered)
+            self.assertNotIn('--keep-open', rendered)
+            self.assertNotIn('--finish-previous', rendered)
+            self.assertNotIn("Needs the researcher's decision", rendered)
+            self.assertNotIn('berman finish --run run-011', rendered)
+            self.assertIn(conn['commands']['supplement'][0], rendered)
+
+    def test_no_plan_is_ordinary_and_broken_plans_are_reported_separately(self):
+        result = CASES['status-optional-plans']
+        for rendered in (plain.status(result), shown('status', result)):
+            self.assertIn('orchard: next planned fieldwork role: none', rendered)
+            self.assertIn('Choose a recipe with berman new --recipe NAME', rendered)
+            self.assertIn('plan needs attention: Research plan is missing:', rendered)
+            self.assertNotIn('role: None', rendered)
+            self.assertNotIn('no research plan assigns fieldwork', rendered)
+
+    def test_direct_preparation_and_retained_launch_render_the_current_workflow_results(self):
+        from berman import files
+        from berman.records import Store
+        from berman.workflow import Workflow
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, project = base / 'study', base / 'project'
+            (base / 'codex').mkdir()
+            workspace(root, base, project, documents=['README.md'])
+            git_repository(project, {'README.md': 'Synthetic project\n'})
+            config = files.read(root / 'berman.json')
+            config['connections']['stewart'].pop('plan')
+            files.write(root / 'berman.json', config)
+            store = Store(root)
+            workflow = Workflow(store, FixtureHarness(store))
+            result = workflow.cheatsheet()
+            for rendered in (plain.cheatsheet(result), shown('cheatsheet', result)):
+                self.assertIn('Direct assignment template (choose a recipe; replace RECIPE)', rendered)
+            prepared = workflow.new(recipe_name='work-accounts')
+            for rendered in (plain.prepared(prepared), shown('prepared', prepared)):
+                self.assertIn('Assignment: work-accounts; origin: direct', rendered)
+            status = workflow.status()
+            for rendered in (plain.status(status), shown('status', status)):
+                self.assertIn('Assignment: work-accounts; origin: direct', rendered)
+            config['connections']['stewart']['plan'] = 'plans/missing/plan.json'
+            files.write(root / 'berman.json', config)
+            store = Store(root)
+            result = Workflow(store, FixtureHarness(store)).cheatsheet()
+            for rendered in (plain.cheatsheet(result), shown('cheatsheet', result)):
+                self.assertIn('plan needs attention:', rendered)
+                self.assertIn(prepared['run'] + ' is prepared and unstarted', rendered)
+                self.assertNotIn('Direct assignment template', rendered)
+
     def test_displayed_commands_preserve_control_characters_as_shell_arguments(self):
         arguments = ['a\tb', 'line\n', "quote' slash\\ tab\t", 'escape\x1b[2J', 'hidden\u202e', '']
         command = shlex.join([sys.executable, '-c', 'import json,sys; print(json.dumps(sys.argv[1:]))', *arguments])

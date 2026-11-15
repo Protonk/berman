@@ -294,20 +294,21 @@ class ResearcherInputTests(RecordTests):
             ),
             (plan, {'steps': [{'recipe': 'work-accounts'}]}, 'berman.research-plan/1', r'steps\[0\].id is required'),
             (plan, {'steps': ...}, 'berman.research-plan/1', 'steps is required'),
-            (
-                plan,
-                {'relationships': [{'relationship': 'x'}]},
-                'berman.research-plan/1',
-                r'relationships\[0\].plan is required',
-            ),
         )
         for relative, changes, name, message in cases:
             path = self.root / relative
             original = path.read_bytes()
             self.edit(relative, **changes)
             with self.subTest(file=relative, changes=changes):
+                # A selected plan is read only when used; other inputs remain eager.
+                loaded = Store(self.root) if relative == plan else None
+                changed = state(path)
                 with self.assertRaisesRegex(schemas.InvalidRecord, f'{path} does not satisfy {name}: {message}'):
-                    Store(self.root)
+                    if loaded is not None:
+                        _ = loaded.connection('stewart').plan
+                    else:
+                        Store(self.root)
+                self.assertEqual(state(path), changed)
             path.write_bytes(original)
         Store(self.root)
 
@@ -346,6 +347,7 @@ class ResearcherInputTests(RecordTests):
                 {'steps': [{'id': 'first', 'recipe': 'work-accounts'}, {'id': 'later'}]},
             ),
             'a commitment kept as an object': (plan, {'commitment': {'text': 'Disposable.'}}),
+            'relationships kept as study annotations': (plan, {'relationships': [{'relationship': 'Study context.'}]}),
             'a catalogue row with no connection yet': (
                 'connections/catalogue.json',
                 {'runs': [{'run': 'run-001', 'connection': None}]},
@@ -400,7 +402,7 @@ class ResearcherInputTests(RecordTests):
         self.assertEqual(self.command('status')[0], 0)
         self.assertEqual(self.workflow.dev('codex', (), 'tools')['argv'], [str(launcher)])
         self.assertEqual(self.workflow.new()['connection'], 'stewart')  # Fieldwork elsewhere is unaffected.
-        with self.assertRaisesRegex(Decision, 'No research plan assigns fieldwork for connection tools'):
+        with self.assertRaisesRegex(Decision, 'No assignment selected for connection tools; choose a recipe'):
             self.workflow.new(connection='tools')
 
     def test_text_the_opening_message_no_longer_carries_is_refused_not_ignored(self):

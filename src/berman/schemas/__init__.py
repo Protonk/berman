@@ -42,6 +42,7 @@ SUPPORTED = (
     'berman.run-catalogue/1',
     'berman.operation/1',
     'berman.new-request/1',
+    'berman.new-request/2',
     'berman.software/1',
     'berman.verification/1',
     'berman.recovered-write/1',

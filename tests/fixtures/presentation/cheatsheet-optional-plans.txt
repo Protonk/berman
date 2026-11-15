@@ -1,0 +1,52 @@
+Orchard (orchard, default connection)
+  checkout: /synthetic/orchard
+
+  Ordinary development (no fieldwork record, no research-plan step; works from any directory):
+    no development launcher is configured; use the harness directly from the checkout
+
+  Fieldwork:
+    nothing outstanding; Choose a recipe with berman new --recipe NAME
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --recipe RECIPE
+
+Broken (broken)
+  checkout: /synthetic/orchard
+
+  Ordinary development (no fieldwork record, no research-plan step; works from any directory):
+    no development launcher is configured; use the harness directly from the checkout
+
+  Fieldwork:
+    plan needs attention: Research plan is missing: plans/missing/plan.json
+    run-010 is prepared and unstarted; start it with:
+      berman --root '/synthetic/study with spaces' launch --run run-010 --connection broken
+
+Exhausted (exhausted)
+  checkout: /synthetic/orchard
+
+  Ordinary development (no fieldwork record, no research-plan step; works from any directory):
+    no development launcher is configured; use the harness directly from the checkout
+
+  Fieldwork:
+    nothing outstanding; Research plan complete-plan is complete
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --connection exhausted --recipe RECIPE
+
+Open (open)
+  checkout: /synthetic/orchard
+
+  Ordinary development (no fieldwork record, no research-plan step; works from any directory):
+    no development launcher is configured; use the harness directly from the checkout
+
+  Fieldwork:
+    run-011 is an open engagement. When the researcher says it has ended:
+      berman finish --run run-011 --reason 'why the engagement ended'
+    or end it while preparing the next fieldworker (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection open --recipe RECIPE
+    or keep it open while preparing another (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --keep-open --connection open --recipe RECIPE
+    retain later activity without ending it:
+      berman supplement --run run-011 --reason 'why this activity is retained'
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --connection open --recipe RECIPE
+
+Commands use berman on PATH and select this workspace explicitly. Nothing was changed; launching still verifies the packet.

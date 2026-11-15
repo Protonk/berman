@@ -14,5 +14,6 @@
   "checks_reused": false,
   "warnings": [],
   "request": null,
-  "next": "Launch when wanted."
+  "next": "Launch when wanted.",
+  "assignment_origin": "direct"
 }

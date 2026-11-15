@@ -1,4 +1,5 @@
 run-006 (orchard) ready using participant-inquiry. Native checks passed in this preparation.
+Assignment: participant-inquiry; origin: direct
 Launch when ready:
 
 /synthetic/venv/bin/python -I -B -m berman --root '/synthetic/study with spaces' launch --run run-006

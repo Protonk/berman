@@ -174,7 +174,11 @@ def status(screen, result):
         screen.line(('Workspace needs attention: ', ATTENTION), problem)
     for name, row in result['connections'].items():
         busy = [('; an operation is in progress', CAUTION)] if row['operation_in_progress'] else []
-        screen.line((name, HEADING), ': next fieldwork role: ', row['next_recipe'], *busy)
+        screen.line((name, HEADING), ': next planned fieldwork role: ', row['next_recipe'] or 'none', *busy)
+        if row.get('plan_error'):
+            screen.line(('plan needs attention: ', CAUTION), row['plan_error'], depth=2)
+        if not row['next_recipe'] and row.get('next_note'):
+            screen.line(row['next_note'], depth=2)
         for problem in row['blocked_by']:
             screen.line(('needs attention: ', ATTENTION), problem, depth=2)
         for path in row['pending_requests']:
@@ -184,6 +188,7 @@ def status(screen, result):
     for row in result['runs']:
         screen.gap()
         screen.line((row['run'], HEADING), f' ({row["connection"]}): ', row['summary'])
+        screen.line(plain.assignment(row), depth=2)
         if row['last_capture']:
             screen.line(f'Capture at {row["last_capture"]}; consistent: {row["capture_consistent"]}', depth=2)
         if screen.console.width < 70:
@@ -247,7 +252,17 @@ def development(screen, conn):
 def fieldwork(screen, conn):
     """A connection's fieldwork, grouped by whether a command can be typed now or a decision comes first."""
     commands, found = conn['commands'], conn['fieldwork']
+    recipe_choice = not conn['next_recipe'] and not (
+        found['ready'] or found['incomplete'] or conn.get('pending_requests')
+    )
     screen.line(('Fieldwork', HEADING), ':', depth=2)
+    if conn.get('plan_error'):
+        screen.line(('plan needs attention: ', CAUTION), conn['plan_error'], depth=4)
+    for path in conn.get('pending_requests', []):
+        screen.line(('pending combined request: ', CAUTION), path, depth=4)
+    if conn.get('pending_requests'):
+        screen.line('resume the recorded request with:', depth=4)
+        screen.command(commands['new'], 6)
     if conn['operation_in_progress']:
         screen.line(('an operation is in progress on this connection; wait for it, then ', CAUTION), depth=4)
         screen.command(commands['status'], 6)
@@ -259,7 +274,7 @@ def fieldwork(screen, conn):
         for run in found['ending']:
             screen.line(f'{run} has a declared ending in progress; this shows its state:', depth=6)
             screen.command(commands['status'], 8)
-    nothing = not any(found.values())
+    nothing = not any(found.values()) and not conn.get('pending_requests')
     if found['ready'] or found['incomplete'] or (nothing and conn['next_recipe']):
         screen.line(('Available now', 'bold green'), depth=4)
         for run, command in zip(found['ready'], commands['launch'], strict=True):
@@ -275,21 +290,35 @@ def fieldwork(screen, conn):
             screen.command(commands['new'], 8)
             screen.line('then start it with the launch command that new prints', depth=6)
     if found['open'] or (nothing and not conn['next_recipe']):
-        screen.line(("Needs the researcher's decision", 'bold yellow'), depth=4)
+        heading = 'Recorded request' if conn.get('pending_requests') else "Needs the researcher's decision"
+        screen.line((heading, 'bold yellow'), depth=4)
         for run, finish, supplement in zip(found['open'], commands['finish'], commands['supplement'], strict=True):
-            screen.line(f'{run} is an open engagement. When the researcher says it has ended:', depth=6)
-            screen.command(finish, 8)
-            screen.line('or end it while preparing the next fieldworker:', depth=6)
-            screen.command(commands['finish_previous'], 8)
-            screen.line('or keep it open while preparing another:', depth=6)
-            screen.command(commands['keep_open'], 8)
+            if conn.get('pending_requests'):
+                screen.line(f'{run} is an open engagement; resume the recorded request before another choice.', depth=6)
+            else:
+                screen.line(f'{run} is an open engagement. When the researcher says it has ended:', depth=6)
+                screen.command(finish, 8)
+                screen.line(
+                    'or end it while preparing the next fieldworker'
+                    + (' (choose a recipe; replace RECIPE):' if recipe_choice else ':'),
+                    depth=6,
+                )
+                screen.command(commands['finish_previous'], 8)
+                screen.line(
+                    'or keep it open while preparing another'
+                    + (' (choose a recipe; replace RECIPE):' if recipe_choice else ':'),
+                    depth=6,
+                )
+                screen.command(commands['keep_open'], 8)
             screen.line('retain later activity without ending it:', depth=6)
             screen.command(supplement, 8)
         if nothing and not conn['next_recipe']:
             screen.line('nothing outstanding; ', conn['next_note'] or 'no next role', depth=6)
-            screen.line('a fieldworker needs a research plan that assigns one; development stays available', depth=6)
     if not nothing and conn['next_recipe'] and not found['ready'] and not found['incomplete']:
         screen.line(f'the next agreed role after these is {conn["next_recipe"]}', depth=4)
+    if commands.get('new_direct') and not (found['ready'] or found['incomplete'] or conn.get('pending_requests')):
+        screen.line(('Direct assignment template (choose a recipe; replace RECIPE):', CAUTION), depth=4)
+        screen.command(commands['new_direct'], 6)
 
 
 def prepared(screen, result):
@@ -306,6 +335,7 @@ def prepared(screen, result):
         ('ready', 'bold green'),
         f' using {result["recipe"]}. {checks}',
     )
+    screen.line(plain.assignment(result))
     for warning in result.get('warnings', []):
         screen.line(('Warning: ', CAUTION), warning)
     screen.line('Launch when ready:')

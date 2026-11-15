@@ -1,0 +1,6 @@
+{
+  "schema": "berman.operation/1",
+  "run": "run-001",
+  "phase": "reserved",
+  "assignment_origin": "direct"
+}

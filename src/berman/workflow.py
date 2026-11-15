@@ -5,11 +5,13 @@ Lock order is connection, then affected runs in numeric order, then the short gl
 run allocation and shared inventory updates; slow work never holds the global lock.
 """
 import os
+from copy import copy
 from pathlib import Path
 import shlex
 import uuid
 
 from berman.capture import adapters
+from berman.config import Complete
 from berman import workspace
 from berman import files
 from berman import recovery
@@ -86,20 +88,37 @@ class Workflow:
         """Write the combined request this command is working through; an invalid one is never written."""
         write(self.request_path, checked_request(request))
 
+    def cancelled_targets(self):
+        return {r['result_run']: r for _, r in self.requests() if r['state'] == 'cancelled'}
+
+    def plan_status(self, connection, rows):
+        """Describe optional coordination; reading a broken plan never hides other work."""
+        result = {'plan': None, 'next_recipe': None, 'next_note': None, 'plan_error': None}
+        try:
+            plan = connection.plan
+            if plan is None:
+                result['next_note'] = 'Choose a recipe with berman new --recipe NAME'
+            else:
+                result['plan'] = plan.id
+                result['next_recipe'] = plan.next_step(rows)['recipe']
+        except Complete as exc:
+            result['next_note'] = str(exc)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            result.update(next_note=str(exc), plan_error=str(exc))
+        return result
+
     def status(self):
         from berman import support  # Imported here: berman_support uses berman_verify, which imports this module.
         rows = self.rows()
         held = self.store.occupied()
+        cancelled = self.cancelled_targets()
         connections = {}
         for conn in self.store.connections.values():
-            try:
-                next_role = conn.plan.next_step(rows)['recipe'] if conn.plan else 'no research plan assigns fieldwork'
-            except Decision as exc:
-                next_role = str(exc)
+            planned = self.plan_status(conn, rows)
             pending = [str(p) for p, r in self.requests() if r['state'] == 'pending'
                        and r.get('connection', self.store.legacy_connection) == conn.id]
-            connections[conn.id] = {'name': conn.name, 'plan': conn.plan.id if conn.plan else None,
-                                    'next_recipe': next_role, 'capture': conn.capture, 'checkout': str(conn.checkout),
+            connections[conn.id] = {'name': conn.name, **planned,
+                                    'capture': conn.capture, 'checkout': str(conn.checkout),
                                     'pending_requests': pending,
                                     'blocked_by': [p for r in rows if r.get('connection') == conn.id for p in r['problems']],
                                     'operation_in_progress': f'connection {conn.id}' in held}
@@ -108,6 +127,8 @@ class Workflow:
             record, lifecycle = row['record'] or {}, row['lifecycle']
             capture_status = row['capture_status'] or {}
             result.append({'run': row['run'], 'connection': row.get('connection'), 'state': row['state'],
+                           'recipe': ((record.get('recipe') or {}).get('metadata') or {}).get('id'),
+                           'assignment_origin': record.get('assignment_origin'),
                            'phase': record.get('phase'), 'session': (row['binding'] or {}).get('session_id'),
                            'ending_declared': lifecycle['ending']['value'] is True,
                            'started': row['started'],
@@ -115,7 +136,10 @@ class Workflow:
                            'record': str(self.store.folder(row['run'])) if record else None,
                            'capture_consistent': capture_status.get('snapshot_consistent'),
                            'last_capture': (capture_status.get('capture') or {}).get('captured_at_utc'),
-                           'warnings': capture_status.get('warnings', []), 'problems': row['problems'],
+                           'warnings': capture_status.get('warnings', []) +
+                                       (['Combined request cancelled; target retirement pending']
+                                        if row['run'] in cancelled and unused(row) else []),
+                           'problems': row['problems'],
                            'operation_in_progress': row['run'] in held,
                            'summary': describe(lifecycle, record.get('phase') or row['state']),
                            'unknown': lifecycle['unknown'], 'lifecycle': lifecycle})
@@ -231,6 +255,17 @@ class Workflow:
             if not row['record'] or not reason.strip():
                 raise Decision('Retiring a preparation needs its operation record and a reason')
             with self.store.lock('run', row['run']):
+                requests = [(p, r) for p, r in self.requests()
+                            if r.get('connection', self.store.legacy_connection) == conn.id and r['state'] != 'complete']
+                for path, request in requests:
+                    if request['schema'] == 'berman.new-request/1':
+                        raise Decision(f'Pending legacy request at {path}; settle it with the original installation before adoption')
+                    if request['result_run'] == row['run']:
+                        if request['state'] == 'cancelled':
+                            reason = request['cancellation']['reason']
+                        else:
+                            request.update(state='cancelled', cancellation={'reason': reason, 'at_utc': files.now()})
+                            write(path, checked_request(request))
                 self.retire(row['record'], reason)
             return {'run': row['run'], 'state': 'cancelled', 'preserved_at': str(self.store.folder(row['run'])),
                     'meaning': 'Unused preparation retained; instruction sequence not advanced.'}
@@ -242,10 +277,15 @@ class Workflow:
         pending = [(p, r) for p, r in requests if r['state'] == 'pending']
         if len(pending) > 1:
             raise Decision('Several unfinished new-run requests exist; inspect their recorded targets')
+        if pending and pending[0][1]['schema'] == 'berman.new-request/1':
+            raise Decision(f'Pending legacy request at {pending[0][0]} has no guaranteed reserved assignment; '
+                           'settle it with the original installation before adopting this version')
         if not pending and finish_previous:
             available = {r['run'] for r in rows if unused(r)}
-            pending = [(p, r) for p, r in requests if r.get('result_run') in available
+            pending = [(p, r) for p, r in requests if r['state'] == 'complete' and r.get('result_run') in available
                        and r['finish_reason'] == finish_previous]
+            if len(pending) > 1:
+                raise Decision('Several completed requests claim the unused target; inspect their recorded targets')
         if pending:
             path, request = pending[0]
             if finish_previous and request['finish_reason'] != finish_previous:
@@ -257,115 +297,151 @@ class Workflow:
             return request
         return None
 
-    def commitments(self, connection, rows):
-        """Fieldwork elsewhere must state its relationship to another plan's unfulfilled commitment."""
-        for other in self.store.connections.values():
-            plan = other.plan
-            if other.id == connection.id or not plan or not plan.commitment or plan.fulfilled(rows):
-                continue
-            relationship = connection.plan.relationships.get(plan.id, {}).get('relationship', '')
-            if not relationship.strip():
-                raise Decision(f'Plan {plan.id} for {other.id} carries an unfulfilled commitment ({plan.commitment}). '
-                               f'Record plan {connection.plan.id}\'s relationship to it before preparing fieldwork on {connection.id}')
-
-    def reserve(self, connection, step, selected):
-        """The short global section: fresh identities, allocation, and a published reservation."""
+    def reserve(self, connection, step, selected, plan=None):
+        """The short global section: fresh identities and an exact, published assignment."""
         store = self.store
         with store.lock('global', wait=30):
             run = store.allocate(self.rows())
             record = {'schema': 'berman.operation/1', 'run': run, 'phase': 'reserved',
                       'software': workspace.identity(),
                       'reserved_at_utc': files.now(), 'workspace': {'root': str(store.root), 'tag': store.tag},
-                      'connection': connection.reservation(), 'plan': connection.plan.reservation(step),
-                      'step': step['id'], 'recipe': selected,
+                      'connection': connection.reservation(), 'recipe': selected,
+                      'assignment_origin': 'plan' if plan else 'direct',
                       'recording_protocol': selected['metadata']['recording_protocol'],
                       'project': str(connection.checkout), 'documents': connection.documents(),
                       'packet_root': str(store.field), 'packet': str(store.field / run),
                       'capture': adapters.reservation(connection.capture),
                       'harness': store.harness_identity(connection.capture, run, connection.entry.get('fieldwork_model')),
                       'retained_open_runs': []}
+            if plan:
+                record.update(plan=plan.reservation(step), step=step['id'])
             recovered = recovery.generated_residue(store, run)
             if recovered:
                 record['recovered_writes'] = recovered
             store.save(record)
         return record
 
-    def new(self, finish_previous=None, keep_open=False, connection=None):
+    def resume_cancellations(self, connection):
+        """Complete only target retirement already authorized by a cancelled request."""
+        for _, request in self.requests():
+            if request.get('connection') != connection.id or request['state'] != 'cancelled':
+                continue
+            record = self.store.record(request['result_run'])
+            if record is None:
+                raise Decision('Cancelled request has no retained target operation: ' + request['result_run'])
+            if record.get('connection', {}).get('id') != connection.id:
+                raise Decision('Cancelled request and target connection disagree')
+            if record['phase'] == 'cancelled':
+                continue
+            row = next((r for r in self.rows() if r['run'] == request['result_run']), None)
+            # A session arriving during cancellation remains a real engagement. Never retire it.
+            if row and unused(row):
+                self.touched.add(row['run'])
+                with self.store.lock('run', row['run']):
+                    self.retire(record, request['cancellation']['reason'])
+
+    def new(self, finish_previous=None, keep_open=False, connection=None, recipe_name=None):
         conn = self.store.connection(connection)
         with self.store.lock('connection', conn.id):
             self.touched = set()
             self.request_path = None
             rows = self.rows()
             scoped = self.within(rows, conn)
-            self.synchronize(scoped)
-            if conn.plan is None:
-                raise Decision(f'No research plan assigns fieldwork for connection {conn.id}. '
-                               'Establishing a connection does not assign participant observation')
             request = self.request(scoped, finish_previous, conn)
-            # These checks cannot need the previous packet to have been archived.
-            step = conn.plan.next_step(rows)
-            self.commitments(conn, rows)
-            reserved = [r['record'] for r in scoped if unused(r) and r['record'] and r['record'].get('step') == step['id']]
-            selected = reserved[0]['recipe'] if len(reserved) == 1 else recipe(self.store, step['recipe'], conn)
-            preflight = self.harness.preflight(conn)
-            if request and request['step'] != step['id']:
-                raise Decision('The pending request and current instruction sequence disagree; inspect the recorded request')
-            if finish_previous and request is None:
-                previous = self.select(scoped)
-                finishable(previous, finish_previous)  # A request it could not complete would be resumed later.
-                request = {'schema': 'berman.new-request/1', 'state': 'pending', 'connection': conn.id,
-                           'created_at_utc': files.now(), 'previous_run': previous['run'],
-                           'finish_reason': finish_previous, 'step': step['id'], 'result_run': None}
-                self.request_path = self.store.operations / 'new-requests' / (uuid.uuid4().hex + '.json')
-                self.save_request(request)
-            preserved = []
+            if request and keep_open:
+                raise Decision('A combined request records an ending; --keep-open cannot resume it')
+            # Finish a cancellation before selecting a fresh assignment, never revive its target.
+            self.resume_cancellations(conn)
+            rows = self.rows()
+            scoped = self.within(rows, conn)
+            waiting = [r for r in scoped if unused(r)]
+            if len(waiting) > 1:
+                raise Decision('Several unused preparations exist; use berman cancel --run RUN --reason "description" to retire an unwanted one')
+            record = waiting[0]['record'] if waiting else None
+            if waiting and not record:
+                raise Decision(f'{waiting[0]["run"]} is an unmanaged preparation. Retain or retire that packet before making another')
+            if request and (record is None or record['run'] != request['result_run']):
+                raise Decision('The combined request has no matching unused reserved target; inspect its recorded runs')
+            if record:
+                if record.get('phase') == 'launching':
+                    raise Decision(f'{record["run"]} has a launch attempt without a session binding. Check that attempt; '
+                                   'if it ended before registration, cancel the unused preparation with a reason')
+                if recipe_name is not None and recipe_name != record['recipe']['metadata']['id']:
+                    raise Decision(f'{record["run"]} retains recipe {record["recipe"]["metadata"]["id"]}; '
+                                   'cancel that unused preparation before assigning another recipe')
+                if record['project'] != str(conn.checkout):
+                    raise Decision('The reserved project differs from current configuration; the run record governs its packet')
+                self.store.check_installation(record)
+                selected, step, plan = record['recipe'], None, None
+            elif recipe_name is not None:
+                selected, step, plan = recipe(self.store, recipe_name, conn), None, None
+            else:
+                plan = conn.plan
+                if plan is None:
+                    raise Decision(f'No assignment selected for connection {conn.id}; choose a recipe with '
+                                   'berman new --recipe NAME or select a study plan')
+                step = plan.next_step(rows)
+                selected = recipe(self.store, step['recipe'], conn)
+            previous = None
             if request:
-                self.touched.add(request['previous_run'])
-                previous = next(r for r in scoped if r['run'] == request['previous_run'])
-                with self.store.lock('run', previous['run']):
-                    if previous['location'] == 'archived':
-                        record = previous['record']
-                        if not record or not declared(record):
-                            raise Decision('The combined request has no matching declared ending in its archived target')
-                        if record.get('phase') != 'archived':
-                            preserved.append(preserve(self.store, record))
-                        else:
-                            preserved.append({'run': previous['run'], 'state': 'archived', 'package': record['package']})
-                    else:
-                        preserved.append(finish(self.store, previous, request['finish_reason']))
-                request['previous_preserved'] = preserved[-1]
-                self.save_request(request)
-            preserved.extend(self.settle(self.within(self.rows(), conn)))
-            scoped = self.within(self.rows(), conn)
-            opened = [r for r in scoped if open_engagement(r)]
+                previous = next((r for r in scoped if r['run'] == request['previous_run']), None)
+                if previous is None:
+                    raise Decision('The combined request has no matching previous engagement')
+                if declared(previous['record']) and previous['record']['ending']['reason'] != request['finish_reason']:
+                    raise Decision('The combined request and recorded ending reason disagree')
+            elif finish_previous:
+                previous = self.select(scoped)
+                finishable(previous, finish_previous)
+            opened = [r for r in scoped if open_engagement(r) and authorized(r) is None
+                      and (previous is None or r['run'] != previous['run'])]
             if opened and not keep_open:
                 names = ', '.join(r['run'] for r in opened)
                 advice = ('If it is finished, use berman new --finish-previous "description"; ' if all(r['binding'] for r in opened)
                           else 'It has no session binding, so it cannot be finished yet (berman status shows its capture); ')
                 raise Decision(f'{names} has no declared ending. {advice}'
                                'to retain it for continuation while preparing another encounter, use berman new --keep-open')
-            waiting = [r for r in scoped if unused(r)]
-            record = None
-            if waiting:
-                if len(waiting) != 1:
-                    raise Decision('Several unused preparations exist; use berman cancel --run RUN --reason "description" to retire an unwanted one')
-                row = waiting[0]
-                record = row['record']
-                if not record:
-                    raise Decision(f'{row["run"]} is an unmanaged preparation. Retain or retire that packet before making another')
-                if record.get('phase') == 'launching':
-                    raise Decision(f'{row["run"]} has a launch attempt without a session binding. Check that attempt; '
-                                   'if it ended before registration, cancel the unused preparation with a reason')
-                if record.get('step') != step['id']:
-                    raise Decision('The prepared packet and next instruction commitment disagree')
+            # The recorded adapter governs a retry even if future assignments select another one.
+            launch_connection = copy(conn)
+            if record:
+                launch_connection.capture = self.store.adapter(record)
+            preflight = self.harness.preflight(launch_connection)
+            self.synchronize(scoped)
             if record is None:
-                record = self.reserve(conn, step, selected)
+                record = self.reserve(conn, step, selected, plan)
             run = record['run']
             self.touched.add(run)
+            if finish_previous and request is None:
+                request = {'schema': 'berman.new-request/2', 'state': 'pending', 'connection': conn.id,
+                           'created_at_utc': files.now(), 'previous_run': previous['run'],
+                           'finish_reason': finish_previous, 'result_run': run}
+                self.request_path = self.store.operations / 'new-requests' / (uuid.uuid4().hex + '.json')
+                self.save_request(request)
+            preserved = []
+            if request:
+                self.touched.add(previous['run'])
+                with self.store.lock('run', previous['run']):
+                    if previous['location'] == 'archived':
+                        previous_record = self.store.record(previous['run'])
+                        if not previous_record or not declared(previous_record):
+                            raise Decision('The combined request has no matching declared ending in its archived target')
+                        if previous_record.get('phase') != 'archived':
+                            preserved.append(preserve(self.store, previous_record))
+                        else:
+                            preserved.append({'run': previous['run'], 'state': 'archived', 'package': previous_record['package']})
+                    else:
+                        preserved.append(finish(self.store, previous, request['finish_reason']))
+                if request['state'] == 'pending':
+                    request['previous_preserved'] = preserved[-1]
+                    self.save_request(request)
+            preserved.extend(self.settle(self.within(self.rows(), conn)))
+            scoped = self.within(self.rows(), conn)
+            opened = [r for r in scoped if open_engagement(r)]
             with self.store.lock('run', run):
                 # Revalidate the published reservation before committing results to it.
                 record = self.store.record(run)
-                if record.get('phase') in CANCELLATION + ('launching',) or record.get('started_session'):
+                target = next((r for r in scoped if r['run'] == run), None)
+                if (target is None or not unused(target) or record.get('phase') in CANCELLATION + ('launching',)
+                        or record.get('started_session')):
                     raise Decision(f'{run} changed after its reservation was published; inspect berman status')
                 retained = [r['run'] for r in opened]
                 if record.get('retained_open_runs') != retained:
@@ -373,9 +449,6 @@ class Workflow:
                         'at_utc': files.now(), 'previous': record.get('retained_open_runs', []), 'current': retained})
                 record['retained_open_runs'] = retained
                 self.store.save(record)
-                if request:
-                    request['result_run'] = run
-                    self.save_request(request)
                 if record['project'] != str(conn.checkout):
                     raise Decision('The reserved project differs from current configuration; the run record governs its packet')
                 packet = prepare(self.store, record)
@@ -388,10 +461,11 @@ class Workflow:
                 self.store.save(record)
                 command = self.command('launch', '--run', run)
                 keep(self.store.folder(run) / 'preparation/LAUNCH.txt', (command + '\n').encode())
-                if request:
+                if request and request['state'] == 'pending':
                     request['state'] = 'complete'
                     self.save_request(request)
             return {'state': 'ready', 'run': run, 'connection': conn.id, 'recipe': record['recipe']['metadata']['id'],
+                    'assignment_origin': record.get('assignment_origin'),
                     'preserved': preserved, 'retained_open_runs': retained,
                     'launch': command, 'packet': str(packet), 'preparation': str(self.store.folder(run) / 'preparation'),
                     'checks_passed': readiness['passed'], 'checks_reused': readiness.get('reused', False),
@@ -406,8 +480,11 @@ class Workflow:
         # Verify and select while locked; release before starting the interactive harness.
         conn = self.resolve(connection, run)
         with self.store.lock('connection', conn.id):
+            self.resume_cancellations(conn)
             row = self.select(self.within(self.rows(), conn), run, prepared=True)
             run = row['run']
+            if any(r['state'] == 'pending' and r.get('result_run') == run for _, r in self.requests()):
+                raise Decision(f'{run} belongs to a pending combined request; resume berman new before launching')
             with self.store.lock('run', run):
                 record = self.store.record(run)
                 self.store.check_installation(record)
@@ -475,7 +552,9 @@ class Workflow:
 
         rows = self.rows()
         held = self.store.occupied()
+        cancelled = self.cancelled_targets()
         connections = []
+        pending_targets = {r['result_run'] for _, r in self.requests() if r['state'] == 'pending' and r.get('result_run')}
         for conn in self.store.connections.values():
             own = [r for r in rows if r.get('connection') == conn.id]
             fieldwork = {'ready': [], 'incomplete': [], 'open': [], 'ending': [], 'attention': []}
@@ -483,15 +562,15 @@ class Workflow:
                 record, phase = row['record'] or {}, (row['record'] or {}).get('phase')
                 if row['problems']:
                     fieldwork['attention'].append({'run': row['run'], 'problem': row['problems'][0]})
+                elif row['run'] in cancelled and unused(row):
+                    fieldwork['attention'].append({'run': row['run'], 'problem': 'Combined request cancelled; retry retirement'})
                 elif unused(row) and phase not in CANCELLATION:
-                    fieldwork['ready' if phase == 'ready' else 'incomplete'].append(row['run'])
+                    fieldwork['ready' if phase == 'ready' and row['run'] not in pending_targets else 'incomplete'].append(row['run'])
                 elif open_engagement(row):
                     fieldwork['ending' if declared(record) else 'open'].append(row['run'])
-            try:
-                next_role = conn.plan.next_step(rows)['recipe'] if conn.plan else None
-                next_note = None if conn.plan else 'no research plan assigns fieldwork'
-            except Decision as exc:
-                next_role, next_note = None, str(exc)
+            planned = self.plan_status(conn, rows)
+            pending = [str(p) for p, r in self.requests() if r['state'] == 'pending'
+                       and r.get('connection', self.store.legacy_connection) == conn.id]
             select = [] if conn.id == self.store.default_connection else ['--connection', conn.id]
             development = []
             launchers = (conn.entry.get('development') or {}).items()
@@ -500,19 +579,21 @@ class Workflow:
                 development.append({'harness': harness, 'launcher': str(path), 'available': os.access(path, os.X_OK),
                                     'command': command('dev', '--harness', harness, *select)})
             several = len(fieldwork['ready']) > 1
+            needs_recipe = not planned['next_recipe'] and not (fieldwork['ready'] or fieldwork['incomplete']) and not pending
+            choice = ['--recipe', 'RECIPE'] if needs_recipe else []
             commands = {'status': command('status'),
                         'new': command('new', *select),
+                        'new_direct': command('new', '--recipe', 'RECIPE', *select),
                         'launch': [command('launch', '--run', run) if several or select else command('launch')
                                    for run in fieldwork['ready']],
                         'finish': [command('finish', '--run', run, '--reason', 'why the engagement ended')
                                    for run in fieldwork['open']],
-                        'finish_previous': command('new', '--finish-previous', 'why the engagement ended', *select),
-                        'keep_open': command('new', '--keep-open', *select),
+                        'finish_previous': command('new', '--finish-previous', 'why the engagement ended', *select, *choice),
+                        'keep_open': command('new', '--keep-open', *select, *choice),
                         'supplement': [command('supplement', '--run', run, '--reason', 'why this activity is retained')
                                        for run in fieldwork['open']]}
             connections.append({'id': conn.id, 'name': conn.name, 'default': conn.id == self.store.default_connection,
-                                'checkout': str(conn.checkout), 'plan': conn.plan.id if conn.plan else None,
-                                'next_recipe': next_role, 'next_note': next_note,
+                                'checkout': str(conn.checkout), **planned, 'pending_requests': pending,
                                 'operation_in_progress': f'connection {conn.id}' in held,
                                 'fieldwork': fieldwork, 'commands': commands, 'development': development})
         return {'connections': connections, 'berman': 'berman',

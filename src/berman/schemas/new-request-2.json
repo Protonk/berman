@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:berman:schema:new-request-2",
+  "title": "berman.new-request/2",
+  "description": "A combined request published after reserving its target assignment and before declaring its previous engagement ended. The result_run operation retains the exact assignment. Cancellation stops future request work without undoing a declared ending.",
+  "type": "object",
+  "required": ["schema", "state", "connection", "previous_run", "finish_reason", "result_run"],
+  "properties": {
+    "schema": {"const": "berman.new-request/2"},
+    "state": {"enum": ["pending", "complete", "cancelled"]},
+    "connection": {"type": "string"},
+    "created_at_utc": {"type": "string"},
+    "previous_run": {"type": "string"},
+    "finish_reason": {"type": "string"},
+    "result_run": {"type": "string"},
+    "previous_preserved": {"type": ["object", "null"]},
+    "cancellation": {
+      "type": "object",
+      "required": ["reason", "at_utc"],
+      "properties": {"reason": {"type": "string"}, "at_utc": {"type": "string"}}
+    }
+  }
+}

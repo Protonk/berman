@@ -38,7 +38,6 @@
     "instructions must be a string, not an integer (7)"
   ],
   "research-plan-1/invalid/steps.json": [
-    "relationships[0].plan is required",
     "steps[1].id is required"
   ],
   "research-plan-1/invalid/steps-as-object.json": [
@@ -95,5 +94,11 @@
   ],
   "reading-edition-2/invalid/schema.json": [
     "schema must be \"berman.reading-edition/2\", not a string (\"berman.wrong/1\")"
+  ],
+  "new-request-2/invalid/target.json": [
+    "result_run must be a string, not null"
+  ],
+  "operation-1/invalid/assignment-origin.json": [
+    "assignment_origin must be one of \"direct\", \"plan\", null, not a string (\"inferred\")"
   ]
 }

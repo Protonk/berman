@@ -53,8 +53,9 @@ Copse (copse)
       berman --root '/synthetic/study with spaces' dev --harness codex --connection copse --check
 
   Fieldwork:
-    nothing outstanding; no research plan assigns fieldwork
-    a fieldworker needs a research plan that assigns one; development stays available
+    nothing outstanding; Choose a recipe with berman new --recipe NAME
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --connection copse --recipe RECIPE
 
 Heath (heath)
   checkout: /synthetic/heath
@@ -66,6 +67,8 @@ Heath (heath)
     nothing outstanding; the next agreed role is work-reflections. Prepare it with:
       berman --root '/synthetic/study with spaces' new --connection heath
     then start it with the launch command that new prints
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --connection heath --recipe RECIPE
 
 Fen (fen)
   checkout: /synthetic/fen
@@ -83,5 +86,7 @@ Fen (fen)
     retain later activity without ending it:
       berman --root '/synthetic/study with spaces' supplement --run run-009 --reason 'why this activity is retained'
     the next agreed role after these is work-accounts
+    Direct assignment template (choose a recipe; replace RECIPE):
+      berman --root '/synthetic/study with spaces' new --connection fen --recipe RECIPE
 
 Commands use berman on PATH and select this workspace explicitly. Nothing was changed; launching still verifies the packet.

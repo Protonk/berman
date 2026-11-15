@@ -26,9 +26,12 @@
         "finish": [],
         "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended'",
         "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open",
-        "supplement": []
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --recipe RECIPE"
       },
-      "development": []
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
     }
   ]
 }

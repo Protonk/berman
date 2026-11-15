@@ -1,19 +1,26 @@
 3 archived runs. Default connection: orchard
 Workspace needs attention: Unattributed damaged session registry /synthetic/codex/berman-capture/x.json: Expecting value: line 1 column 1 (char 0)
-orchard: next fieldwork role: participant-inquiry
+orchard: next planned fieldwork role: participant-inquiry
   pending combined request: /synthetic/study/operations/new-requests/abc.json
-meadow: next fieldwork role: no research plan assigns fieldwork; an operation is in progress
+meadow: next planned fieldwork role: none; an operation is in progress
+  Choose a recipe with berman new --recipe NAME
   needs attention: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
 run-002 (orchard): capture closed by finalized.json (frozen; not an ending); no engagement ending declared; migration indexed; no recording package
+  Assignment: work-accounts; origin: not recorded
   migrated without a declared ending (low-level migration); no recording package is made automatically
 run-003 (orchard): capture closed by finalized.json (frozen; not an ending); ending declared; migration moved-and-verified; recording package pending
+  Assignment: work-accounts; origin: plan
 run-004 (orchard): session registered; capture open after Stop; no engagement ending declared
+  Assignment: work-accounts; origin: not recorded
   Capture at 2026-11-13T00:30:00.000000Z; consistent: True
   Transcript grew after the last snapshot.
 run-005 (orchard): capture closed by finalized.json (frozen; not an ending); no engagement ending declared
+  Assignment: work-accounts; origin: plan
   Capture at 2026-11-13T00:40:00.000000Z; consistent: True
 run-006 (meadow): ready; not yet started
+  Assignment: work-accounts; origin: direct
 run-007 (meadow): starting state unknown; ending unknown; unknown: registered, capture, finalized, ending, packaged
+  Assignment: not recorded; origin: not recorded
   ending unknown: operation record unreadable: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
   Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
 run-900101 (support trial, berman-codex; not research): launching; capture: open; next: berman support-trial collect --evidence experiments/trial-a, after the single reply and a normal exit

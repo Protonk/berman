@@ -12,7 +12,9 @@
       "checkout": "/synthetic/orchard",
       "pending_requests": [],
       "blocked_by": [],
-      "operation_in_progress": false
+      "operation_in_progress": false,
+      "plan_error": null,
+      "next_note": null
     }
   },
   "next_recipe": "work-accounts",

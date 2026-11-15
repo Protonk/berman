@@ -88,7 +88,8 @@ def checked(value, run):
 
 def checked_request(value):
     """A combined new-run request unchanged, or ValueError; lifecycle rules first, then structure."""
-    return schemas.validate('berman.new-request/1', validate_request(value))
+    checked = validate_request(value)
+    return schemas.validate(checked['schema'], checked)
 
 
 def runtime_adapters():

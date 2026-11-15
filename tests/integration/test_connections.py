@@ -264,17 +264,18 @@ class SecondConnectionTests(Base):
             self.workflow.finish('done', connection='orchard')
         status = self.workflow.status()
         self.assertEqual(status['connections']['stewart']['next_recipe'], 'work-accounts')
-        self.assertIn('sequence is complete', status['connections']['orchard']['next_recipe'])
+        self.assertIsNone(status['connections']['orchard']['next_recipe'])
+        self.assertIn('sequence is complete', status['connections']['orchard']['next_note'])
         self.assertEqual(self.workflow.new()['run'], 'run-003')
-        # Within Stewart, a started run without a plan association still needs an explicit relationship.
+        # An encounter without a plan association neither advances nor obstructs Stewart's plan.
         instructions = self.base / 'unplanned-instructions.md'
         instructions.write_text(f'Write accounts in `{self.store.field}/run-010/notes/`.\n')
         fieldwork.prepare(self.berman, 'run-010', self.store.connections['stewart'].checkout,
                           ['notes'], instructions, marker=MARKER, connection='stewart')
         # A session bound outside any reservation: the collector itself would refuse it without a record.
         write(self.store.field / 'run-010/session/binding.json', {'run': 'run-010', 'session_id': 'unplanned-session'})
-        with self.assertRaisesRegex(Decision, 'began outside the recorded research plan'):
-            self.store.connections['stewart'].plan.next_step(self.store.discover())
+        step = self.store.connections['stewart'].plan.next_step(self.store.discover())
+        self.assertEqual(step['recipe'], 'work-accounts')
 
     def test_explicit_run_determines_its_connection(self):
         one = self.workflow.new(connection='orchard')
@@ -324,23 +325,27 @@ class SecondConnectionTests(Base):
 
 
 class ResearchPlanRelationshipTests(Base):
-    def test_fieldwork_elsewhere_must_state_its_relationship_to_an_unfulfilled_commitment(self):
+    def test_fieldwork_elsewhere_does_not_require_a_relationship_to_an_unfulfilled_commitment(self):
         orchard(self.root, self.base / 'second', relationship=None)
         self.reload()
-        with self.assertRaisesRegex(Decision, 'unfulfilled commitment'):
-            self.workflow.new(connection='orchard')
-        self.assertFalse(self.store.operations.exists() and any(self.store.operations.glob('run-*')))
-        orchard(self.root, self.base / 'third')
-        self.reload()
-        self.assertEqual(self.workflow.new(connection='orchard')['connection'], 'orchard')
+        result = self.workflow.new(connection='orchard')
+        self.assertEqual(result['connection'], 'orchard')
+        self.assertEqual(result['assignment_origin'], 'plan')
+        self.assertEqual(self.workflow.status()['connections']['stewart']['next_recipe'], 'work-accounts')
 
-    def test_a_connection_without_a_plan_assigns_no_fieldwork(self):
+    def test_a_connection_without_a_plan_requires_a_recipe_choice(self):
         config = read(self.root / 'berman.json')
         del config['connections']['orchard']['plan']
         write(self.root / 'berman.json', config)
         self.reload()
-        with self.assertRaisesRegex(Decision, 'does not assign participant observation'):
+        with self.assertRaisesRegex(Decision, 'No assignment selected for connection orchard; choose a recipe'):
             self.workflow.new(connection='orchard')
+        self.assertFalse(self.store.operations.exists() and any(self.store.operations.glob('run-*')))
+        result = self.workflow.new(connection='orchard', recipe_name='orchard-accounts')
+        self.assertEqual(result['assignment_origin'], 'direct')
+        record = self.store.record(result['run'])
+        self.assertNotIn('plan', record)
+        self.assertNotIn('step', record)
 
     def test_recipe_worded_for_stewart_cannot_serve_another_connection(self):
         plan = read(self.root / 'plans/orchard-study/plan.json')

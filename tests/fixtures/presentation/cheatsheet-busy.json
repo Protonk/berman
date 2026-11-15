@@ -48,7 +48,8 @@
         "supplement": [
           "berman --root '/synthetic/study with spaces' supplement --run run-004 --reason 'why this activity is retained'",
           "berman --root '/synthetic/study with spaces' supplement --run run-005 --reason 'why this activity is retained'"
-        ]
+        ],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --recipe RECIPE"
       },
       "development": [
         {
@@ -63,7 +64,9 @@
           "available": false,
           "command": "berman --root '/synthetic/study with spaces' dev --harness claude"
         }
-      ]
+      ],
+      "plan_error": null,
+      "pending_requests": []
     },
     {
       "id": "meadow",
@@ -90,9 +93,12 @@
         "finish": [],
         "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection meadow",
         "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection meadow",
-        "supplement": []
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection meadow --recipe RECIPE"
       },
-      "development": []
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
     },
     {
       "id": "copse",
@@ -101,7 +107,7 @@
       "checkout": "/synthetic/copse",
       "plan": null,
       "next_recipe": null,
-      "next_note": "no research plan assigns fieldwork",
+      "next_note": "Choose a recipe with berman new --recipe NAME",
       "operation_in_progress": false,
       "fieldwork": {
         "ready": [],
@@ -115,9 +121,10 @@
         "new": "berman --root '/synthetic/study with spaces' new --connection copse",
         "launch": [],
         "finish": [],
-        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection copse",
-        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection copse",
-        "supplement": []
+        "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection copse --recipe RECIPE",
+        "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection copse --recipe RECIPE",
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection copse --recipe RECIPE"
       },
       "development": [
         {
@@ -126,7 +133,9 @@
           "available": true,
           "command": "berman --root '/synthetic/study with spaces' dev --harness codex --connection copse"
         }
-      ]
+      ],
+      "plan_error": null,
+      "pending_requests": []
     },
     {
       "id": "heath",
@@ -151,9 +160,12 @@
         "finish": [],
         "finish_previous": "berman --root '/synthetic/study with spaces' new --finish-previous 'why the engagement ended' --connection heath",
         "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection heath",
-        "supplement": []
+        "supplement": [],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection heath --recipe RECIPE"
       },
-      "development": []
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
     },
     {
       "id": "fen",
@@ -184,9 +196,12 @@
         "keep_open": "berman --root '/synthetic/study with spaces' new --keep-open --connection fen",
         "supplement": [
           "berman --root '/synthetic/study with spaces' supplement --run run-009 --reason 'why this activity is retained'"
-        ]
+        ],
+        "new_direct": "berman --root '/synthetic/study with spaces' new --connection fen --recipe RECIPE"
       },
-      "development": []
+      "development": [],
+      "plan_error": null,
+      "pending_requests": []
     }
   ]
 }

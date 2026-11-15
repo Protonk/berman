@@ -1,7 +1,7 @@
 """Which step a plan issues next and which identity a run receives, over generated histories.
 
 Both answers are made from discovered rows. A retry sees the same rows and must get the same
-answer; an unknown start must never be read as "not started"; an identity is never issued twice.
+answer; an own-plan unknown start must never be read as "not started"; an identity is never issued twice.
 """
 
 from types import SimpleNamespace
@@ -19,14 +19,12 @@ from tests.support.properties import budget
 STEPS = ('first', 'second', 'third', 'fourth', 'fifth')
 
 
-def plan(steps, predating=()):
-    """A plan for connection orchard, built without files; predating runs are catalogued as before any plan."""
+def plan(steps):
+    """A plan for connection orchard, built without files."""
     made = Plan.__new__(Plan)
     made.id, made.connection = 'orchard-roles', 'orchard'
     made.steps = [{'id': step, 'recipe': 'recipe-' + step} for step in steps]
     made.ids = list(steps)
-    catalogue = SimpleNamespace(predates_plans=lambda run, connection: run in predating)
-    made.store = SimpleNamespace(catalogue=catalogue)
     return made
 
 
@@ -42,7 +40,7 @@ def row(number, step, started, connection='orchard', owner='orchard-roles'):
     }
 
 
-# Rows that must never move this plan: unstarted preparations of any step, and other projects' runs in any state.
+# Only this plan's claims affect its sequence. Other assignments may even have unknown starts.
 unstarted = st.builds(row, st.integers(100, 199), st.sampled_from(STEPS), st.just(False))
 elsewhere = st.builds(
     row,
@@ -52,7 +50,25 @@ elsewhere = st.builds(
     st.just('meadow'),
     st.just('meadow-roles'),
 )
-bystanders = st.lists(unstarted | elsewhere, max_size=6)
+other_plan = st.builds(
+    row,
+    st.integers(300, 399),
+    st.sampled_from(STEPS),
+    st.sampled_from((True, False, None)),
+    st.just('orchard'),
+    st.just('another-orchard-plan'),
+)
+unassociated = st.builds(row, st.integers(600, 699), st.none(), st.sampled_from((True, False, None)))
+
+
+def direct_row(number, step, started):
+    made = row(number, None, started)
+    made['record'] = {'assignment_origin': 'direct', 'recipe': {'metadata': {'id': 'recipe-' + step}}}
+    return made
+
+
+direct = st.builds(direct_row, st.integers(700, 799), st.sampled_from(STEPS), st.sampled_from((True, False, None)))
+bystanders = st.lists(unstarted | elsewhere | other_plan | unassociated | direct, max_size=6)
 lengths = st.integers(1, len(STEPS))
 
 
@@ -89,9 +105,9 @@ class NextStepTests(unittest.TestCase):
 
     @budget(200)
     @given(lengths, st.data(), bystanders)
-    def test_an_unknown_start_stops_the_sequence_rather_than_counting_as_unstarted(self, total, data, others):
+    def test_an_own_plan_unknown_start_stops_the_sequence_rather_than_counting_as_unstarted(self, total, data, others):
         done = data.draw(st.integers(0, total))
-        damaged = row(400, data.draw(st.none() | st.sampled_from(STEPS[:total])), None)
+        damaged = row(400, data.draw(st.sampled_from(STEPS[:total])), None)
         chosen = plan(STEPS[:total])
         with self.assertRaisesRegex(Decision, 'starting state is unknown') as refused:
             chosen.next_step(started_prefix(done) + [damaged] + others)
@@ -113,14 +129,18 @@ class NextStepTests(unittest.TestCase):
 
     @budget(100)
     @given(lengths, st.integers(0, 3), bystanders)
-    def test_a_started_run_outside_the_plan_must_be_related_first(self, total, done, others):
-        stray = row(600, None, True)
+    def test_an_unassociated_run_does_not_advance_or_obstruct_a_plan(self, total, done, others):
+        stray = row(800, None, True)
         rows = started_prefix(min(done, total - 1)) + [stray] + others
-        with self.assertRaisesRegex(Decision, 'began outside the recorded research plan'):
-            plan(STEPS[:total]).next_step(rows)
-        # Catalogued as predating plans, the same run neither blocks nor consumes a step.
-        related = plan(STEPS[:total], predating={stray['run']})
-        self.assertEqual(related.next_step(rows)['id'], STEPS[min(done, total - 1)])
+        self.assertEqual(plan(STEPS[:total]).next_step(rows)['id'], STEPS[min(done, total - 1)])
+
+    @budget(100)
+    @given(lengths, st.integers(0, 3), bystanders)
+    def test_a_direct_encounter_with_the_next_recipe_does_not_consume_that_step(self, total, done, others):
+        completed = min(done, total - 1)
+        direct = direct_row(800, STEPS[completed], True)
+        rows = started_prefix(completed) + [direct] + others
+        self.assertEqual(plan(STEPS[:total]).next_step(rows)['id'], STEPS[completed])
 
 
 research = st.integers(1, 999_990).filter(lambda n: n not in SUPPORT_RANGE)

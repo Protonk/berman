@@ -1,0 +1,10 @@
+{
+  "schema": "berman.research-plan/1",
+  "id": "example",
+  "connection": "example",
+  "steps": [],
+  "commitment": {
+    "study": "annotation"
+  },
+  "relationships": "Researcher prose retained without operational interpretation"
+}

@@ -401,6 +401,23 @@ class VerifyTests(Fixture, Base):
         self.assertEqual((result['python'], result['verdict']), (sys.executable, 'failed'))
         self.assertEqual(checks['frozen-collector']['status'], 'passed')
 
+    def test_optional_plans_and_selected_plan_errors_have_distinct_verification_results(self):
+        config = read(self.root / 'berman.json')
+        del config['connections']['orchard']['plan']
+        write(self.root / 'berman.json', config)
+        self.reload()
+        self.assertEqual(self.verify()['checks']['workspace']['status'], 'passed')
+        (self.root / 'plans/stewart-fieldwork-roles/plan.json').unlink()
+        self.reload()
+        check = self.verify()['checks']['workspace']
+        self.assertEqual(check['status'], 'failed')
+        self.assertEqual(len(check['details']['problems']), 1)
+        problem = self.workflow.status()['connections']['stewart']['plan_error']
+        self.assertEqual(check['details']['problems'], ['stewart: ' + problem])
+        # Reporting a broken selected plan does not block an explicitly selected assignment.
+        prepared = self.workflow.new(connection='stewart', recipe_name='work-accounts')
+        self.assertEqual(prepared['recipe'], 'work-accounts')
+
 
     def test_cli_verify_json_text_and_exit_codes(self):
         def main(*argv):
@@ -447,12 +464,14 @@ class NativeAccessTests(Fixture, Base):
 
     def observe(self, harness, project):
         root, home = harness.store.root, harness.store.home
-        plan = root / 'plans/native-check-fixture/plan.json'
         self.seen.append({'root': root, 'project': project, 'home': sorted(p.name for p in home.iterdir()),
                           'config': (home / 'config.toml').read_text(), 'hooks': (root / 'hooks').exists(),
                           'runs': (root / 'runs').exists(), 'layout': read(root / 'source-layout.json'),
                           'catalogue': read(root / 'connections/catalogue.json')['runs'],
-                          'relationships': [r['plan'] for r in read(plan)['relationships']]})
+                          'plans': (root / 'plans').exists(),
+                          'recipes': sorted(p.name for p in (root / 'recipes').iterdir()),
+                          'definitions': {name: conn.definition for name, conn in harness.store.connections.items()},
+                          'selected_plans': [conn.entry.get('plan') for conn in harness.store.connections.values()]})
 
     def check(self, folder='experiments/native-1', **kwargs):
         kwargs.setdefault('harness', partial(Simulated, during=self.observe))
@@ -479,6 +498,8 @@ class NativeAccessTests(Fixture, Base):
         fixture = Store(verify.disposable_workspace(self.store, base, ['stewart'], False))
         self.assertEqual(fixture.python, self.store.python)
         self.assertEqual(fixture.runtime_python, self.store.runtime_python)
+        self.assertEqual(fixture.connections['stewart'].definition, self.store.connections['stewart'].definition)
+        self.assertEqual(fixture.connections['stewart'].checkout, self.store.connections['stewart'].checkout)
 
     def test_access_passes_for_each_connection_and_the_synthetic_fixture(self):
         with self.assertRaises((OSError, ValueError)):
@@ -493,9 +514,9 @@ class NativeAccessTests(Fixture, Base):
                          ('berman.native-access-check/1', True, True))
         connections = report['connections']
         self.assertEqual([(name, c['source'], c['capture_adapter'], c['run'], c['recipe']) for name, c in connections.items()],
-                         [('stewart', 'real', 'berman-codex', 'run-001', 'work-accounts'),
-                          ('orchard', 'real', 'berman-codex', 'run-002', 'orchard-accounts'),
-                          ('native-check-fixture', 'synthetic', 'berman-codex', 'run-003', 'native-check-fixture')])
+                         [('stewart', 'real', 'berman-codex', 'run-001', verify.DIAGNOSTIC_RECIPE),
+                          ('orchard', 'real', 'berman-codex', 'run-002', verify.DIAGNOSTIC_RECIPE),
+                          ('native-check-fixture', 'synthetic', 'berman-codex', 'run-003', verify.DIAGNOSTIC_RECIPE)])
         self.assertEqual((connections['stewart']['checkout'], connections['stewart']['project_checks']),
                          (str(self.base / 'stewart'), ['stewart_cargo_metadata', 'stewart_rustc_startup']))
         for name, entry in connections.items():
@@ -507,6 +528,15 @@ class NativeAccessTests(Fixture, Base):
                              (True, False, verify.ACCESS_ONLY))
             (result,) = (folder / name / 'checks').glob('*/result.json')
             self.assertTrue(read(result)['passed'])
+            spec = read(result.parent / 'spec.json')
+            if name in self.store.connections:
+                conn = self.store.connections[name]
+                self.assertEqual(spec['repo'], str(conn.checkout))
+                self.assertEqual(spec['reads'], [d for d in conn.documents() if (conn.checkout / d).is_file()])
+                self.assertEqual([c['id'] for c in spec['project_checks']], [c['id'] for c in conn.checks()])
+            instructions = (folder / name / 'INSTRUCTIONS.md').read_text()
+            self.assertIn('Native access diagnostic', instructions)
+            self.assertIn('no fieldworker is launched', instructions)
         self.assertTrue((folder / 'native-check-fixture/ASSIGNMENT.md').read_text().startswith('Berman-Fieldwork-Run: run-003\n'))
         self.assertEqual(sorted(p.name for p in folder.iterdir()), ['native-check-fixture', 'orchard', 'report.json', 'stewart'])
         self.assertEqual(read(folder / 'report.json'), report)
@@ -514,7 +544,10 @@ class NativeAccessTests(Fixture, Base):
                          ('codex-cli 0.0.0-fixture', str(self.store.codex), str(self.store.python)))
         self.assertEqual(report['harness_sha256'], {rel: digest((ROOT / rel).read_bytes())
                                                     for rel in ('harnesses/codex.py', 'harnesses/probe.py')})
-        self.assertEqual((report['not_established'], report['fulfilled_commitments']), (verify.ACCESS_NOT_ESTABLISHED, []))
+        self.assertEqual(report['not_established'], verify.ACCESS_NOT_ESTABLISHED)
+        self.assertEqual(report['diagnostic_recipe'], verify.DIAGNOSTIC_RECIPE)
+        self.assertNotIn('fulfilled_commitments', report)
+        self.assertIn('diagnostic instructions', report['scope'])
         # The disposable workspace held researcher inputs and Codex configuration only, and is gone.
         self.assertEqual([s['project'] for s in self.seen][:2], [self.base / 'stewart', self.base / 'orchard'])
         self.assertEqual(self.seen[2]['project'], self.seen[2]['root'].parent / 'native-check-fixture')
@@ -524,8 +557,11 @@ class NativeAccessTests(Fixture, Base):
             self.assertIn('hooks.json', seen['home'])
             self.assertFalse({'auth.json', 'sessions'} & set(seen['home']))
             self.assertFalse(seen['hooks'] or seen['runs'])
-            self.assertEqual((seen['layout'], seen['catalogue'], seen['relationships']),
-                             ({'runs': []}, [], ['stewart-fieldwork-roles']))
+            self.assertEqual((seen['layout'], seen['catalogue'], seen['plans']), ({'runs': []}, [], False))
+            self.assertEqual(seen['recipes'], [verify.DIAGNOSTIC_RECIPE])
+            self.assertTrue(all(plan is None for plan in seen['selected_plans']))
+            for name in ('stewart', 'orchard'):
+                self.assertEqual(seen['definitions'][name], self.store.connections[name].definition)
 
     def test_failing_sandbox_is_reported_with_its_evidence(self):
         folder = self.root / 'experiments/native-2'
@@ -534,7 +570,7 @@ class NativeAccessTests(Fixture, Base):
         self.assertEqual(list(report['connections']), ['orchard'])
         entry = report['connections']['orchard']
         self.assertEqual((entry['access_passed'], entry['checkout_unchanged'], entry['run'], entry['recipe'], entry['evidence']),
-                         (False, True, 'run-001', 'orchard-accounts', 'orchard/'))
+                         (False, True, 'run-001', verify.DIAGNOSTIC_RECIPE, 'orchard/'))
         # The error names the kept result, not its copy in the removed disposable roots.
         (result,) = (folder / 'orchard/checks').glob('*/result.json')
         self.assertEqual(entry['error'], f'Decision: Native access check did not pass. Details: {result}')
@@ -548,29 +584,65 @@ class NativeAccessTests(Fixture, Base):
             self.check('experiments/native-2')
         self.assertFalse((self.root / 'experiments/native-3').exists())
 
-    def test_commitments_are_fulfilled_as_in_the_real_workspace(self):
+    def test_diagnostic_checks_plan_free_and_broken_plan_connections_without_study_recipes(self):
         plan = read(self.root / 'plans/orchard-study/plan.json')
         plan['commitment'] = 'An orchard commitment'
+        plan['relationships'] = []
         write(self.root / 'plans/orchard-study/plan.json', plan)
+        planned = self.check('experiments/native-planned')
+        self.assertTrue(planned['access_passed'])
+        config = read(self.root / 'berman.json')
+        del config['connections']['stewart']['plan']
+        write(self.root / 'berman.json', config)
         self.reload()
-        unfulfilled = 'Plan orchard-study for orchard carries an unfulfilled commitment'
-        report = self.check('experiments/native-unfulfilled', synthetic=False, harness=Simulated)
-        stewart, orchard = report['connections']['stewart'], report['connections']['orchard']
-        self.assertEqual((report['fulfilled_commitments'], stewart['access_passed'], orchard['access_passed']), ([], False, True))
-        self.assertIn(unfulfilled, stewart['error'])
-        with self.assertRaisesRegex(Decision, unfulfilled):
-            self.workflow.new(connection='stewart')  # Real preparation asks the same.
-        for _ in range(2):
-            row = self.workflow.new(connection='orchard')
-            self.start(row['run'], self.berman)
-            self.workflow.finish('done', connection='orchard')
-        # Fulfilled in the real workspace, the commitment asks nothing of Stewart, though no disposable run fulfils it.
-        report = self.check('experiments/native-fulfilled')
-        self.assertEqual((report['fulfilled_commitments'], report['access_passed']), (['orchard-study'], True))
-        self.assertEqual([(c['run'], c['recipe']) for c in report['connections'].values()],
-                         [('run-001', 'work-accounts'), ('run-002', 'orchard-accounts'), ('run-003', 'native-check-fixture')])
-        self.assertEqual(self.seen[-1]['relationships'], ['stewart-fieldwork-roles'])
+        shutil.rmtree(self.root / 'recipes')
+        report = self.check('experiments/native-plan-free')
+        self.assertTrue(report['access_passed'])
+        self.assertEqual(list(report['connections']), ['stewart', 'orchard', verify.FIXTURE])
+        self.assertTrue(all(c['recipe'] == verify.DIAGNOSTIC_RECIPE for c in report['connections'].values()))
+        for name in ('stewart', 'orchard'):
+            self.assertEqual(report['connections'][name]['project_checks'], planned['connections'][name]['project_checks'])
+            before = read(self.root / 'experiments/native-planned' / name / 'readiness.json')['checks']
+            after = read(self.root / 'experiments/native-plan-free' / name / 'readiness.json')['checks']
+            self.assertEqual(after, before)
         self.assertEqual(plan, read(self.root / 'plans/orchard-study/plan.json'))
+        (self.root / 'plans/orchard-study/plan.json').write_text('{broken')
+        self.reload()
+        report = self.check('experiments/native-broken-plan', connections=['orchard'], synthetic=False)
+        self.assertTrue(report['access_passed'])
+        self.assertEqual(list(report['connections']), ['orchard'])
+        self.assertEqual((self.root / 'plans/orchard-study/plan.json').read_text(), '{broken')
+        self.assertFalse((self.root / 'operations').exists())
+
+    def test_diagnostic_namespace_collisions_preserve_researcher_inputs(self):
+        for number, relative in enumerate(('recipes/' + verify.DIAGNOSTIC_RECIPE,
+                                           'connections/' + verify.FIXTURE)):
+            path = self.root / relative
+            path.mkdir()
+            source = path / 'researcher.txt'
+            source.write_text('Retained researcher input.\n')
+            with self.assertRaisesRegex(Decision, 'namespace collides with researcher inputs'):
+                self.check(f'experiments/native-collision-{number}')
+            self.assertEqual(source.read_text(), 'Retained researcher input.\n')
+            shutil.rmtree(path)
+        path = self.root / 'recipes' / verify.DIAGNOSTIC_RECIPE
+        path.symlink_to(self.base / 'absent-researcher-recipe')
+        with self.assertRaisesRegex(Decision, 'namespace collides with researcher inputs'):
+            self.check('experiments/native-symlink-collision')
+        self.assertTrue(path.is_symlink())
+
+    def test_claude_connections_still_use_the_separate_support_trial(self):
+        config = read(self.root / 'berman.json')
+        config['connections']['orchard']['capture'] = 'berman-claude'
+        del config['connections']['orchard']['plan']
+        write(self.root / 'berman.json', config)
+        self.reload()
+        report = self.check('experiments/native-codex-only')
+        self.assertEqual(list(report['connections']), ['stewart', verify.FIXTURE])
+        self.assertIn('orchard: Claude access is qualified by its separate bounded support trial, not this Codex probe',
+                      report['not_established'])
+        with self.assertRaisesRegex(Decision, 'Claude native access uses an explicit bounded'):
+            self.check('experiments/native-explicit-claude', connections=['orchard'])
 
     def test_checkout_changed_during_the_check_fails_access(self):
         def stray(harness, project):

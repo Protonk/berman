@@ -1,0 +1,8 @@
+{
+  "schema": "berman.new-request/2",
+  "state": "pending",
+  "connection": "example",
+  "previous_run": "run-001",
+  "finish_reason": "Declared ending",
+  "result_run": null
+}
