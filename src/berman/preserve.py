@@ -5,7 +5,7 @@ from pathlib import Path
 import shlex
 import stat
 
-from berman import files, snapshots
+from berman import files, snapshots, sources
 from berman.archive import builder
 from berman.files import Decision, keep, read, write
 from berman import recovery as fieldwork
@@ -63,6 +63,24 @@ def recording_payload(root, entry):
 def package(store, run):
     from berman.recordings import publish
     return publish(store, run)
+
+
+def reading(store, record):
+    from berman.archive.select import select
+    from berman.archive.package import verify_published
+    from berman.archive.select import selection
+    receipt = store.folder(record['run']) / 'closeout.json'
+    if receipt.exists():
+        result = read(receipt)
+        current = verify_published(store.root, selection('connections', runs=[record['run']]))
+        if (current['archive_sha256'] == result['reading']['archive_sha256']
+                and current['archive_path'] == result['reading']['archive_path']):
+            return result['reading']
+        return dict(current, mode='published and verified')
+    result = builder.edition(select(store.root, 'connections', runs=[record['run']]))
+    write(receipt, {'schema': 'berman.closeout/1', 'run': record['run'], 'reading': result,
+                    'completed_at_utc': files.now()})
+    return result
 
 
 def finish_help(record):
@@ -143,6 +161,11 @@ def preserve(store, record):
             retained_source(store, record)
             closing = folder / 'closing-project'
             snapshot(Path(record['project']), record['documents'], closing)
+            harness = record.get('harness', {}).get('id', 'codex')
+            sources.collect(store.home if harness == 'codex' else store.claude_home,
+                            read(store.field / run / 'session/binding.json')['session_id'], harness,
+                            folder / 'associated-sessions', staging_parent=folder / 'acquisition')
+            copy_tree(folder / 'associated-sessions', store.field / run / 'associated-sessions', store, run)
             destination = store.field / run / 'context/berman'
             fieldwork.quarantine(store.root, run, destination.glob('.capture-*'),
                                  'Abandoned closing-context record before migration')
@@ -175,7 +198,9 @@ def preserve(store, record):
     record['phase'] = 'archived'
     store.save(record)
     receipts = fieldwork.recovered_writes(store.root, run)
-    return {'run': run, 'state': 'archived', 'package': record['package'], 'recovered_writes': receipts}
+    edition = reading(store, record)
+    return {'run': run, 'state': 'archived', 'package': record['package'], 'reading': edition,
+            'recovered_writes': receipts, 'next': 'Ready for a new fieldworker or ordinary developer session.'}
 
 
 def finishable(row, reason):

@@ -188,7 +188,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(access[str(self.store.root)], 'deny')
         self.assertEqual(access[str(self.store.field)], 'deny')
         self.assertEqual(access[str(self.store.field / 'run-123')], 'write')
-        self.assertEqual(access[str(self.project / '.git')], 'read')
+        self.assertEqual(access[str(self.project / '.git')], 'write')
         self.assertNotIn('model', policy)
 
     def test_unrelated_existing_profile_is_not_overwritten(self):
@@ -522,7 +522,8 @@ class WorkflowTests(unittest.TestCase):
                             for p in (self.store.root, self.store.field))
             paths += f'<entry access="write"><path>{self.store.field / run}</path></entry>'
             paths += ''.join(f'<entry access="read"><path>{self.project / p}</path></entry>'
-                             for p in ('.git', '.agents', '.codex', '.aws'))
+                             for p in ('.agents', '.codex', '.aws'))
+            paths += f'<entry access="write"><path>{self.project / ".git"}</path></entry>'
             return subprocess.CompletedProcess(argv, 0, json.dumps({'context': '<environment_context>' + paths}), '')
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
              mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: dict(control['fingerprint'])), \

@@ -23,8 +23,11 @@ recipe and shows the formats.
 
 A researcher can assign a recipe directly with `berman new --recipe NAME`,
 adding `--connection NAME` when needed. Without a recipe argument, a fresh
-assignment comes from the selected plan. Without either, Berman asks for a
-recipe choice; it never chooses a default.
+assignment comes from the selected plan, or the connection's explicit
+`default_recipe` when no plan is selected. Without either, Berman asks for a
+recipe choice. An empty recipe `connections` list means generic instructions;
+a nonempty list restricts them to those connections. `berman new --repeat RUN`
+uses that run's retained recipe bytes with freshly observed project context.
 
 A plan is optional. It uses berman.research-plan/1, an id, a connection and
 ordered steps with an id and recipe. Select its relative path in the connection's
@@ -107,8 +110,8 @@ operator's decision. Claude uses separately qualified per-launch settings.
 ## Engagements
 
 `berman new --recipe NAME` prepares a direct assignment without choosing a run
-number. Bare `berman new` prepares the selected plan's next step or retries an
-unused preparation. Preparation results and status identify the retained recipe
+number. Bare `berman new` prepares the selected plan's next step, the connection's
+default recipe, or retries an unused preparation. Preparation results and status identify the retained recipe
 and assignment origin (`direct` or `plan`). Historical missing origins remain
 unrecorded rather than being inferred.
 `berman cheatsheet` prints current launch commands. `berman launch --run RUN`
@@ -138,7 +141,11 @@ argument. Bash and Zsh support this quoting, as does POSIX.1-2024; older POSIX
 shells may not. Ordinary paths need no special shell support.
 
 `berman finish --reason TEXT` records the researcher's actual ending decision
-and preserves the encounter. Capture finalization alone is not an ending.
+and preserves the encounter, collects supported associated native sessions,
+publishes a neutral reading edition for that run, and verifies it. Capture
+finalization alone is not an ending. This command prints a short completion
+result; scripts use `--json`. No separate report or archive command is required
+for ordinary closeout.
 An interrupted command is retried by running the same command again: it
 allocates no second run and declares no second ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
@@ -302,10 +309,44 @@ berman --root /study archive --freshness
 rerenders nor compares against today's analysis files or builder. `--freshness`
 separately reports `current` or `stale` against current selected inputs. A stale
 edition can be intact and exits successfully; a missing or damaged publication
-fails. Building again creates a new immutable edition and retains the old one.
+fails. Building again creates a new immutable edition. The current and previous
+publication for each selection are retained; older editions are removed only
+when no other selection references them. Recordings and original evidence are
+never removed. Publication and retention resume together after interruption.
 
 Reading aids decode explicitly identified Codex and Claude streams into neutral
 blocks, preserving native roles and source physical lines/JSON pointers. Raw
 availability, decoded coverage and unknown formats are separate facts. Unsupported
 records remain available in their originals and are not silently counted as
 human messages. Original Markdown/physical-line citations remain usable.
+
+## Task readiness and bounded collection
+
+`berman ready` checks the selected connection's assignment and capture preflight
+without reserving a run. `berman ready --development codex` and
+`berman ready --development claude` check the installed launcher receipts without
+starting a model session. Preparation and launch still perform their own native
+access checks. `berman verify` remains the separate comprehensive maintenance
+audit; historical gaps do not become prerequisites for starting an ordinary task.
+
+Connection `documents` entries may be relative, nonrecursive glob selectors. They are expanded
+separately at preparation, launch and closeout, with the selectors, matching paths,
+hashes and missing matches retained. Selection is limited to 256 files, 4 MiB per
+file and 16 MiB total. Symlink traversal and Git metadata selection are refused.
+Choose bounded documentation and artifact directories rather than an entire checkout.
+
+Associated Codex sessions are selected from native parent/fork metadata, including
+`parent_thread_id`, `forked_from_id` and nested `source.subagent.thread_spawn`.
+Claude collection supports the parent's `subagents/agent-*.jsonl` directory.
+The source receipt names its observed scope and relationships. Raw bytes are kept;
+child completion or the absence of undiscovered sessions is never inferred.
+The bound is 256 associated sessions, 256 MiB per source and 512 MiB total.
+An interrupted closeout retains its first complete auxiliary observation and
+resumes publication; it does not silently replace that observation with later data.
+
+A workspace may explicitly list `historical_runs` in berman.json. Those identities
+must exist under runs/ and have no active packet. Routine discovery and the default
+edition leave them opaque, while allocation reserves their numbers. This is an
+intentional compatibility boundary, not a migration. Originals remain intact;
+full `verify` still audits retained evidence. An explicit `archive --run RUN`
+may read historical material if this release supports it.

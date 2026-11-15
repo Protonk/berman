@@ -460,7 +460,7 @@ class ResearcherInputTests(RecordTests):
         for changes, message in (
             ({'recording_protocol': 'diary/9'}, 'Recipe must explicitly name a supported recording protocol'),
             ({'coverage': ['notes', 'scratch']}, 'This workflow requires a named notes recipe'),
-            ({'connections': []}, 'is worded for no connection, not stewart'),
+            ({'connections': ['another']}, 'is worded for another, not stewart'),
         ):
             path.write_bytes(original)
             self.edit(relative, **changes)

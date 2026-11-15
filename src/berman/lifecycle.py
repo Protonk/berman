@@ -301,7 +301,7 @@ def open_engagement(row):
 def outstanding(row):
     """Whether status lists a row: problems, unfinished work, and archived records without a package."""
     record = row['record'] or {}
-    if row['problems']:
+    if row['problems'] or row.get('reading_pending'):
         return True
     if record.get('phase') == 'cancelled':
         return False
@@ -313,6 +313,8 @@ def outstanding(row):
 def authorized(row):
     """The custody step already authorized for a row: 'retire', 'preserve', 'resume-migration' or None."""
     record = row['record'] or {}
+    if row.get('reading_pending'):
+        return 'publish-reading'
     if record.get('phase') == 'cancelling':
         return 'retire'
     if declared(record) and record.get('phase') != 'archived':

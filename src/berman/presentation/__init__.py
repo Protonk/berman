@@ -15,7 +15,7 @@ import sys
 
 from berman.presentation import plain
 
-KINDS = ('status', 'cheatsheet', 'verification', 'prepared')
+KINDS = ('status', 'cheatsheet', 'verification', 'prepared', 'finished', 'ready')
 CHOICE = 'BERMAN_OUTPUT'  # Set to 'plain' to keep the plain text on an interactive terminal.
 
 

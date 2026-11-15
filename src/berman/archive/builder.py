@@ -383,7 +383,7 @@ def readers(build, files, groups, evidence, aids, mappings, out):
                   f"Standalone command metadata records: {sum(g['run'] == run for g in groups)}",
                   "This count excludes tool calls recorded inside manager session transcripts." if historical else
                   "This count excludes tool calls recorded inside session transcripts.", ""]
-        if historical:
+        if historical and any(e["run"] == run for e in evidence):
             lines.append("EVIDENCE EXPORTS (source identities from their existing manifests)")
             seen = set()
             for e in evidence:
@@ -391,8 +391,9 @@ def readers(build, files, groups, evidence, aids, mappings, out):
                     seen.add(e["manifest"])
                     lines.append(f"{e['audit_id']} | {e['source_kind']} {e['source_record']} | {e['manifest']}")
             lines.append("")
-        lines += ["SAVED PROGRAMS AND VIEW SPECIFICATIONS"]
-        lines += [f"{a['path']} | {a['role']}" for a in aids if a["run"] == run]
+        saved = [f"{a['path']} | {a['role']}" for a in aids if a["run"] == run]
+        if saved:
+            lines += ["SAVED PROGRAMS AND VIEW SPECIFICATIONS", *saved]
         if notes_protocol:
             lines += ["", "READING ORDER", "1. Opening assignment, recording instructions and participant notes, reproduced below with original line numbers.",
                       f"2. {session}/conversation.txt and review/events.txt for the recorded main conversation and tools.",
@@ -412,6 +413,11 @@ def readers(build, files, groups, evidence, aids, mappings, out):
         lines += ["INCLUDED MANAGER CONVERSATION FILES" if historical else "INCLUDED SESSION CONVERSATION FILES",
                   *(conversations or ["No manager conversation file supplied within this run." if historical else
                                       "No session conversation file supplied within this run."]), ""]
+        associated = [p for p in sorted(files) if p.startswith(f'runs/{run}/associated-sessions/') and p.endswith('/transcript.jsonl')]
+        if associated:
+            lines += ['ASSOCIATED NATIVE SESSIONS', *associated,
+                      f'runs/{run}/associated-sessions/sources.json records selection and coverage.',
+                      'These are associated sources; their presence makes no child-completion claim.', '']
         narrative = (build.root / narrative_path).read_text() if narrative_path in files else None
         if narrative is not None and not notes_protocol and not re.search(r"^\d{4}-\d\d-\d\dT\S+$", narrative, re.MULTILINE):
             lines += ["The narrative has no timestamp headings. Its paragraph times are not inferred in chronology.csv.", ""]
@@ -825,7 +831,7 @@ def edition(build, verify=False, freshness=False):
     generated, summary = render(build)
     payload, manifest = seal(build, generated, summary)
     # Custody checks remain strict on the original workspace; portable verification is separate.
-    inventory(build.root)
+    inventory(build.root, build.runs)
     if freshness:
         prior, result = published(build.root, build.selection)
         return dict(result, freshness='current' if prior['inputs'] == manifest['inputs'] else 'stale',

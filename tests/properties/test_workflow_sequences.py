@@ -92,6 +92,7 @@ class WorkflowSequences(RuleBasedStateMachine):
             package = record.get('package') or {}
             seen[row['run']] = {
                 'phase': record.get('phase'),
+                'reading_pending': row.get('reading_pending', False),
                 'location': row['location'],
                 'registered': row['lifecycle']['registered']['value'],
                 'declared': (record['ending']['declared_at_utc'], record['ending']['reason'])
@@ -241,7 +242,7 @@ class WorkflowSequences(RuleBasedStateMachine):
         if command == 'finish':
             assert result['state'] in ('archived', 'already-archived'), result
             state = self.seen[arguments['run']]
-            assert state['phase'] == 'archived', state
+            assert state['phase'] == 'archived' and not state['reading_pending'], state
             if before[arguments['run']]['declared']:
                 # A second declaration never replaces the first, whatever reason it gives.
                 assert state['declared'] == before[arguments['run']]['declared'], state
@@ -401,7 +402,7 @@ class WorkflowSequences(RuleBasedStateMachine):
         assert status['workspace_problems'] == []
         listed = {row['run']: row for row in status['runs']}
         for run, state in self.seen.items():
-            if state['phase'] in ('archived', 'cancelled'):
+            if state['phase'] in ('archived', 'cancelled') and not state['reading_pending']:
                 assert run not in listed, f'{run} is finished but still listed'
                 continue
             assert run in listed, f'{run} is unfinished ({state["phase"]}) and status does not list it'

@@ -4,44 +4,124 @@
   "title": "berman.workspace/1",
   "description": "A fieldwork workspace's local installation settings (berman.json). Required and typed here is what loading a workspace reads as a path, iterates or indexes; a wrong value there used to end in a bare key name or a traceback. Adapter names, the reading edition, the fieldwork model, registered connection names and the disjointness of roots are judged by berman.records and berman.config in their own words. Fields Berman only stores are not constrained.",
   "type": "object",
-  "required": ["schema", "packet_root", "codex_home", "python", "codex", "connections"],
+  "required": [
+    "schema",
+    "packet_root",
+    "codex_home",
+    "python",
+    "codex",
+    "connections"
+  ],
   "properties": {
-    "schema": {"const": "berman.workspace/1"},
-    "packet_root": {"type": "string"},
-    "codex_home": {"type": "string"},
-    "claude_home": {"type": "string"},
-    "python": {"type": "string"},
-    "runtime_python": {"type": "string"},
-    "codex": {"type": "string"},
-    "claude": {"type": "string"},
-    "default_connection": {"type": ["string", "null"]},
-    "legacy_connection": {"type": ["string", "null"]},
+    "schema": {
+      "const": "berman.workspace/1"
+    },
+    "packet_root": {
+      "type": "string"
+    },
+    "codex_home": {
+      "type": "string"
+    },
+    "claude_home": {
+      "type": "string"
+    },
+    "python": {
+      "type": "string"
+    },
+    "runtime_python": {
+      "type": "string"
+    },
+    "codex": {
+      "type": "string"
+    },
+    "claude": {
+      "type": "string"
+    },
+    "default_connection": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "legacy_connection": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "catalogue": {
       "description": "A path, or anything false for none.",
       "anyOf": [
-        {"type": ["string", "null", "boolean"]},
-        {"enum": [0, [], {}]}
+        {
+          "type": [
+            "string",
+            "null",
+            "boolean"
+          ]
+        },
+        {
+          "enum": [
+            0,
+            [],
+            {}
+          ]
+        }
       ]
     },
-    "support_collections": {"type": "array", "items": {"type": "string"}},
-    "qualified_adapters": {"type": "array", "items": {"type": "string"}},
+    "support_collections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "qualified_adapters": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "connections": {
       "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/connection"}
+      "additionalProperties": {
+        "$ref": "#/$defs/connection"
+      }
+    },
+    "historical_runs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^run-[0-9]{3,6}$"
+      }
     }
   },
   "$defs": {
     "connection": {
       "description": "This workspace's binding of a named connection to a checkout.",
       "type": "object",
-      "required": ["definition", "checkout"],
+      "required": [
+        "definition",
+        "checkout"
+      ],
       "properties": {
-        "definition": {"type": "string"},
-        "checkout": {"type": "string"},
-        "plan": {"type": ["string", "null"]},
+        "definition": {
+          "type": "string"
+        },
+        "checkout": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "development": {
           "description": "Development launchers by harness; each is read as a path when that launcher is used.",
-          "type": ["object", "null"]
+          "type": [
+            "object",
+            "null"
+          ]
         }
       }
     }

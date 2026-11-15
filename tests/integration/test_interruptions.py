@@ -74,7 +74,7 @@ class InterruptionTests(RecordTests):
                     self.assertEqual(pending['status'], 'not-established', pending)
                     self.assertEqual(state(self.root), before)
                 code, output, error = self.command(
-                    'finish', '--run', 'run-001', '--reason', 'Explicit synthetic ending'
+                    '--json', 'finish', '--run', 'run-001', '--reason', 'Explicit synthetic ending'
                 )
                 self.assertEqual((code, error), (0, ''))
                 result = json.loads(output)

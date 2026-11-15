@@ -48,7 +48,8 @@ berman --root /path/to/study status
 connection with no assigned plan. It installs no hooks, changes no project files
 and starts no session. The [minimal study example](examples/minimal-study/README.md)
 shows the configuration formats. After configuring and qualifying the installation,
-choose a recipe directly with `berman new --recipe NAME`. A selected research plan
+choose a recipe directly with `berman new --recipe NAME`, set the connection's
+`default_recipe`, or repeat retained instructions with `berman new --repeat RUN`. A selected research plan
 can instead supply ordered assignments to bare `berman new`; connecting a project
 alone assigns nothing. Read [the fieldwork guide](docs/usage.md) before preparing
 fieldwork.

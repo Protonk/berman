@@ -388,7 +388,7 @@ class AccessTests(Base):
         access = tomllib.loads(profile(self.store, one['run'], project))['permissions'][
             f'berman_{self.store.tag}_{one["run"].replace("-", "_")}']['filesystem']
         self.assertEqual({k: v for k, v in access.items() if v != 'read'},
-                         {str(self.root): 'deny', str(self.store.field): 'deny', str(self.store.field / one['run']): 'write'})
+                         {str(self.root): 'deny', str(self.store.field): 'deny', str(self.store.field / one['run']): 'write', str(project / '.git'): 'write'})
         harness = Codex(self.store)
         seen = {}
         def invoke(argv, cwd=None, **kwargs):
@@ -399,7 +399,8 @@ class AccessTests(Base):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({'token': spec['token'], 'checks': checks}), '')
             paths = ''.join(f'<entry access="deny" escalatable="false"><path>{p}</path></entry>' for p in (self.root, self.store.field))
             paths += f'<entry access="write"><path>{self.store.field / one["run"]}</path></entry>'
-            paths += ''.join(f'<entry access="read"><path>{project / p}</path></entry>' for p in ('.git', '.agents', '.codex', '.aws'))
+            paths += ''.join(f'<entry access="read"><path>{project / p}</path></entry>' for p in ('.agents', '.codex', '.aws'))
+            paths += f'<entry access="write"><path>{project / ".git"}</path></entry>'
             return subprocess.CompletedProcess(argv, 0, json.dumps({'context': '<environment_context>' + paths}), '')
         folder = self.store.folder(one['run']) / 'preparation'
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \

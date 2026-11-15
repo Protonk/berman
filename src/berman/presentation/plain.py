@@ -199,3 +199,16 @@ def assignment(row):
     return (
         f'Assignment: {row.get("recipe") or "not recorded"}; origin: {row.get("assignment_origin") or "not recorded"}'
     )
+
+
+def finished(result):
+    return (
+        f'{result["run"]} preserved; reading edition published and verified.\n'
+        f'Recording: {result["package"]["path"]}\n'
+        f'Reading: {result["reading"]["archive_path"]}\n'
+        'Ready for a new fieldworker or ordinary developer session.'
+    )
+
+
+def ready(result):
+    return f'{result["connection"]}: {result["state"]}.\n{result["scope"]}\nNext: {result["next"]}'

@@ -110,6 +110,8 @@ def settings_files(config: dict, harness: str) -> list[Path]:
                   codex_home / (config['codex_profile_name'] + '.config.toml')]
         repo = Path(config['repo'])
         files += [p / '.codex/config.toml' for p in (repo, *repo.parents)]
+        files += [rule for folder in {p.parent / 'rules' for p in files if p.suffix == '.toml'}
+                  for rule in sorted(folder.glob('*.rules'))]
     else:
         files += list(claude_sources(config))
     return list(dict.fromkeys(files))
@@ -482,6 +484,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('harness', choices=('codex', 'claude'))
     parser.add_argument('--check', action='store_true', help='verify access; Claude uses a short model session')
+    parser.add_argument('--status', action='store_true', help='read the current readiness receipt; starts no session')
     parser.add_argument('--model')
     parser.add_argument('--effort')
     parser.add_argument('prompt', nargs='?')
@@ -489,6 +492,14 @@ def main(argv=None):
     config = json.loads((HERE / 'config.json').read_text())
     if Path.cwd().resolve() != Path(config['repo']).resolve():
         parser.error('start from the configured Stewart root: ' + config['repo'])
+    if args.status:
+        problem = verification_problem(config, args.harness)
+        if args.harness == 'claude':
+            conflicts = claude_conflicts(config)
+            if conflicts:
+                problem = '\n'.join(conflicts)
+        print(json.dumps({'ready': problem is None, 'harness': args.harness, 'problem': problem}))
+        raise SystemExit(0 if problem is None else 1)
     if args.check:
         raise SystemExit(0 if check(config, args.harness, args.model, args.effort)['passed'] else 1)
     if args.harness == 'claude':

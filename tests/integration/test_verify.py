@@ -140,6 +140,7 @@ class Simulated(verify.Disposable):
         entries = [f'<entry access="deny" escalatable="false"><path>{path}</path></entry>'
                    for path in (self.store.root, self.store.field)]
         entries.append(f'<entry access="write"><path>{packet}</path></entry>')
+        entries.append(f'<entry access="write"><path>{project / ".git"}</path></entry>')
         entries += [f'<entry access="read"><path>{project / name}</path></entry>' for name in PROTECTED]
         return subprocess.CompletedProcess(argv, 0, json.dumps({'input': ['<permissions instructions>' + ''.join(entries)]}), '')
 

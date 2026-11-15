@@ -51,7 +51,8 @@ def run(spec):
     env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
     p = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--show-toplevel'], env=env, capture_output=True)
     checks['git_read'] = p.returncode == 0 and Path(os.fsdecode(p.stdout).strip()).resolve() == repo
-    # The host initialized this disposable repository, as a developer's checkout already exists.
+    # The worktree is disposable; its separate metadata lives inside the real checkout's .git.
+    # No real index, reference, hook, object or working file is touched.
     probe = fixture / 'git-probe'
     (probe / 'file.txt').write_text('probe\n')
     added = subprocess.run(['git', '-C', str(probe), 'add', 'file.txt'], capture_output=True)

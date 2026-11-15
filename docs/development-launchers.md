@@ -14,3 +14,9 @@ For another project, supply suitable checks and qualify its actual access policy
 before adopting an adapted launcher. Include the fieldwork, analysis and live
 packet locations in the denied research roots. The core software tests do not
 establish a native blinding boundary.
+
+`--status` reads the current receipt and reports whether its fingerprint still
+matches; it starts no session and renews no check. Codex fingerprints include
+execpolicy rule files beside the active configuration layers. Fieldworker probes
+and developer probes both exercise disposable Git metadata inside the real
+checkout's Git directory. The real index, objects and references are not used.

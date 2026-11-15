@@ -4,11 +4,26 @@
   "title": "berman.connection/1",
   "description": "A named project description (connection.json). Loading needs only schema and id: documents are read when fieldwork is prepared, so a connection used only for development may omit them, and that preparation refuses what it cannot use, including the commission and revision text that 0.4.4 retired. What is typed here is every list Berman iterates, because text in its place would be read character by character without complaint. Check identities, timeouts and expected output are converted and judged by berman.harnesses; the identity by berman.config. Fields Berman only stores or prints are not constrained.",
   "type": "object",
-  "required": ["schema", "id"],
+  "required": [
+    "schema",
+    "id"
+  ],
   "properties": {
-    "schema": {"const": "berman.connection/1"},
-    "documents": {"type": "array", "items": {"type": "string"}},
-    "readers": {"type": "array", "items": {"type": "string"}},
+    "schema": {
+      "const": "berman.connection/1"
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "readers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "checks": {
       "type": "array",
       "items": {
@@ -20,6 +35,10 @@
           }
         }
       }
+    },
+    "default_recipe": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
     }
   }
 }

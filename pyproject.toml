@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "berman"
-version = "0.26.2"
+version = "0.26.3"
 description = "Prepare, capture, and preserve research alongside software development."
 readme = "README.md"
 license = "MIT"
@@ -150,7 +150,7 @@ layers = [
     "berman.__main__",
     "berman.cli",
     "berman.workflow : berman.verify : berman.support : berman.harnesses.claude_support",
-    "berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
+    "berman.sources : berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
     "berman.records",
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman._legacy",

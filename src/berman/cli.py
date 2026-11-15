@@ -71,7 +71,10 @@ def main(argv=None):
         sub = commands.add_parser(name, help=help_text)
         sub.add_argument('--connection', help='connection to operate within; an explicit --run determines its own')
         return sub
+    ready = selecting('ready', 'check readiness for the next task without assigning or starting a session')
+    ready.add_argument('--development', choices=('codex', 'claude'), help='check the installed developer launcher receipt')
     new = selecting('new', 'settle authorized preservation and prepare the next fieldworker')
+    new.add_argument('--repeat', metavar='RUN', help='repeat the retained instructions of this run with fresh project context')
     new.add_argument('--recipe', help='directly assign this recipe; on retry, check the retained recipe id')
     disposition = new.add_mutually_exclusive_group()
     disposition.add_argument('--finish-previous', metavar='REASON', help='declare the single previous engagement finished')
@@ -210,13 +213,15 @@ def main(argv=None):
         elif args.command == 'cheatsheet':
             result = workflow.cheatsheet()
         elif args.command == 'new':
-            result = workflow.new(args.finish_previous, args.keep_open, args.connection, recipe_name=args.recipe)
+            result = workflow.new(args.finish_previous, args.keep_open, args.connection, recipe_name=args.recipe, repeat=args.repeat)
         elif args.command == 'finish':
             result = workflow.finish(args.reason, args.run, args.allow_incomplete, args.connection)
         elif args.command == 'supplement':
             result = workflow.supplement(args.reason, args.run, args.connection)
         elif args.command == 'cancel':
             result = workflow.cancel(args.reason, args.run, args.connection)
+        elif args.command == 'ready':
+            result = workflow.ready(args.connection, args.development)
         elif args.command == 'dev':
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
             if args.check:
@@ -254,7 +259,7 @@ def main(argv=None):
         else:
             workflow.launch(args.run, args.connection)
             return 0
-        show(args, {'new': 'prepared', 'cheatsheet': 'cheatsheet', 'status': 'status'}.get(args.command), result)
+        show(args, {'new': 'prepared', 'cheatsheet': 'cheatsheet', 'status': 'status', 'finish': 'finished', 'ready': 'ready'}.get(args.command), result)
         return 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, EOFError, zipfile.BadZipFile, zlib.error, subprocess.SubprocessError) as exc:
         result = {'state': 'needs-attention', 'message': str(exc)}

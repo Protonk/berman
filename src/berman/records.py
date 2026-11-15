@@ -111,6 +111,10 @@ class Store:
         schemas.validate('berman.workspace/1', raw, self.root / 'berman.json')
         workspace = raw
         self.workspace = workspace
+        history = workspace.get('historical_runs', [])
+        if not isinstance(history, list) or any(not isinstance(r, str) or not RUN.fullmatch(r) for r in history):
+            raise ValueError('historical_runs must list recorded run identities')
+        self.historical_runs = set(history)
         self.field = self.path(workspace['packet_root'])
         self.home = self.path(workspace['codex_home'])
         self.python = self.path(workspace['python'])
@@ -324,6 +328,9 @@ class Store:
 
     def discover(self):
         """Every identity across connections; per-run problems are reported, not raised."""
+        for run in self.historical_runs:
+            if (self.field / run).exists() or not (self.root / 'runs' / run).is_dir():
+                raise Decision(f'{run}: opaque history must be preserved under runs/ and have no active packet')
         support = self.support()
         self.support_identities = set(support)
         identities = set()
@@ -337,6 +344,8 @@ class Store:
                 safe_directory(base)
                 for p in base.iterdir():
                     if RUN.fullmatch(p.name):
+                        if p.name in self.historical_runs:
+                            continue
                         if base == self.operations and unpublished(p):
                             continue
                         identities.add(p.name)
@@ -345,11 +354,13 @@ class Store:
                         except (OSError, ValueError) as exc:
                             problem(p.name, p, exc)
         layout = self.root / 'source-layout.json'
-        indexed = {r['run'] for r in read(layout)['runs']} if layout.exists() else set()
+        indexed = {r['run'] for r in read(layout)['runs']} - self.historical_runs if layout.exists() else set()
         self.published_recordings = {}
         self.recording_errors = {}
         for path in (self.root / 'recordings').glob('run-*/manifest.json'):
             run = path.parent.name
+            if run in self.historical_runs:
+                continue
             identities.add(run)
             try:
                 if not (path.parent / 'publication.json').exists():
@@ -389,7 +400,7 @@ class Store:
         pending, phases = {}, {}
         if journals.exists():
             for p in journals.glob('run-*.json'):
-                if RUN.fullmatch(p.stem):
+                if RUN.fullmatch(p.stem) and p.stem not in self.historical_runs:
                     identities.add(p.stem)
                     if p.stem in self.published_recordings:
                         continue
@@ -432,6 +443,8 @@ class Store:
                 if registration.get('workspace') not in (None, str(self.root)):
                     continue  # Another Berman workspace's registration.
                 if run and RUN.fullmatch(run):
+                    if run in self.historical_runs:
+                        continue
                     if run in support and registration.get('session_id') == support[run]:
                         continue
                     identities.add(run)
@@ -472,6 +485,11 @@ class Store:
             evidence = self.evidence(row, record_error, registered.get(run, []), run in indexed, phases.get(run))
             row['lifecycle'] = assess(row['record'], evidence)
             row['started'] = row['lifecycle']['registered']['value']
+            row['reading_pending'] = (row['location'] == 'archived' and row['lifecycle']['packaged']['value'] is True
+                                      and (row['record'] or {}).get('closeout_contract') == 'reading/1'
+                                      and not (self.folder(run) / 'closeout.json').is_file())
+            if row['reading_pending']:
+                row['state'] = 'reading-pending'
             rows.append(row)
         self.support_identities |= set(self.support_trials)
         return rows
@@ -547,7 +565,8 @@ class Store:
 
     def allocate(self, rows):
         """The next research identity; the support range neither sets research numbering nor receives it."""
-        number = max((int(r['run'][4:]) for r in rows if int(r['run'][4:]) not in SUPPORT_RANGE), default=0) + 1
+        number = max((int(run[4:]) for run in {r['run'] for r in rows} | self.historical_runs
+                      if int(run[4:]) not in SUPPORT_RANGE), default=0) + 1
         while number in SUPPORT_RANGE or f'run-{number:03d}' in getattr(self, 'support_identities', set()):
             number += 1
         if number > 999999:

@@ -158,7 +158,7 @@ class Build:
         return self.attributions.get(run, LEGACY)
 
     def stewart_reader(self, run):
-        return stewart.READER in self.connection(run)["readers"]
+        return self.edition.name == 'stewart' and stewart.READER in self.connection(run)["readers"]
 
 
 def load(root, path):
@@ -183,15 +183,20 @@ def retained_bytes(root, manifest_path, manifest, ref):
     return data
 
 
-def inventory(root):
+def inventory(root, runs=()):
     """Check original custody against recording authority or an explicit historical inventory."""
     root = Path(root)
-    layout = load(root, "source-layout.json") if (root / 'source-layout.json').is_file() else {'runs': []}
+    use_legacy = not runs or any(not (root / 'recordings' / run / 'manifest.json').is_file() for run in runs)
+    layout = load(root, "source-layout.json") if use_legacy and (root / 'source-layout.json').is_file() else {'runs': []}
+    if runs:
+        layout = dict(layout, runs=[r for r in layout['runs'] if r['run'] in runs])
     legacy = {entry['run']: entry for entry in layout['runs']}
     if len(legacy) != len(layout['runs']):
         raise ValueError('Duplicate run identity in source-layout.json')
     authoritative = {}
     for path in sorted((root / 'recordings').glob('run-*/manifest.json')):
+        if runs and path.parent.name not in runs:
+            continue
         from berman.evidence import collection, validate
         manifest = validate(json.loads(path.read_bytes()))
         if manifest['collection_id'] != collection(root) or manifest['run'] != path.parent.name:
@@ -315,7 +320,13 @@ def select(root, edition="stewart", connections=(), runs=(), recorded=None):
     """
     root = Path(root)
     request = selection(edition, connections, runs)
-    layout, entries = inventory(root) if recorded is None else recorded
+    config = load(root, 'berman.json') if (root / 'berman.json').is_file() else {}
+    if not runs and config.get('historical_runs'):
+        runs = sorted(p.parent.name for p in (root / 'recordings').glob('run-*/manifest.json')
+                      if p.parent.name not in config['historical_runs'])
+        if not runs:
+            raise ValueError('No current recordings are selected; historical runs are opaque by workspace policy')
+    layout, entries = inventory(root, runs) if recorded is None else recorded
     # Attribution covers the full recorded layout, so unselected runs' checkouts still classify references.
     attributions = attribute(root, layout)
     connection = lambda run: attributions.get(run, LEGACY)
@@ -341,12 +352,12 @@ def select(root, edition="stewart", connections=(), runs=(), recorded=None):
     if not selected:
         raise ValueError("No recorded runs are selected for this edition")
     names = tuple(r["run"] for r in selected)
-    subset = len(selected) != len(layout["runs"])
+    subset = bool(runs) or len(selected) != len(layout["runs"])
     if subset:
         roots = {r["current_root"] for r in selected}
         layout = dict(layout, runs=selected)
         entries = [e for e in entries if any(e["path"] == base or e["path"].startswith(base + "/") for base in roots)]
-    return Build(root, chosen, layout, entries, names, attributions, subset, bool(runs), request)
+    return Build(root, chosen, layout, entries, names, attributions, subset, bool(request['runs']), request)
 
 
 def selection(edition, connections=(), runs=()):

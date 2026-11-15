@@ -348,4 +348,7 @@ RENDERERS = {'status': status, 'cheatsheet': cheatsheet, 'verification': verific
 
 def render(kind, result, target):
     """Print one command's result to a console made by console()."""
-    RENDERERS[kind](Screen(target), result)
+    if kind in ('finished', 'ready'):
+        target.print(getattr(plain, kind)(result), markup=False, highlight=False)
+    else:
+        RENDERERS[kind](Screen(target), result)

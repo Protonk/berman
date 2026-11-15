@@ -1,7 +1,7 @@
 {
   "schema": "berman.recipe/2",
   "id": "baseline",
-  "connections": ["example"],
+  "connections": [],
   "coverage": ["notes"],
   "recording_protocol": "work-accounts/1",
   "instructions": "INSTRUCTIONS.md",

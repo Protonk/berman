@@ -17,8 +17,9 @@ from berman.capture import adapters
 from berman import files
 from berman.files import Decision, keep, read, write
 from berman.installation import PACKAGE
+from berman.harnesses.development.launch import checkout_git_fixture
 
-PROTECTED = ('.git', '.agents', '.codex', '.aws')
+PROTECTED = ('.agents', '.codex', '.aws')
 CANARIES = ('berman', 'unassigned_packet')
 COMMON_CHECKS = {'project_read', 'workspace_write', 'cat_positive_control', 'rg_positive_control', 'git_read',
                  'git_disposable_commit', 'assigned_instructions_readable', 'assigned_notes_writable',
@@ -35,6 +36,7 @@ def profile_name(store, run):
 def profile(store, run, project):
     permission = f'berman_{store.tag}_{run.replace("-", "_")}'
     access = {str(store.root): 'deny', str(store.field): 'deny', str(store.field / run): 'write'}
+    access[str(project / '.git')] = 'write'
     access.update({str(project / name): 'read' for name in PROTECTED})
     return '\n'.join([
         '# Berman fieldwork profile; selected only by its explicit profile name.',
@@ -132,8 +134,11 @@ class Codex:
                  store.home / (profile_name(store, run) + '.config.toml'),
                  Path('/etc/codex/config.toml'), Path('/etc/codex/requirements.toml'),
                  PACKAGE / 'harnesses/codex.py', PACKAGE / 'harnesses/probe.py',
+                 PACKAGE / 'harnesses/development/launch.py',
                  *(PACKAGE / rel for rel in adapters.ADAPTERS[adapter]['implementation'])]
         paths += [p / '.codex/config.toml' for p in (project, *project.parents)]
+        paths += [rule for folder in {p.parent / 'rules' for p in paths if p.suffix == '.toml'}
+                  for rule in sorted(folder.glob('*.rules'))]
         st = self.binary.resolve().stat()
         return {'codex': str(self.binary.resolve()), 'version': version, 'size': st.st_size,
                 'mtime_ns': st.st_mtime_ns, 'python': str(self.python.resolve()),
@@ -175,12 +180,12 @@ class Codex:
                   'evidence': str(evidence)}
         try:
             with tempfile.TemporaryDirectory(prefix='.berman-check-', dir=project) as temporary, \
-                 tempfile.TemporaryDirectory(prefix='.berman-unassigned-', dir=store.field) as other:
+                 tempfile.TemporaryDirectory(prefix='.berman-unassigned-', dir=store.field) as other, \
+                 checkout_git_fixture(project, Path(temporary)):
                 fixture = Path(temporary)
                 canaries = {'berman': evidence / 'denied-marker.txt', 'unassigned_packet': Path(other) / 'denied-marker.txt'}
                 for path in canaries.values():
                     path.write_text(token + '\n')
-                subprocess.run(['git', 'init', '-q', str(fixture / 'git-probe')], check=True, capture_output=True)
                 shutil.copyfile(PACKAGE / 'harnesses/probe.py', fixture / 'probe.py')
                 rg = shutil.which('rg')
                 if not rg:
@@ -213,6 +218,7 @@ class Codex:
                 checks_seen['rendered_denials'] = all(f'<entry access="deny" escalatable="false"><path>{path}</path></entry>' in context
                                                       for path in (store.root, store.field))
                 checks_seen['rendered_packet_write'] = f'<entry access="write"><path>{packet}</path></entry>' in context
+                checks_seen['rendered_git_write'] = f'<entry access="write"><path>{project / ".git"}</path></entry>' in context
                 checks_seen['protected_configuration_paths'] = all(f'<entry access="read"><path>{project / name}</path></entry>' in context
                                                                    for name in PROTECTED)
                 checks_seen['configuration_unchanged'] = before == self.fingerprint(run, project, adapter, checks)

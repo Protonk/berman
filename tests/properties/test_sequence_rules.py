@@ -158,7 +158,7 @@ class AllocationTests(unittest.TestCase):
     )
     def test_a_research_identity_is_new_later_and_outside_the_support_range(self, existing, reserved):
         rows = [{'run': name(number)} for number in existing]
-        store = SimpleNamespace(support_identities={name(number) for number in reserved})
+        store = SimpleNamespace(historical_runs=set(), support_identities={name(number) for number in reserved})
         run = Store.allocate(store, rows)
         number = int(run[4:])
         self.assertTrue(RUN.fullmatch(run))
@@ -174,7 +174,7 @@ class AllocationTests(unittest.TestCase):
     @given(st.lists(research | support, max_size=12, unique=True), st.lists(support, max_size=20, unique=True))
     def test_a_support_identity_stays_in_its_range_and_never_moves_research_numbering(self, existing, reserved):
         rows = [{'run': name(number)} for number in existing]
-        store = SimpleNamespace(support_identities={name(number) for number in reserved})
+        store = SimpleNamespace(historical_runs=set(), support_identities={name(number) for number in reserved})
         before = Store.allocate(store, rows)
         run = Store.allocate_support(store, rows)
         self.assertIn(int(run[4:]), SUPPORT_RANGE)
@@ -183,7 +183,7 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(Store.allocate(store, rows), before)
 
     def test_exhausted_ranges_are_refused_not_wrapped(self):
-        store = SimpleNamespace(support_identities=set())
+        store = SimpleNamespace(historical_runs=set(), support_identities=set())
         with self.assertRaisesRegex(Decision, 'identity range is exhausted'):
             Store.allocate(store, [{'run': 'run-999999'}])
         with self.assertRaisesRegex(Decision, 'support identity range .* is exhausted'):

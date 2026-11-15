@@ -31,8 +31,9 @@ are configurable independently of those launchers.
 A connected target must be an existing Git checkout with a commit. Linked
 worktrees, external Git metadata, containers and external services need explicit
 access and evidence arrangements. The current Codex fieldworker profile protects
-the project's .git directory; the known fieldworker commit-grant repair remains
-outside this source-separation change.
+the project's .agents, .codex and .aws directories. Git metadata is writable;
+the native probe commits in disposable metadata inside the real checkout's .git.
+No real index, object or reference is changed by the check.
 
 Blinding currently denies the fieldwork workspace and live packet root. Keep
 analysis and any historical research ledger inside the denied workspace, or

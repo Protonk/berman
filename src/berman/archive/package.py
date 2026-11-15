@@ -4,6 +4,9 @@ The ZIP codec preserves bytes, Unix modes, symlink targets and directory entries
 namespace; berman_preserve packages single recordings with it. Nothing here keeps state
 between builds.
 """
+from contextlib import contextmanager
+import fcntl
+import time
 import io
 import json
 import os
@@ -324,14 +327,62 @@ def atomic(root, name, data, immutable=False):
         stage.unlink(missing_ok=True)
 
 
+@contextmanager
+def publication_lock(root):
+    directory = Path(root) / 'archive/editions'
+    directory.mkdir(parents=True, exist_ok=True)
+    fd = os.open(directory / '.publication.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ValueError('Another reading publication is in progress; retry this command') from None
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)
+
+
 def publish(build, payload):
     data = make_zip(payload, build.edition.prefix)
+    with publication_lock(build.root):
+        return publish_locked(build, data)
+
+
+def publish_locked(build, data):
     _, result = inspect_edition(data)
     digest = result['archive_sha256']
     path = f'archive/editions/{digest}.zip'
     atomic(build.root, path, data, immutable=True)
     # Verify disk bytes before making this publication the selected one.
     verify_edition(build.root / path, digest)
-    pointer = {'schema': 'berman.edition-selection/1', 'selection': build.selection, 'path': path, 'sha256': digest}
+    selected_pointer = build.root / pointer_path(build.selection)
+    old = json.loads(selected_pointer.read_bytes()) if selected_pointer.exists() else {}
+    previous = old.get('previous') if old.get('sha256') == digest else ({k: old[k] for k in ('path', 'sha256')} if old else None)
+    retiring = list(old.get('retiring', []))
+    retired = old.get('previous') if old.get('sha256') != digest else None
+    if retired and retired != previous and retired not in retiring:
+        retiring.append(retired)
+    pointer = {'schema': 'berman.edition-selection/1', 'selection': build.selection, 'path': path, 'sha256': digest,
+               'previous': previous, 'retiring': retiring}
+    atomic(build.root, pointer_path(build.selection), json_bytes(pointer))
+    references = set()
+    for p in selected_pointer.parent.glob('*.json'):
+        value = json.loads(p.read_bytes())
+        references.add(value.get('path'))
+        references.add((value.get('previous') or {}).get('path'))
+    for retired in retiring:
+        if retired.get('path') != f'archive/editions/{retired.get("sha256")}.zip':
+            raise ValueError('Invalid edition retirement path')
+        if retired['path'] not in references:
+            target = build.root / retired['path']
+            if target.exists():
+                verify_edition(target, retired['sha256'])
+                target.unlink()
+    pointer['retiring'] = []
     atomic(build.root, pointer_path(build.selection), json_bytes(pointer))
     return dict(result, mode='published and verified', archive_path=path, selection_pointer=pointer_path(build.selection))
