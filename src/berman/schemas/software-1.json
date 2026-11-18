@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:software-1",
   "title": "berman.software/1",
-  "description": "The installed package's identity, as printed by berman version, kept in software.json and retained in each new operation record. source_sha256 and files_sha256 digest Berman's own installed files. environment is absent from records made before version 0.4.2, which declared no dependencies; its versions name releases, not bytes, and no qualification rests on them.",
+  "description": "The installed package's identity, as printed by berman version. A co-located workspace keeps its own release's identity in software.json and in each operation record that release wrote. source_sha256 and files_sha256 digest Berman's own installed files. environment is absent from records made before version 0.4.2, which declared no dependencies; its versions name releases, not bytes, and no qualification rests on them.",
   "type": "object",
   "required": ["schema", "version", "source_sha256", "files_sha256"],
   "properties": {

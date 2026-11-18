@@ -88,31 +88,6 @@ def safe_directory(path):
         raise ValueError(f'Expected a directory without symlinks: {path}')
 
 
-def metadata_matches(root, entries, root_mode=None, root_mtime_ns=None):
-    """A brief recheck under a callback lock: compare recorded metadata without hashing bytes."""
-    expected = {row['path']: row for row in entries}
-    seen = set()
-    st = root.lstat()
-    if (root_mode is not None and oct(stat.S_IMODE(st.st_mode)) != root_mode) or (
-            root_mtime_ns is not None and st.st_mtime_ns != root_mtime_ns):
-        return False
-    for parent, dirs, files in os.walk(root, followlinks=False):
-        for name in dirs + files:
-            path = Path(parent) / name
-            row = expected.get(path.relative_to(root).as_posix())
-            if row is None:
-                return False
-            st = path.lstat()
-            kind = 'symlink' if stat.S_ISLNK(st.st_mode) else 'directory' if stat.S_ISDIR(st.st_mode) else 'file'
-            if (kind != row['type'] or oct(stat.S_IMODE(st.st_mode)) != row['mode']
-                    or ('mtime_ns' in row and st.st_mtime_ns != row['mtime_ns'])
-                    or (kind == 'file' and st.st_size != row['size'])
-                    or (kind == 'symlink' and os.readlink(path) != row['target'])):
-                return False
-            seen.add(row['path'])
-    return seen == set(expected)
-
-
 def inventory(root):
     """Inventory bytes and metadata, including directory and symlink mtimes."""
     safe_directory(root)

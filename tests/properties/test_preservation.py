@@ -98,7 +98,6 @@ class InventoryTests(unittest.TestCase):
             untouched = metadata(root)
             recorded = files.inventory(root)
             self.assertEqual(files.inventory(root), recorded)
-            self.assertTrue(files.metadata_matches(root, recorded))
             self.assertEqual(metadata(root), untouched, 'taking an inventory changed the tree')
             self.assertEqual({row['path'] for row in recorded if row['type'] == 'file'}, set(tree))
             victim = root / data.draw(st.sampled_from(sorted(tree)))
@@ -114,7 +113,6 @@ class InventoryTests(unittest.TestCase):
             else:
                 victim.unlink()
                 victim.symlink_to('elsewhere')
-            self.assertFalse(files.metadata_matches(root, recorded), change)
             self.assertNotEqual(files.inventory(root), recorded, change)
 
 
