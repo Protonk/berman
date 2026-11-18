@@ -12,6 +12,7 @@ import shlex
 import subprocess
 
 from berman.capture import collector
+from berman.capture.hooks import capture_entry
 from berman import files
 from berman.files import Decision, digest_json, keep, read, write
 from berman._legacy.api import RUN
@@ -85,23 +86,6 @@ def template(store, name, write_it=False):
 def installed_groups(installed, template):
     return all(group in installed.get('hooks', {}).get(event, []) for event in EVENTS
                for group in template['hooks'][event])
-
-
-def capture_entry(hook):
-    """Recognize our execution targets, including obsolete directly installed collectors."""
-    try:
-        argv = shlex.split(hook.get('command', ''))
-    except ValueError:
-        return None
-    if any(argv[i:i + 2] == ['-m', 'berman.executor'] and 'hook' in argv[i + 2:]
-           for i in range(len(argv) - 1)):
-        return 'berman.executor'
-    if any(argv[i:i + 2] == ['-m', 'berman.capture.router'] for i in range(len(argv) - 1)):
-        return 'berman.capture.router'
-    for name in ('capture_session.py', 'berman_collector.py', 'berman_capture_router.py'):
-        if any(Path(arg).is_absolute() and Path(arg).name == name for arg in argv):
-            return name
-    return None
 
 
 def exclusive_definition(installed, template):

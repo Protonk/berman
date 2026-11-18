@@ -60,7 +60,6 @@ select = ["E4", "E7", "E9", "F", "B"]
 "src/berman/capture/collector.py" = ["F401"]
 "src/berman/capture/runtime.py" = ["B904"]
 "src/berman/harnesses/claude.py" = ["F401"]
-"src/berman/harnesses/codex.py" = ["B023"]
 # Closures made and called within one loop iteration, as mock side effects.
 "tests/integration/test_support.py" = ["B023"]
 # Tests written before the formatter, which join short statements on one line.
@@ -145,10 +144,10 @@ layers = [
     "berman.cli",
     "berman.connector",
     "berman.controller : berman.executor : berman.workflow : berman.verify : berman.support : berman.harnesses.claude_support",
-    "berman.custody : berman.sources : berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
+    "berman.custody : berman.sources : berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.checks : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
     "berman.protocol : berman.records",
     "berman.config | berman.lifecycle",
-    "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman._legacy",
+    "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman.capture.hooks : berman._legacy",
     "berman.evidence : berman.snapshots : berman.archive",
     "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.harnesses.probe",
 ]
