@@ -23,6 +23,10 @@ MARKER = 'Berman-Assignment: '
 EVENTS = {'codex': ('UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'), 'claude': claude.EVENTS}
 MAX_SOURCE = protocol.FILE_LIMIT
 MAX_EVENT = 4 * 1024 * 1024
+# Seconds a hook asks for. Codex grants SessionEnd and Interrupt hooks at most three and reports
+# a larger request as an issue in its /hooks review, so the definition asks for what is granted.
+TIMEOUT = 30
+CODEX_TIMEOUT = {'SessionEnd': 3, 'Interrupt': 3}
 
 
 def operation_dir(spool, operation):
@@ -84,9 +88,10 @@ def definition(spool, home, operation=None):
     harness = 'claude' if operation else 'codex'
     if operation:
         argv += ['--operation', protocol.identifier(operation)]
+    limits = CODEX_TIMEOUT if harness == 'codex' else {}
     return {
         'hooks': {
-            name: [{'hooks': [{'type': 'command', 'command': shlex.join(argv), 'timeout': 30}]}]
+            name: [{'hooks': [{'type': 'command', 'command': shlex.join(argv), 'timeout': limits.get(name, TIMEOUT)}]}]
             for name in EVENTS[harness]
         }
     }

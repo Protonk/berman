@@ -73,16 +73,24 @@ Claude receives a per-launch settings file containing observation hooks and a
 reserved parent session UUID. Inherited subagent callbacks with another session
 ID are ignored. The executor writes the settings file under the spool.
 
-For Codex, print the proposed shared hook groups with the installed executor
+For Codex, print the hooks file to install with the installed executor
 interpreter:
 
 ```sh
-python -m berman.executor --spool "$spool" codex-hooks --home "$codex_home"
+python -m berman.executor --spool "$spool" codex-hooks --home "$codex_home" --merge
 ```
 
-The command prints JSON. To install or change it: close active captures,
-replace any earlier Berman routing groups in the home's `hooks.json` with the
-proposed ones, keep unrelated hooks, and review trust in the actual Codex CLI.
+With `--merge` the command prints the home's present `hooks.json` with every
+Berman handler replaced by this installation's router and everything else kept.
+Without it, it prints the router's groups alone. Neither writes. To install or
+change the registration: close active captures, save the present file, write
+the printed one in its place, and review trust in the actual Codex CLI.
+
+Each hook asks for 30 seconds, except SessionEnd and Interrupt, which ask for
+three: Codex grants those two no more and reports a larger request as an issue
+in its `/hooks` review. A hook that is cut off there has already written its
+raw callback; the collection then names that callback as having no verified
+transcript snapshot, and closeout reads the transcript itself.
 Launch checks the selected home's hooks file for exactly the expected groups
 and refuses when any other Berman handler is present, including the hook
 commands of earlier releases. The router ignores ordinary sessions. A Codex
@@ -247,5 +255,6 @@ All take `--spool PATH` before the command and print JSON:
 `damaged OPERATION DECLARATION_UUID [--supplement N]`,
 `payload-path OPERATION DECLARATION_UUID MEMBER [--supplement N]`,
 `qualify OPERATION ENDING_UUID [--expected-child ID]`,
-`codex-hooks --home HOME` and `hook --home HOME [--operation OPERATION]`, which
-is the command the installed hooks run.
+`codex-hooks --home HOME [--merge]` and
+`hook --home HOME [--operation OPERATION]`, which is the command the installed
+hooks run.

@@ -66,14 +66,17 @@ the transcript file exists. The recording names those callbacks and the ones
 that obtained a verified snapshot. The original event receipts retain the
 observation at each point.
 
-For Codex, CI verifies the installed router against the candidate. It installs
-the initial hook definition in a new home. If the registration needs updating,
-CI prints the proposed file and destination. Preserve unrelated hooks and
-close active captures before updating a registration.
+For Codex, CI keeps the registration in its own home on the candidate. Every
+candidate has its own interpreter path, so its hook commands differ from the
+last candidate's. CI replaces the Berman handlers in that home's `hooks.json`,
+keeps anything else in the file, and saves the file as it was beside the trial
+as `codex-hooks-before.json`. Codex then treats the four hooks as new, and the
+review window is where they are trusted.
 
 Start with the `--live codex` command above, including on first use. In the
 first Codex window, sign in if prompted, open `/hooks`, inspect and trust the
-candidate's Berman hooks, and exit. CI checks the saved sign-in with
+candidate's Berman hooks, and exit. CI says when the hooks are new to the
+home; they are after every change of candidate. CI checks the saved sign-in with
 `codex login status` before commissioning. It then opens the assignment using
 the same executable, checkout and persistent Codex home. This binding uses
 Codex's native `workspace-write` mode and adds the packet as a writable

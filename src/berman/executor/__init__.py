@@ -199,24 +199,40 @@ def prepare(spool, assignment, binding):
         return prepared
 
 
-def verify_hooks(installed, expected):
+def berman_handler(group):
+    """Whether a hook group runs a Berman handler of this or any earlier release."""
     # Directly installed collectors can still receive events from this Codex home.
     collector_scripts = {'capture_session.py', 'berman_collector.py', 'berman_capture_router.py'}
+    return any(
+        arg == 'berman.executor'
+        or arg.startswith('berman.capture.')
+        or (Path(arg).is_absolute() and Path(arg).name in collector_scripts)
+        for hook in group.get('hooks', [])
+        for arg in shlex.split(hook.get('command', ''))
+    )
 
-    for event in set(installed.get('hooks', {})) | set(expected['hooks']):
-        found = []
-        for group in installed.get('hooks', {}).get(event, []):
-            for hook in group.get('hooks', []):
-                argv = shlex.split(hook.get('command', ''))
-                if any(
-                    arg == 'berman.executor'
-                    or arg.startswith('berman.capture.')
-                    or (Path(arg).is_absolute() and Path(arg).name in collector_scripts)
-                    for arg in argv
-                ):
-                    found.append(group)
+
+def verify_hooks(installed, expected):
+    """Refuse a hooks file whose Berman handlers are not exactly this installation's router."""
+    for event in sorted(set(installed.get('hooks', {})) | set(expected['hooks'])):
+        found = [group for group in installed.get('hooks', {}).get(event, []) if berman_handler(group)]
         if found != expected['hooks'].get(event, []):
             raise ValueError(f'{event}: review the exclusive executor router in the selected Codex hooks.json')
+
+
+def merged_hooks(installed, expected):
+    """A hooks file's content with every Berman handler replaced by this installation's router.
+
+    Unrelated hook groups, events and other settings in the file are kept as they are.
+    """
+    before = installed.get('hooks', {})
+    hooks = {}
+    for event in [*before, *(name for name in expected['hooks'] if name not in before)]:
+        groups = [group for group in before.get(event, []) if not berman_handler(group)]
+        groups += expected['hooks'].get(event, [])
+        if groups:
+            hooks[event] = groups
+    return {**{key: value for key, value in installed.items() if key != 'hooks'}, 'hooks': hooks}
 
 
 def launch_result(folder, prepared, number=1):
@@ -854,6 +870,11 @@ def main(argv=None):
     hook.add_argument('--operation')
     template = commands.add_parser('codex-hooks')
     template.add_argument('--home', type=Path, required=True)
+    template.add_argument(
+        '--merge',
+        action='store_true',
+        help="print the whole hooks.json to install: the home's present file with its Berman handlers replaced",
+    )
     args = parser.parse_args(argv)
     try:
         if args.action == 'prepare':
@@ -877,6 +898,9 @@ def main(argv=None):
             result = str(payload_path(args.spool, args.operation, args.declaration_id, args.path, args.supplement))
         elif args.action == 'codex-hooks':
             result = capture.definition(args.spool, args.home)
+            if args.merge:
+                present = args.home.expanduser() / 'hooks.json'
+                result = merged_hooks(files.read(present) if present.exists() else {}, result)
         else:
             data = sys.stdin.buffer.read(capture.MAX_EVENT + 1)
             if len(data) > capture.MAX_EVENT:

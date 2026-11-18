@@ -25,6 +25,10 @@ harness homes; the controller runs in a Linux guest reached over OpenSSH.
   of its transcript sees that work.
 - The guest learns of a sitting when it ends. While one runs, `status` shows
   the facts recorded before it started.
+- Codex gives a SessionEnd or Interrupt hook at most three seconds. The hook
+  writes the raw callback before it reads the transcript, so one that is cut
+  off leaves a callback with no transcript generation, which the collection
+  names. Staging a 2 MB transcript takes a small fraction of that time.
 - Callbacks after a frozen collection wait on the host under `late/`. They
   reach custody only when a supplement is declared and collected. A supplement
   is a second recording with its own edition; no edition joins it to the first.

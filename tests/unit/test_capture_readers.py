@@ -1,11 +1,15 @@
 """Native transcript parsing, installed hook recognition and project check arguments."""
 
+from contextlib import redirect_stdout
+from io import StringIO
 import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
 from berman import executor
-from berman.executor import checkout, claude, codex
+from berman.executor import capture, checkout, claude, codex
 from berman.files import Decision
 
 
@@ -75,6 +79,57 @@ class HookRecognitionTests(unittest.TestCase):
         for command in commands:
             with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'exclusive executor router'):
                 executor.verify_hooks({'hooks': {'Stop': [router, ordinary, group(command)]}}, expected)
+
+    def test_codex_is_asked_for_the_timeouts_it_grants(self):
+        # Codex clamps SessionEnd and Interrupt hooks to three seconds and reports a larger request
+        # as an issue in its /hooks review. Claude's per-launch settings have no such limit.
+        asked = {
+            event: groups[0]['hooks'][0]['timeout']
+            for event, groups in capture.definition('/spool', '/codex')['hooks'].items()
+        }
+        self.assertEqual({'UserPromptSubmit': 30, 'Stop': 30, 'Interrupt': 3, 'SessionEnd': 3}, asked)
+        operation = '29525f31-3e9d-4c3d-9078-cedd71216be9'
+        for groups in capture.definition('/spool', '/claude', operation)['hooks'].values():
+            self.assertEqual(30, groups[0]['hooks'][0]['timeout'])
+
+    def test_merging_replaces_every_berman_handler_and_keeps_everything_else(self):
+        def group(command, **extra):
+            return {'hooks': [{'type': 'command', 'command': command, **extra}]}
+
+        expected = capture.definition('/spool', '/codex')
+        ordinary = group('/usr/local/bin/notify --on-stop')
+        earlier = group('/old/env/bin/python -I -B -m berman.executor --spool /spool hook --home /codex', timeout=30)
+        installed = {
+            'description': 'User-level Codex hooks',
+            'hooks': {
+                'Stop': [earlier, ordinary],
+                'SessionEnd': [group('python -m berman.capture.router hook')],
+                'PreToolUse': [ordinary],
+            },
+        }
+        merged = executor.merged_hooks(installed, expected)
+        executor.verify_hooks(merged, expected)
+        self.assertEqual('User-level Codex hooks', merged['description'])
+        self.assertEqual([ordinary, *expected['hooks']['Stop']], merged['hooks']['Stop'])
+        self.assertEqual(expected['hooks']['SessionEnd'], merged['hooks']['SessionEnd'])
+        self.assertEqual([ordinary], merged['hooks']['PreToolUse'])
+        self.assertEqual(expected, executor.merged_hooks({}, expected))
+        self.assertEqual(merged, executor.merged_hooks(merged, expected))
+
+    def test_the_merge_command_prints_the_whole_file_to_install(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder).resolve() / 'codex'
+            home.mkdir()
+            ordinary = {'hooks': [{'type': 'command', 'command': '/usr/local/bin/notify'}]}
+            (home / 'hooks.json').write_text(json.dumps({'hooks': {'Stop': [ordinary]}}))
+            printed = StringIO()
+            with redirect_stdout(printed):
+                code = executor.main(['--spool', folder + '/spool', 'codex-hooks', '--home', str(home), '--merge'])
+            merged = json.loads(printed.getvalue())
+            self.assertEqual(0, code)
+            self.assertEqual(ordinary, merged['hooks']['Stop'][0])
+            executor.verify_hooks(merged, capture.definition(folder + '/spool', home))
+            self.assertEqual({'hooks': {'Stop': [ordinary]}}, json.loads((home / 'hooks.json').read_text()))
 
 
 class ProjectCheckTests(unittest.TestCase):

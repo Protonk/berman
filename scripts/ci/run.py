@@ -174,34 +174,37 @@ def binding(trial, config):
 
 
 def codex_hooks(home, spool, directory):
+    """Keep the CI home's registration on this candidate. Returns whether it was written or changed.
+
+    Every candidate has its own interpreter path, so its hook commands differ from the last
+    candidate's. The home is CI's own: its Berman handlers are replaced, anything else in the file
+    is kept, and the file as it was is saved beside the trial. Codex then asks for the changed
+    hooks to be trusted, in the review window that follows.
+    """
     template = capture.definition(spool, home)
-    proposal = directory / 'codex-hooks.json'
-    files.write(proposal, template)
+    files.write(directory / 'codex-hooks.json', template)
     hooks = home / 'hooks.json'
-    try:
-        home.mkdir(mode=0o700)
-    except FileExistsError:
-        pass
-    else:
-        # Only a newly created CI home receives an initial registration.
-        files.write(hooks, template)
-    try:
-        executor.verify_hooks(files.read(hooks), template)
-    except (OSError, ValueError) as error:
-        raise ValueError(
-            f'Review {proposal} for {hooks} and review the hooks in the actual Codex CLI: {error}'
-        ) from error
+    home.mkdir(mode=0o700, exist_ok=True)
+    installed = files.read(hooks) if hooks.exists() else None
+    merged = executor.merged_hooks(installed or {}, template)
+    if merged != installed:
+        if installed is not None:
+            files.write(directory / 'codex-hooks-before.json', installed)
+        files.write(hooks, merged)
+    executor.verify_hooks(files.read(hooks), template)
+    return merged != installed
 
 
 def codex_preflight(native, spool, directory):
     home = Path(native['home'])
-    codex_hooks(home, spool, directory)
+    changed = codex_hooks(home, spool, directory)
     executable = native['executable']
     env = dict(os.environ, CODEX_HOME=str(home))
     project = native['project']
     print(
         f'In the Codex window opening now ({home}), sign in if prompted and review this candidate in /hooks. '
-        'Exit Codex after review to start the fixture assignment.',
+        + ('Its four hooks are new to this home and need to be trusted. ' if changed else '')
+        + 'Exit Codex after review to start the fixture assignment.',
         file=sys.stderr,
         flush=True,
     )

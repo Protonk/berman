@@ -46,18 +46,29 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(key=key), patch.dict(members, {key: value}), self.assertRaises(ValueError):
                 ci.access(members.__getitem__, digest)
 
-    def test_codex_initial_registration_and_conflict_in_the_ci_home(self):
+    def test_the_ci_home_is_kept_on_the_candidate_and_its_other_hooks_are_kept(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         home = root / 'codex-home'
         spool = root / 'spool'
-        ci.codex_hooks(home, spool, root)
+        self.assertTrue(ci.codex_hooks(home, spool, root))
         installed = home / 'hooks.json'
-        self.assertEqual(files.read(installed), files.read(root / 'codex-hooks.json'))
-        ci.codex_hooks(home, spool, root)
-        installed.write_text('{"hooks": {}}')
-        with self.assertRaisesRegex(ValueError, 'Review'):
-            ci.codex_hooks(home, spool, root)
-        self.assertEqual(installed.read_text(), '{"hooks": {}}')
+        candidate = files.read(root / 'codex-hooks.json')
+        self.assertEqual(files.read(installed), candidate)
+        self.assertFalse(ci.codex_hooks(home, spool, root))
+        self.assertFalse((root / 'codex-hooks-before.json').exists())
+
+        # An earlier candidate ran from another interpreter. Its registration is replaced, a hook
+        # that is not Berman's stays, and the file as it was is kept beside the trial.
+        ordinary = {'hooks': [{'type': 'command', 'command': '/usr/local/bin/notify'}]}
+        earlier = json.loads(json.dumps(candidate).replace(sys.executable, '/earlier/candidate/bin/python'))
+        earlier['hooks']['Stop'].append(ordinary)
+        files.write(installed, earlier)
+        self.assertTrue(ci.codex_hooks(home, spool, root))
+        self.assertEqual(earlier, files.read(root / 'codex-hooks-before.json'))
+        now = files.read(installed)
+        self.assertEqual([ordinary, *candidate['hooks']['Stop']], now['hooks']['Stop'])
+        self.assertEqual(candidate['hooks']['SessionEnd'], now['hooks']['SessionEnd'])
+        self.assertFalse(ci.codex_hooks(home, spool, root))
 
     def test_codex_offers_interactive_review_before_checking_saved_login(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
