@@ -465,10 +465,28 @@ def event_summary(folder):
                 'at': record['observed_at_utc'],
                 'transcript_path': event.get('transcript_path'),
                 'generation': record.get('generation'),
+                'transcript_missing': record.get('transcript_missing', False),
                 'permission_mode': event.get('permission_mode'),
             }
         )
     return sorted(result, key=lambda r: r['at'])
+
+
+def callback_limitations(events):
+    """Summarize which callbacks had source bytes, retaining each original event and error."""
+    missing = dict.fromkeys(e['name'] for e in events if e['transcript_missing'])
+    unverified = dict.fromkeys(e['name'] for e in events if not e['generation'] and not e['transcript_missing'])
+    if not missing and not unverified:
+        return []
+    observations = []
+    if missing:
+        observations.append('Transcript file absent at ' + ', '.join(missing))
+    if unverified:
+        observations.append('No verified transcript snapshot at ' + ', '.join(unverified))
+    captured = dict.fromkeys(e['name'] for e in events if e['generation'])
+    if captured:
+        observations.append('Verified transcript snapshot at ' + ', '.join(captured))
+    return ['. '.join(observations) + '.']
 
 
 def frozen_dir(folder, supplement=None):
@@ -571,8 +589,7 @@ def collect(spool, operation, declaration_id, supplement=None):
                     limitations.append('Parent transcript contains partial or unparsed records.')
                 if meta['last_assistant_message_present'] is False:
                     limitations.append('Expected assistant message absent from the latest parent observation.')
-            if any(not r['generation'] for r in events):
-                limitations.append('Some callbacks lack a verified transcript generation; see events.')
+            limitations.extend(callback_limitations(events))
             if supplement is not None and not events:
                 limitations.append(
                     'No callback was staged after the previous collection. This is a closeout observation only.'

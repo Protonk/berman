@@ -269,6 +269,12 @@ def route(spool, home, event, operation=None):
             callback['generation'] = files.digest_json(observed)
         except (OSError, ValueError) as exc:
             callback['limitation'] = str(exc)
+            if (
+                isinstance(exc, FileNotFoundError)
+                and exc.filename
+                and str(exc.filename) == event.get('transcript_path')
+            ):
+                callback['transcript_missing'] = True
         files.write(target, callback)
         sync_directory(target.parent)
     return {}

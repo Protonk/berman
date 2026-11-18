@@ -62,7 +62,14 @@ if not claude and not resumed:
         out.write(json.dumps({'type': 'turn_context', 'payload': {'sandbox_policy': {'type': 'workspace-write'}}}) + '\n')
 child.parent.mkdir(parents=True, exist_ok=True)
 child.write_text(json.dumps(child_data) + '\n')
-for event in ['UserPromptSubmit', 'Stop', 'SessionEnd']:
+timing = os.environ.get('BERMAN_TEST_TRANSCRIPT_TIMING') if claude else None
+events = ['UserPromptSubmit', 'Stop', 'SessionEnd']
+if timing:
+    events.insert(0, 'SessionStart')
+    src.unlink()
+for event in events:
+    if event == 'Stop' and timing == 'at-stop':
+        src.write_text(json.dumps(first) + '\n')
     e = {'session_id': sid, 'hook_event_name': event, 'cwd': os.getcwd(), 'transcript_path': str(src)}
     if claude:
         e['permission_mode'] = 'default'
@@ -194,6 +201,37 @@ class ExecutorTests(unittest.TestCase):
         self.assertTrue(any('Closeout parent observation' in v for v in frozen['limitations']))
         self.assertTrue(frozen['parent_sha256'])
         self.assertEqual(p['reserved_session_id'], frozen['session_id'])
+
+    def claude_with_delayed_transcript(self, timing):
+        self.a['harness'] = 'claude'
+        self.prepare()
+        with patch.dict(os.environ, BERMAN_TEST_TRANSCRIPT_TIMING=timing):
+            executor.launch(self.spool, self.op)
+        return executor.collect(self.spool, self.op, self.ending)
+
+    def test_claude_opening_callbacks_before_transcript_creation(self):
+        frozen = self.claude_with_delayed_transcript('at-stop')
+        self.assertEqual(
+            frozen['limitations'],
+            [
+                'Transcript file absent at SessionStart, UserPromptSubmit. Verified transcript snapshot at Stop, SessionEnd.'
+            ],
+        )
+        self.assertTrue(executor.qualify(self.spool, self.op, self.ending)['passed'])
+        payload = executor.frozen_dir(capture.operation_dir(self.spool, self.op)) / 'payload'
+        receipts = [files.read(p) for p in (payload / 'events').glob('*.json')]
+        self.assertEqual(
+            {r['event']['hook_event_name'] for r in receipts if r.get('transcript_missing') and 'limitation' in r},
+            {'SessionStart', 'UserPromptSubmit'},
+        )
+
+    def test_claude_parent_transcript_never_appears(self):
+        frozen = self.claude_with_delayed_transcript('absent')
+        self.assertIn('No verified parent transcript observed.', frozen['limitations'])
+        self.assertIn(
+            'Transcript file absent at SessionStart, UserPromptSubmit, Stop, SessionEnd.', frozen['limitations']
+        )
+        self.assertFalse(executor.qualify(self.spool, self.op, self.ending)['passed'])
 
     def test_other_parent_cannot_bind(self):
         p = self.prepare()
