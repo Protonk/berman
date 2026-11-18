@@ -20,7 +20,7 @@ macOS and check the installation, run
 python3.14 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
-berman verify --software
+berman verify
 ```
 
 Install the same build in the Linux guest and bind a macOS checkout and harness

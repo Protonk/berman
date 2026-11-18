@@ -1,25 +1,4 @@
-"""Structural contracts for the records Berman reads, as packaged JSON Schemas.
-
-A record's `schema` value names its family and version, and that name selects one schema
-file beside this module. A schema refuses only structure Berman's code would crash on or
-silently misread. A field the code reads as a path, iterates or indexes must have the JSON
-type that reading needs, and a record must have the fields that loading it reads. A field the
-code converts, such as a timeout or a step identity, is accepted in every form the conversion
-takes. A field Berman only stores or prints is not constrained, and null is read as absent.
-A schema describes one supported record family. The controller and portable readers also
-check agreement between records, custody receipts, inventories and observed bytes.
-
-Validation returns the value it was given. Missing data and invalid data remain distinct.
-
-Any release may deliberately tighten validation, with documented adoption
-consequences and regression tests. Historical facts never change meaning silently; use a new
-schema name for a materially different record meaning. Validation never rewrites old evidence.
-
-This is the only module that imports jsonschema, and it does so when first used, so that a
-command which validates nothing, and `berman verify --software` in a damaged environment,
-still start. The executor's hook path and the archive builder read their records directly and
-never come here; pyproject.toml's Import Linter contracts hold them to that.
-"""
+"""JSON Schema validation for the connection, recipe and plan selected at commission."""
 
 from functools import cache
 import hashlib
@@ -31,11 +10,6 @@ SUPPORTED = (
     'berman.connection/1',
     'berman.recipe/2',
     'berman.research-plan/1',
-    'berman.software/1',
-    'berman.verification/1',
-    'berman.recording/2',
-    'berman.capture-current/1',
-    'berman.reading-edition/2',
 )
 KINDS = {
     'object': 'an object',
@@ -90,7 +64,7 @@ def validator(name):
     except Exception as exc:  # Broken installations can raise more than ImportError while loading.
         raise Unavailable(
             f'Records cannot be checked: jsonschema does not import ({exc}). Reinstall Berman with its '
-            'dependencies; berman verify --software reports the environment'
+            'dependencies; berman verify reports the environment'
         ) from exc
     Draft202012Validator.check_schema(schema(name))
     return Draft202012Validator(schema(name))

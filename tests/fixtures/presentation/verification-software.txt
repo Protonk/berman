@@ -1,8 +1,0 @@
-Berman verification: PASSED
-  passed                      installation: Synthetic pass for installation
-  passed                      dependencies: Synthetic pass for dependencies
-  passed                      schemas: Synthetic pass for schemas
-Never checked by berman verify:
-  Developer regression tests (run separately from the source checkout).
-  Guest study records, preserved recordings and reading editions.
-  Native harness execution, hook trust and native capture.

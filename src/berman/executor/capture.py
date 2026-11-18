@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from berman import files, protocol, snapshots
 from berman.capture import claude, codex
-from berman.installation import command
+import sys
 from berman.sources import IDENTITY, metadata
 
 MARKER = 'Berman-Assignment: '
@@ -69,7 +69,18 @@ def locked(directory, name='.lock'):
 
 
 def definition(spool, home, operation=None):
-    argv = command('--spool', Path(spool).resolve(), 'hook', '--home', Path(home).resolve(), module='berman.executor')
+    argv = [
+        sys.executable,
+        '-I',
+        '-B',
+        '-m',
+        'berman.executor',
+        '--spool',
+        str(Path(spool).resolve()),
+        'hook',
+        '--home',
+        str(Path(home).resolve()),
+    ]
     harness = 'claude' if operation else 'codex'
     if operation:
         argv += ['--operation', protocol.identifier(operation)]

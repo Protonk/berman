@@ -18,7 +18,6 @@ source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
     { name = "packaging" },
-    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -32,7 +31,6 @@ dev = [
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "packaging", specifier = ">=25,<27" },
-    { name = "rich", specifier = ">=15,<16" },
 ]
 
 [package.metadata.requires-dev]

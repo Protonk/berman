@@ -4,9 +4,6 @@
   "documents": [
     "README.md"
   ],
-  "commission": "COMMISSION.md",
-  "revision": "Synthetic work; preparation-time HEAD {head}",
-  "readers": "stewart-historical",
   "checks": [
     "cargo check",
     {

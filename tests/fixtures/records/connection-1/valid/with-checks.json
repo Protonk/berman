@@ -4,25 +4,16 @@
   "documents": [
     "README.md"
   ],
-  "commission": "COMMISSION.md",
-  "revision": "Synthetic work; preparation-time HEAD {head}",
-  "name": "Orchard",
-  "version": 1,
-  "description": "Synthetic.",
-  "readers": [],
   "checks": [
     {
       "id": "orchard_builds",
       "argv": [
         "{python}",
         "-c",
-        "pass",
-        3
+        "print('ok')"
       ],
       "timeout": 20,
-      "stdout_contains": "ok",
-      "meaning": "Synthetic."
+      "stdout_contains": "ok"
     }
-  ],
-  "access": "A field this schema does not name is kept."
+  ]
 }

@@ -1,8 +1,0 @@
-{
-  "schema": "berman.software/1",
-  "version": "0.4.1",
-  "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "files_sha256": {
-    "cli.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  }
-}

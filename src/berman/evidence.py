@@ -204,7 +204,7 @@ def split_absent(manifest, controller):
     return {row['path']: row for row in rows}
 
 
-def check_split_authority(manifest, controller, ending, capture, read=None):
+def check_split_authority(manifest, controller, ending, capture, read):
     if (controller.get('collection_id') != manifest['collection_id'] or controller.get('run') != manifest['run']
             or controller.get('connection') != manifest['attribution']['connection']
             or manifest['attribution']['evidence'] != manifest['evidence']['controller']):
@@ -237,7 +237,7 @@ def check_split_authority(manifest, controller, ending, capture, read=None):
     else:
         ref = manifest['evidence'].get('supplement')
         first = facts.get('preserve')
-        if (ref != 'evidence/supplement.json' or read is None or json.loads(read(ref)) != declaration
+        if (ref != 'evidence/supplement.json' or json.loads(read(ref)) != declaration
                 or not declaration.get('reason') or not declaration.get('operation')
                 or declaration.get('sequence') != supplement['sequence']
                 or capture_receipt.get('supplement_id') != declaration['operation']

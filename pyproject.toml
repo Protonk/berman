@@ -13,7 +13,6 @@ requires-python = ">=3.14"
 dependencies = [
     "jsonschema>=4.26,<5",
     "packaging>=25,<27",
-    "rich>=15,<16",
 ]
 
 [dependency-groups]
@@ -91,7 +90,7 @@ layers = [
     "berman.config",
     "berman.capture",
     "berman.evidence : berman.snapshots : berman.archive",
-    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation",
+    "berman.files | berman.installation | berman.environment | berman.schemas",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
@@ -112,7 +111,7 @@ source_modules = [
     "berman.files",
     "berman.installation",
 ]
-forbidden_modules = ["jsonschema", "rich", "packaging"]
+forbidden_modules = ["jsonschema", "packaging"]
 broken_contract_guidance = """
 The executor's hook runs on every turn of a fieldworker's session and stages
 its observation while the research guest is offline. Routing and staging use the
@@ -123,30 +122,19 @@ id = "archive"
 name = "The archive builder uses the standard library only"
 type = "forbidden"
 source_modules = ["berman.archive"]
-forbidden_modules = ["jsonschema", "rich", "packaging"]
+forbidden_modules = ["jsonschema", "packaging"]
 broken_contract_guidance = """
 A reading edition is deterministic and its builder's bytes are its identity.
-Presentation and validation libraries stay out of selection, rendering and
+Third-party libraries stay out of selection, rendering and
 packaging."""
-
-[[tool.importlinter.contracts]]
-id = "presentation"
-name = "Only the command line imports presentation"
-type = "protected"
-protected_modules = ["berman.presentation"]
-allowed_importers = ["berman.cli"]
-broken_contract_guidance = """
-State and verdicts are computed without knowing how they will be shown. Return
-the result; berman.cli hands it to berman.presentation. The layers contract
-keeps presentation from importing the modules that compute state."""
 
 [[tool.importlinter.contracts]]
 id = "confined"
 name = "No module imports a third-party package except the one that confines it"
 type = "forbidden"
 source_modules = ["berman"]
-forbidden_modules = ["jsonschema", "rich", "packaging"]
-ignore_imports = ["berman.schemas -> jsonschema", "berman.presentation.terminal -> rich", "berman.environment -> packaging"]
+forbidden_modules = ["jsonschema", "packaging"]
+ignore_imports = ["berman.schemas -> jsonschema", "berman.environment -> packaging"]
 broken_contract_guidance = """
-jsonschema, rich and packaging each have one importing module. Call that module instead of
+jsonschema and packaging each have one importing module. Call that module instead of
 importing the library, so its use stays in one reviewable place."""

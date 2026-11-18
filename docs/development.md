@@ -10,7 +10,7 @@ uv run ruff check
 uv run ruff format --check
 uv run lint-imports
 uv run python -m unittest discover -s tests -t .
-uv run berman verify --software
+uv run berman verify
 ```
 
 `uv sync` creates `.venv` from `.python-version` and `uv.lock`, installs Berman
@@ -36,25 +36,21 @@ to the installation and launch it observed.
 ## Architecture
 
 Import Linter checks the package layers, the standard-library boundaries for
-native hooks and archive readers, the CLI's ownership of presentation, and
-the confinement of third-party imports. Every contract in `pyproject.toml` has
-a deliberate violation in `tests/unit/test_architecture.py`. Give each new
-module a layer. Only `schemas` imports jsonschema, only the terminal renderer
-imports Rich, and only `environment` imports packaging.
+native hooks and archive readers, and the confinement of third-party imports.
+Every contract in `pyproject.toml` has a deliberate violation in
+`tests/unit/test_architecture.py`. Give each new module a layer. Only `schemas`
+imports jsonschema, and only `environment` imports packaging.
 
 ## Record schemas
 
-Connection, recipe and plan inputs are checked when the guest selects them.
-The other packaged schemas describe software identity, verification, recording
-manifests, capture generations and reading editions. The portable readers check
-the retained bytes, membership and authority directly with the standard library.
-Schema validation returns its input unchanged. Fixtures under
-`tests/fixtures/records/` pin valid examples and the diagnostics for invalid ones.
+The controller validates connection, recipe and plan documents when commissioning.
+The JSON Schemas describe their operational fields. Studies can add annotations.
+Validation returns the supplied document unchanged. The portable readers check
+the recording and edition contracts against the retained members and receipts.
 
 ## Property tests
 
-Hypothesis exercises plan sequences, file preservation, deterministic packaging
-and presentation. Tests use deterministic examples by default. Run exploratory
+Hypothesis exercises plan sequences, file preservation, deterministic packaging. Tests use deterministic examples by default. Run exploratory
 cases with `BERMAN_HYPOTHESIS_PROFILE=explore` and retain a reproducible failure
 as an ordinary regression test.
 
@@ -66,21 +62,13 @@ pointer. The custody tests reopen the original bytes and replay publication.
 Connector and executor integration tests use disposable studies and native harness
 doubles for commissioning, capture, transfer, closeout and supplements.
 
-## Presentation
+## Software verification
 
-`berman.presentation` turns finished results into text and computes nothing. It
-renders software verification results.
-`plain` is the established text, and scripts depend on its bytes;
-`tests/fixtures/presentation/` pins it.
-`terminal` is a Rich rendering of the same results, used when standard output is
-an interactive terminal. Redirected output is always plain,
-`BERMAN_OUTPUT=plain` keeps the plain text on a terminal, and if `rich` does not
-import the plain text is printed. `--json` output never passes through either.
-
-A change to `plain` is a change to Berman's output and needs the deliberateness
-of a change to a command's options. A change to `terminal` must keep three
-rules its tests hold: every word of the plain text is shown, every distinction
-survives without color, and recorded text is shown literally.
+`berman verify` reports the installed source digest, active runtime requirements
+and ability to load the commission schemas. It exits 1 if a check fails and
+prints the diagnostic next to that check. `berman --json verify` returns
+`berman.software-verification/1` with a boolean `passed` and the result of
+each check. `berman version` returns the full software identity.
 
 `wheel_smoke.py` (see [building](#building)) commissions and closes a synthetic
 guest study through the installed controller's entry point, with a hand-made
@@ -152,8 +140,7 @@ The executor prepares and launches the worker and stages native evidence.
 ## Compatibility and qualification
 
 Keep release notes with the release they describe. The
-[0.26.5 release notes](releases/0.26.5.md) describe the supported evidence
-format and adoption consequences.
+[0.26.5 release notes](releases/0.26.5.md) describe that release’s evidence formats and adoption consequences.
 
 ### Adopting a release in a study
 

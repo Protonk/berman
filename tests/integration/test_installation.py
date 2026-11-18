@@ -12,7 +12,7 @@ class InstallationTests(unittest.TestCase):
     def test_example_is_commissioned_closed_preserved_and_read_from_copies(self):
         with tempfile.TemporaryDirectory() as folder:
             report = smoke(REPO / 'examples/minimal-study', Path(folder).resolve())
-        self.assertEqual(report['software_verification'], 'passed')
+        self.assertTrue(report['software_verification'])
         self.assertEqual(report['guest_verification'], 'verified')
         self.assertTrue(report['detached_recording_and_edition_verified'])
         self.assertTrue(report['portable_working_copy_verified'])

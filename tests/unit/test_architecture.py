@@ -38,21 +38,11 @@ VIOLATIONS = (
     ('layers', 'schemas/__init__.py', 'from berman import files'),
     ('layers', 'checks.py', 'from berman import verify'),
     ('layers', 'protocol.py', 'from berman import custody'),
-    ('hooks', 'capture/hooks.py', 'import rich'),
     ('hooks', 'files.py', 'import jsonschema'),
     ('hooks', 'files.py', 'import packaging.requirements'),
-    ('hooks', 'sources.py', 'import rich.console'),
     ('hooks', 'capture/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
     ('hooks', 'executor/capture.py', 'from berman import recipes'),  # Indirectly, two modules away.
-    ('archive', 'archive/package.py', 'import rich.console'),
     ('archive', 'archive/package.py', 'import packaging'),
-    ('presentation', 'verify.py', 'from berman.presentation import plain'),
-    ('presentation', 'controller.py', 'from berman import presentation'),
-    ('layers', 'presentation/plain.py', 'from berman import controller'),
-    ('layers', 'presentation/terminal.py', 'from berman import verify'),
-    ('confined', 'controller.py', 'import rich'),
-    ('confined', 'presentation/plain.py', 'import rich'),
-    ('confined', 'cli.py', 'from rich.console import Console'),
     ('confined', 'verify.py', 'import jsonschema'),
     ('confined', 'cli.py', 'import packaging'),
 )

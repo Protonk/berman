@@ -4,7 +4,7 @@ Fieldwork has one lifecycle. A research controller in the Linux guest
 commissions each engagement, records its ending and keeps custody of what was
 collected. A native executor on macOS prepares the worker's packet, launches the
 designated harness and stages its observations. Nothing else in Berman prepares,
-launches, captures, ends, collects, preserves, migrates or supplements fieldwork.
+launches, captures, ends, collects, preserves or supplements fieldwork.
 
 Standalone commands check the installed software and read portable guest recordings
 and reading editions.

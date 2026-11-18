@@ -9,7 +9,7 @@ explore   Fresh random examples, ten times as many, and the local .hypothesis da
 A failure prints the falsifying example, and for sequences the steps that reach it. Pin one worth
 keeping as an explicit @example or a plain unittest case beside the property.
 
-These tests use synthetic records, disposable workspaces and simulated callbacks. They establish
+These tests use synthetic records, disposable studies and simulated callbacks. They establish
 nothing about a native installation.
 """
 
@@ -27,9 +27,6 @@ settings.load_profile(PROFILE)
 SCALE = 10 if PROFILE == 'explore' else 1
 
 
-def budget(examples, steps=None):
+def budget(examples):
     """Settings for one test: its example count under the default profile, scaled when exploring."""
-    limits = {'max_examples': examples * SCALE}
-    if steps is not None:
-        limits['stateful_step_count'] = steps * (2 if SCALE > 1 else 1)
-    return settings(**limits)
+    return settings(max_examples=examples * SCALE)

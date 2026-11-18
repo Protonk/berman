@@ -25,8 +25,6 @@ class Controller:
     def __init__(self, root):
         self.root = root.resolve(strict=True)
         self.collection = evidence.collection(self.root)
-        if (self.root / 'berman.json').exists():
-            raise ValueError('Select a controller study directory separate from the retained legacy installation')
         self.store = self.root / 'controller'
         self.store.mkdir(mode=0o700, exist_ok=True)
 

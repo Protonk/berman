@@ -15,31 +15,18 @@ from berman import schemas
 from berman.files import Decision, keep, read, write
 
 
-PROTOCOLS = ('work-accounts/1', 'participant-inquiry/1')
-# Text that used to be appended to the opening message.
-RETIRED = ('research_commission', 'commission')
-
-
 def recipe(root, name, connection):
     """Recipe 2 wording is written for named connections; its instructions are all a recipe says to a fieldworker."""
     if not re.fullmatch(r'[a-z][a-z0-9-]*', name):
         raise ValueError('Invalid recipe name')
     folder = root / 'recipes' / name
     meta = read(folder / 'recipe.json')
-    if (not isinstance(meta, dict) or meta.get('id') != name or meta.get('schema') != 'berman.recipe/2'
-            or meta.get('coverage') != ['notes']):
-        raise ValueError('This workflow requires a named notes recipe')
-    if meta.get('recording_protocol') not in PROTOCOLS:
-        raise ValueError('Recipe must explicitly name a supported recording protocol')
     schemas.validate('berman.recipe/2', meta, folder / 'recipe.json')
+    if meta['id'] != name:
+        raise ValueError('Recipe identity differs from its directory')
     if meta['connections'] and connection not in meta['connections']:
         raise Decision(f'Recipe {name} is worded for {", ".join(meta.get("connections", [])) or "no connection"}, '
                        f'not {connection}; introduce a separately versioned recipe')
-    retired = [key for key in RETIRED if key in meta]
-    if retired:
-        raise Decision(f'Recipe {name} names {" and ".join(retired)}, which no longer reaches a fieldworker: the opening '
-                       'message is the same for every recipe. Move anything a fieldworker needs into its instructions '
-                       f'and remove {" and ".join(retired)} from {folder / "recipe.json"}')
     result = {'metadata': meta}
     path = Path(meta['instructions'])
     if path.is_absolute() or '..' in path.parts:

@@ -8,17 +8,8 @@ import sys
 import zipfile
 import zlib
 
-from berman import presentation
 from berman import verify
 from berman.files import Decision
-
-
-def show(args, kind, result):
-    """Print a result: JSON when asked or when no presentation is defined, otherwise for a person."""
-    if args.json or kind is None:
-        print(json.dumps(result, indent=2))
-    else:
-        presentation.show(kind, result)
 
 
 def refuse(message, as_json):
@@ -45,8 +36,7 @@ def main(argv=None):
     commands.add_parser('remote', help='operate a guest study (berman remote --help)')
     commands.add_parser('executor', help='manage native staging (berman executor --help)')
     commands.add_parser('version', help='show the installed version and source identity')
-    verification = commands.add_parser('verify', help='verify the installed software')
-    verification.add_argument('--software', action='store_true', help='explicitly select software verification')
+    commands.add_parser('verify', help='verify the installed software')
     archive = commands.add_parser('archive', help='verify a published guest reading edition')
     archive.add_argument('--path', type=Path, required=True, help='reading edition ZIP')
     recording = commands.add_parser('recording', help='verify or materialize a guest recording')
@@ -73,18 +63,22 @@ def main(argv=None):
                 result = evidence.verify_directory(args.path)
             else:
                 result = evidence.verify_package(args.path, args.sha256)
-            show(args, None, result)
+            print(json.dumps(result, indent=2))
             return 0
         if args.command == 'archive':
             from berman.archive.package import verify_edition
 
-            show(args, None, verify_edition(args.path))
+            print(json.dumps(verify_edition(args.path), indent=2))
             return 0
         if args.command != 'verify':
             parser.error(f'place {args.command} first to pass options to it')
         result = verify.software()
-        show(args, 'verification', result)
-        return verify.EXIT[result['verdict']]
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            for name, check in result['checks'].items():
+                print(f'{name} {"passed" if check["passed"] else "failed"}: {check["detail"]}')
+        return 0 if result['passed'] else 1
     except (
         OSError,
         ValueError,

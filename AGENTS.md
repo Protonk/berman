@@ -7,11 +7,11 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
 - Fieldwork has one lifecycle. The controller and executor (`controller.py`,
   `custody.py`, `executor/`, `connector.py`, `protocol.py`) are the only code
   that commissions, prepares, launches, captures, ends, collects, preserves,
-  migrates or supplements fieldwork. Add no second path.
+  or supplements fieldwork. Add no second path.
 - Python 3.14, managed by uv. `uv sync`, then all five before reporting a
   change: `uv run ruff check`, `uv run ruff format --check`,
   `uv run lint-imports`, `uv run python -m unittest discover -s tests -t .` and
-  `uv run berman verify --software`. Report their scope and omissions.
+  `uv run berman verify`. Report their scope and omissions.
 - Use this checkout's environment explicitly: `uv run berman`, `.venv/bin/berman`
   or `python -m berman` with the environment active. A workstation that runs a
   study may have another program named `berman` on PATH, such as a pinned older
@@ -21,8 +21,7 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   there costs a rebuilt edition. The executor records every module's digest in
   each preparation and launch receipt
   (docs/development.md#byte-sensitive-files).
-- `jsonschema` is imported only by `berman.schemas` and `rich` only by
-  `berman.presentation.terminal`; `packaging` only by `berman.environment`.
+- `jsonschema` is imported only by `berman.schemas` and `packaging` only by `berman.environment`.
   The executor's hook routing and the archive
   builder import the standard library only. The Import Linter contracts in
   pyproject.toml hold this; add a violation case to
@@ -45,10 +44,6 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   rewrite old records. Validation never changes the value it checks.
 - CLI behavior may change as part of an authorized corrective task. Describe
   the change and test its consequences rather than retaining a known defect.
-  `berman.presentation.plain` is what a pipe, a file and `BERMAN_OUTPUT=plain`
-  receive, pinned byte for byte by tests/fixtures/presentation; an interactive
-  terminal gets the Rich rendering of the same result. `--json`, exit codes and
-  redirected text must not depend on whether a terminal is attached.
 - Property tests are derandomized by default. Pin a failure found with
   `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
 - Capture hooks enter through the executor's exclusive router, never a direct collector.

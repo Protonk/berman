@@ -2,13 +2,44 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:recipe-2",
   "title": "berman.recipe/2",
-  "description": "Versioned worker guidance for named connections (recipe.json), checked when a recipe is selected, after berman.recipes has judged its identity, coverage, recording protocol and the connection it is worded for, and refused the research commission that 0.4.4 retired. instructions is then read as a path within the recipe's folder. connections is a list: given as text, a connection's name used to be looked for inside that text, so a recipe could match a connection it was not written for. Fields Berman only stores are not constrained.",
+  "description": "Worker instructions for a notes assignment. The instructions file belongs to the recipe directory and contains one {{notes_directory}} placeholder. An empty connections list permits any connection.",
   "type": "object",
-  "required": ["schema", "id", "connections", "coverage", "recording_protocol", "instructions"],
+  "required": [
+    "schema",
+    "id",
+    "connections",
+    "coverage",
+    "recording_protocol",
+    "instructions"
+  ],
   "properties": {
-    "schema": {"const": "berman.recipe/2"},
-    "connections": {"type": "array"},
-    "coverage": {"type": "array"},
-    "instructions": {"type": "string"}
+    "schema": {
+      "const": "berman.recipe/2"
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      }
+    },
+    "coverage": {
+      "const": [
+        "notes"
+      ]
+    },
+    "instructions": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "recording_protocol": {
+      "enum": [
+        "work-accounts/1",
+        "participant-inquiry/1"
+      ]
+    }
   }
 }

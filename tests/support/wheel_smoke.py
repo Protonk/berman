@@ -57,17 +57,12 @@ def smoke(example, base):
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
 
-    software = json.loads(invoke('--json', 'verify', '--software').stdout)
-    assert software['verdict'] == 'passed' and software['not_run'] == []
-    # The wheel carries its record schemas, and pip installed what it declares.
-    assert {name: check['status'] for name, check in software['checks'].items()} == dict.fromkeys(
-        ('installation', 'dependencies', 'schemas'), 'passed'
-    ), software['checks']
-    identity = software['checks']['installation']['details']['software']
+    software = json.loads(invoke('--json', 'verify').stdout)
+    assert software['passed'] and all(check['passed'] for check in software['checks'].values()), software
+    identity = json.loads(invoke('version').stdout)
     environment = identity['environment']
-    assert environment['dependencies']['jsonschema'] and environment['dependencies']['rich'], environment
+    assert environment['dependencies']['jsonschema'] and environment['dependencies']['packaging'], environment
     assert 'capture/codex.py' in identity['files_sha256']
-    assert not any(name.startswith('_legacy/') for name in identity['files_sha256'])
     # A hook process loads the standard library and Berman's own modules, and nothing third-party.
     loaded = subprocess.run(
         [sys.executable, '-I', '-B', '-c', HOOK_MODULES], cwd=unrelated, text=True, capture_output=True
@@ -149,7 +144,7 @@ def smoke(example, base):
         'version': identity['version'],
         'package': str(PACKAGE),
         'source_sha256': identity['source_sha256'],
-        'software_verification': software['verdict'],
+        'software_verification': software['passed'],
         'python': environment['python'],
         'dependencies': environment['dependencies'],
         'hooks_load_third_party_modules': False,
@@ -159,7 +154,6 @@ def smoke(example, base):
         'portable_working_copy_verified': True,
         'collection': 'synthetic receipt; no harness, hook or native session',
         'coverage_unknown': verified['result']['recording']['coverage']['unknown'],
-        'never_checked': software['not_covered'],
     }
 
 

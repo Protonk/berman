@@ -9,7 +9,6 @@
   ],
   "recording_protocol": "work-accounts/1",
   "instructions": "INSTRUCTIONS.md",
-  "research_commission": "COMMISSION.md",
   "source": {
     "from": "synthetic fixture"
   },

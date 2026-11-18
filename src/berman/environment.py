@@ -1,4 +1,4 @@
-"""Installed requirement facts and compatibility, without loading a study or presentation.
+"""Installed requirement facts and compatibility, for the active Python environment.
 
 Only this module imports packaging, lazily so verification can diagnose its own damaged
 installation. Requirements are evaluated in this interpreter, including requested extras;

@@ -141,8 +141,6 @@ class GuidanceTest(unittest.TestCase):
 
     def test_options_are_matched_exactly(self):
         # Help text mentioning an option, or an option's prefix, is not the option itself.
-        self.assertIn('--software', options(('verify',)))
-        self.assertNotIn('--soft', options(('verify',)))
         self.assertIn('--path', options(('archive',)))
         self.assertIn('--json', options(()))
         self.assertTrue({'--request', '--connection', '--harness'} <= options(('remote', 'commission')))

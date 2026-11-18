@@ -26,13 +26,11 @@ class Plan:
         if not self.path.is_relative_to(root):
             raise ValueError(f'Research plans are researcher inputs held in Berman: {self.path}')
         self.data = read(self.path)
-        if not isinstance(self.data, dict) or self.data.get('schema') != 'berman.research-plan/1':
-            raise ValueError(f'Invalid research plan: {self.path or value}')
         schemas.validate('berman.research-plan/1', self.data, self.path)
         self.root = root
         self.id = identity(self.data['id'], 'research plan')
         self.connection = identity(self.data['connection'], 'connection')
-        self.steps = list(self.data['steps'])
+        self.steps = self.data['steps']
         self.ids = [s['id'] for s in self.steps]
         if len(self.ids) != len(set(self.ids)):
             raise ValueError('Duplicate instruction-sequence step')

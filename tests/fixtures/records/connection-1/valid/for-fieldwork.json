@@ -4,6 +4,5 @@
   "documents": [
     "README.md"
   ],
-  "commission": "COMMISSION.md",
-  "revision": "Synthetic work; preparation-time HEAD {head}"
+  "default_recipe": "baseline"
 }

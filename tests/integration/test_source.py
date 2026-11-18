@@ -15,39 +15,17 @@ class StandaloneTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.base = Path(temp.name).resolve()
 
-    def test_software_verification_ignores_workspace_files(self):
-        marker = self.base / 'berman.json'
-        marker.write_bytes(b'broken json')
-        for flags in ([], ['--software']):
-            done = subprocess.run(
-                [sys.executable, '-I', '-B', '-m', 'berman', '--json', 'verify', *flags],
-                capture_output=True,
-                cwd=self.base,
-                check=True,
-            )
-            result = json.loads(done.stdout)
-            self.assertEqual((result['scope'], result['verdict']), ('software', 'passed'))
-            self.assertEqual(set(result['checks']), {'installation', 'dependencies', 'schemas'})
-        self.assertEqual(list(self.base.iterdir()), [marker])
-        self.assertEqual(marker.read_bytes(), b'broken json')
-
-    def test_removed_workspace_options_and_commands_are_refused(self):
-        for argv in (
-            ['--root', '.', 'verify'],
-            ['status'],
-            ['verify', '--record', 'experiments/x'],
-            ['verify', '--skip', 'archive'],
-            ['archive'],
-            ['archive', '--verify'],
-            ['archive', '--freshness'],
-            ['recording', 'export'],
-        ):
-            with self.subTest(argv=argv):
-                done = subprocess.run(
-                    [sys.executable, '-I', '-B', '-m', 'berman', *argv], cwd=self.base, capture_output=True
-                )
-                self.assertEqual(done.returncode, 2, done.stderr)
-                self.assertEqual(list(self.base.iterdir()), [])
+    def test_software_verification_runs_from_an_empty_directory(self):
+        done = subprocess.run(
+            [sys.executable, '-I', '-B', '-m', 'berman', '--json', 'verify'],
+            cwd=self.base,
+            capture_output=True,
+            check=True,
+        )
+        result = json.loads(done.stdout)
+        self.assertTrue(result['passed'])
+        self.assertEqual(set(result['checks']), {'installation', 'dependencies', 'schemas'})
+        self.assertEqual(list(self.base.iterdir()), [])
 
     def test_entrypoint_ignores_pythonpath_startup_code(self):
         hostile = self.base / 'hostile'

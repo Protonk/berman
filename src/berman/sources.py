@@ -85,7 +85,7 @@ def candidates(home, parent, harness):
     return selected, len(paths)
 
 
-def collect(home, parent, harness, target, staging_parent=None):
+def collect(home, parent, harness, target):
     if not IDENTITY.fullmatch(parent) or harness not in ('codex', 'claude'):
         raise Decision('Unsupported associated-session discovery identity or harness')
     if target.exists():
@@ -98,9 +98,7 @@ def collect(home, parent, harness, target, staging_parent=None):
                 raise Decision('Retained associated session changed: ' + item['path'])
         return receipt
     target.parent.mkdir(parents=True, exist_ok=True)
-    staging_parent = staging_parent or target.parent
-    staging_parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix='.associated-', dir=staging_parent))
+    staging = Path(tempfile.mkdtemp(prefix='.associated-', dir=target.parent))
     try:
         selected, inspected = candidates(home, parent, harness)
         if len(selected) > MAX_SESSIONS:

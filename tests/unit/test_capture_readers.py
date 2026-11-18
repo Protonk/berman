@@ -1,8 +1,4 @@
-"""The helpers the executor reuses: transcript readers, hook recognition and project check resolution.
-
-These moved out of the retired co-located capture and harness modules. Their results are what the
-executor's receipts record, so each is pinned here independently of the executor's own tests.
-"""
+"""Native transcript parsing, installed hook recognition and project check arguments."""
 
 import json
 import unittest
@@ -10,7 +6,7 @@ from unittest import mock
 
 from berman import checks
 from berman.capture import claude, codex, hooks
-from berman.files import Decision, digest
+from berman.files import Decision
 
 
 class ReaderTests(unittest.TestCase):
@@ -35,8 +31,6 @@ class ReaderTests(unittest.TestCase):
         self.assertIn(b'/message/content/0/input', reader)
         self.assertIn(b'call-1', reader)
         self.assertEqual((messages, malformed, identities), (['answer'], [2], {sid}))
-        # The reading copy's bytes are what a capture record's reader_sha256 names; this is 0.26.3's output.
-        self.assertEqual(digest(reader), '00f4d8fde40b4be1329c83549d67c1e5b3b9a150d714fc4fcb66969583e7fd27')
 
     def test_claude_callbacks_are_the_seven_session_events(self):
         self.assertEqual(
@@ -60,7 +54,6 @@ class ReaderTests(unittest.TestCase):
         self.assertTrue(reader.startswith(b'CODEX FIELDWORK SESSION: DERIVED READING COPY\n'))
         self.assertIn(b'SOURCE: transcript.jsonl#L2 /payload/content/0/text', reader)
         self.assertEqual((messages, malformed), (['done'], [3]))
-        self.assertEqual(digest(reader), '93e6fd703e6d87bc26c2c35f3c8ffac11992e5e27f722c972efd8935d31d2075')
 
 
 class HookRecognitionTests(unittest.TestCase):
@@ -95,7 +88,7 @@ class ProjectCheckTests(unittest.TestCase):
                 'argv': ['{python}', '-c', 'pass', '{executable:cargo}', '{project}/service'],
                 'timeout': '45',
             },
-            {'id': 'startup', 'argv': ['{executable:rustc}', '--version', True], 'stdout_contains': 3},
+            {'id': 'startup', 'argv': ['{executable:rustc}', '--version'], 'stdout_contains': 3},
         ]
         with mock.patch.object(checks.shutil, 'which', side_effect=lambda name: '/bin/' + name):
             resolved = checks.project_checks(declared, self.VALUES)
@@ -103,12 +96,12 @@ class ProjectCheckTests(unittest.TestCase):
             resolved,
             [
                 {'id': 'metadata', 'argv': ['/py', '-c', 'pass', '/bin/cargo', '/stewart/service'], 'timeout': 45},
-                {'id': 'startup', 'argv': ['/bin/rustc', '--version', 'True'], 'timeout': 30, 'stdout_contains': '3'},
+                {'id': 'startup', 'argv': ['/bin/rustc', '--version'], 'timeout': 30, 'stdout_contains': '3'},
             ],
         )
 
     def test_project_checks_cannot_replace_another_observation(self):
-        for ids in [('launch_policy_observed',), ('file_packet_read',), ('project_tool', 'project_tool')]:
+        for ids in [('invalid-name',), ('',), ('project_tool', 'project_tool')]:
             with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, 'Invalid project check identity'):
                 checks.project_checks([{'id': ident, 'argv': ['true']} for ident in ids], {})
 

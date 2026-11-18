@@ -32,10 +32,6 @@ def regular(path):
     return path
 
 
-def read_json(path):
-    return json.loads(regular(path).read_text())
-
-
 def atomic(path, data):
     if path.is_symlink() or any(p.is_symlink() for p in path.parents):
         raise ValueError(f'Symlink in capture destination: {path}')
@@ -51,7 +47,7 @@ def atomic(path, data):
 
 
 def read(path):
-    return read_json(Path(path))
+    return json.loads(regular(Path(path)).read_text())
 
 
 def write(path, value):

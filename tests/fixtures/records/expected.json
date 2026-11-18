@@ -13,36 +13,14 @@
     "connections must be an array, not a string (\"orchard\")"
   ],
   "recipe-2/invalid/files-not-paths.json": [
-    "coverage must be an array, not a string (\"notes\")",
+    "coverage must be [\"notes\"], not a string (\"notes\")",
     "instructions must be a string, not an integer (7)"
   ],
   "research-plan-1/invalid/steps.json": [
-    "steps[1].id is required"
+    "steps[1].id is required",
+    "steps[1].recipe is required"
   ],
   "research-plan-1/invalid/steps-as-object.json": [
     "steps must be an array, not an object"
-  ],
-  "software-1/invalid/digests.json": [
-    "environment.dependencies is required",
-    "files_sha256.cli.py must be a SHA-256 digest in lowercase hexadecimal, not a string (\"abc\")"
-  ],
-  "verification-1/invalid/statuses.json": [
-    "checks.archive.required must be a boolean, not a string (\"yes\")",
-    "checks.archive.status must be one of \"passed\", \"failed\", \"not-established\", \"not-run\", not a string (\"skipped\")",
-    "verdict must be one of \"passed\", \"failed\", \"incomplete\", not a string (\"ok\")"
-  ],
-  "verification-1/invalid/lists.json": [
-    "failed must be an array, not a string (\"none\")",
-    "not_covered is required",
-    "record must be null, not an object"
-  ],
-  "recording-2/invalid/schema.json": [
-    "schema must be \"berman.recording/2\", not a string (\"berman.wrong/1\")"
-  ],
-  "capture-current-1/invalid/schema.json": [
-    "schema must be \"berman.capture-current/1\", not a string (\"berman.wrong/1\")"
-  ],
-  "reading-edition-2/invalid/schema.json": [
-    "schema must be \"berman.reading-edition/2\", not a string (\"berman.wrong/1\")"
   ]
 }
