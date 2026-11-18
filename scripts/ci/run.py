@@ -57,8 +57,10 @@ def source_check(trial):
             trial.step(shlex.join(args))
             subprocess.run(['uv', 'run', '--locked', *args], cwd=ROOT, check=True, stdout=output, stderr=output)
         trial.step('build candidate wheel')
+        # Through a source distribution, never directly from the checkout: setuptools' build/
+        # directory keeps modules that have since been moved or removed, and would ship them.
         subprocess.run(
-            ['uv', 'build', '--wheel', '--out-dir', trial.directory],
+            ['uv', 'build', '--out-dir', trial.directory],
             cwd=ROOT,
             check=True,
             env=dict(os.environ, SOURCE_DATE_EPOCH='1704067200'),
