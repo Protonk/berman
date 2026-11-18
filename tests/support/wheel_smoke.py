@@ -62,7 +62,7 @@ def smoke(example, base):
     identity = json.loads(invoke('version').stdout)
     environment = identity['environment']
     assert environment['dependencies']['jsonschema'] and environment['dependencies']['packaging'], environment
-    assert 'capture/codex.py' in identity['files_sha256']
+    assert 'executor/codex.py' in identity['files_sha256']
     # A hook process loads the standard library and Berman's own modules, and nothing third-party.
     loaded = subprocess.run(
         [sys.executable, '-I', '-B', '-c', HOOK_MODULES], cwd=unrelated, text=True, capture_output=True

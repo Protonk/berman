@@ -17,8 +17,8 @@ import sys
 import tempfile
 from uuid import uuid4
 
-from berman import evidence, files, protocol, snapshots, sources
-from berman.executor import capture
+from berman import evidence, files, protocol
+from berman.executor import capture, checkout, snapshots, sources
 from berman.installation import PACKAGE
 
 IDENTITY_FIELDS = ('collection_id', 'run', 'operation', 'connection', 'harness')
@@ -132,9 +132,6 @@ def fingerprint(prepared, folder):
 
 
 def prepare(spool, assignment, binding):
-    from berman import recipes
-    from berman.checks import project_checks
-
     b = check_assignment(assignment, binding)
     project, home = Path(b['project']), Path(b['home'])
     spool = Path(spool).expanduser().resolve()
@@ -153,7 +150,7 @@ def prepare(spool, assignment, binding):
         (packet / 'notes').mkdir(parents=True, exist_ok=True)
         instruction = assignment['instructions'].replace('{{notes_directory}}', str(packet / 'notes') + '/')
         files.keep(packet / 'INSTRUCTIONS.md', instruction.encode())
-        context = recipes.snapshot(project, assignment['documents'], folder / 'initial-project')
+        context = checkout.snapshot(project, assignment['documents'], folder / 'initial-project')
         prompt = (
             f'{capture.MARKER}{assignment["operation"]}\n\nRead {packet / "INSTRUCTIONS.md"} '
             f'and follow it in {project}. The checkout was at {context["head"]} during preparation.'
@@ -162,7 +159,7 @@ def prepare(spool, assignment, binding):
         claude = assignment['harness'] == 'claude'
         files.write(folder / 'hooks.json', capture.definition(spool, home, assignment['operation'] if claude else None))
         checks = []
-        for check in project_checks(
+        for check in checkout.project_checks(
             assignment['checks'],
             {'python': sys.executable, 'project': str(project), 'packet': str(packet)},
         ):
@@ -512,8 +509,6 @@ def collect(spool, operation, declaration_id, supplement=None):
     cannot be taken (a link, a special file, a file over a bound, a file that keeps changing)
     is listed in `omitted` and in the limitations. It never prevents the freeze.
     """
-    from berman import recipes
-
     protocol.identifier(declaration_id)
     folder = capture.operation_dir(spool, operation)
     target = frozen_dir(folder, supplement)
@@ -607,7 +602,7 @@ def collect(spool, operation, declaration_id, supplement=None):
                 if event_names and event_names[-1] == 'UserPromptSubmit':
                     limitations.append('Submitted prompt has no later terminal callback.')
             try:
-                recipes.snapshot(
+                checkout.snapshot(
                     Path(b['project']), p['context']['selectors'], stage / 'final-project', require_stable_git=False
                 )
             except (OSError, ValueError, subprocess.SubprocessError) as exc:

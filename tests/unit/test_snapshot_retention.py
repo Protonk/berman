@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from berman import files, snapshots
+from berman import files
+from berman.executor import snapshots
 
 
 class SnapshotRetentionTests(unittest.TestCase):

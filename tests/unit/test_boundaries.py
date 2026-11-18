@@ -65,7 +65,7 @@ class ImportBoundaryTests(unittest.TestCase):
 
         reached = set()
         dependencies('executor/capture.py', reached)
-        self.assertIn('capture/codex.py', reached)
+        self.assertIn('executor/codex.py', reached)
         for relative in sorted(reached):
             name = 'berman.' + relative.removesuffix('.py').removesuffix('/__init__').replace('/', '.')
             with self.subTest(module=name):

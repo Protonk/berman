@@ -11,7 +11,7 @@ import subprocess
 import sys
 import uuid
 
-from berman import config, executor, files, protocol
+from berman import executor, files, protocol, study
 
 
 def ssh_client(settings):
@@ -27,7 +27,7 @@ def ssh_client(settings):
 class Remote:
     def __init__(self, settings, *, controller_python='.local/berman/bin/python'):
         self.collection = protocol.identifier(settings['collection_id'])
-        self.study = config.identity(settings['study'], 'study')
+        self.study = study.identity(settings['study'], 'study')
         self.argv = [
             *ssh_client(settings),
             shlex.quote(controller_python),

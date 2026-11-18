@@ -4,8 +4,8 @@ import json
 import unittest
 from unittest import mock
 
-from berman import checks, executor
-from berman.capture import claude, codex
+from berman import executor
+from berman.executor import checkout, claude, codex
 from berman.files import Decision
 
 
@@ -89,8 +89,8 @@ class ProjectCheckTests(unittest.TestCase):
             },
             {'id': 'startup', 'argv': ['{executable:rustc}', '--version'], 'stdout_contains': 3},
         ]
-        with mock.patch.object(checks.shutil, 'which', side_effect=lambda name: '/bin/' + name):
-            resolved = checks.project_checks(declared, self.VALUES)
+        with mock.patch.object(checkout.shutil, 'which', side_effect=lambda name: '/bin/' + name):
+            resolved = checkout.project_checks(declared, self.VALUES)
         self.assertEqual(
             resolved,
             [
@@ -102,17 +102,17 @@ class ProjectCheckTests(unittest.TestCase):
     def test_project_checks_cannot_replace_another_observation(self):
         for ids in [('invalid-name',), ('',), ('project_tool', 'project_tool')]:
             with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, 'Invalid project check identity'):
-                checks.project_checks([{'id': ident, 'argv': ['true']} for ident in ids], {})
+                checkout.project_checks([{'id': ident, 'argv': ['true']} for ident in ids], {})
 
     def test_missing_executables_unknown_placeholders_and_timeouts_are_refused(self):
-        with mock.patch.object(checks.shutil, 'which', return_value=None):
+        with mock.patch.object(checkout.shutil, 'which', return_value=None):
             with self.assertRaisesRegex(Decision, 'needs the cargo executable for metadata'):
-                checks.project_checks([{'id': 'metadata', 'argv': ['{executable:cargo}']}], self.VALUES)
+                checkout.project_checks([{'id': 'metadata', 'argv': ['{executable:cargo}']}], self.VALUES)
         with self.assertRaisesRegex(ValueError, 'Unknown placeholder in project check metadata'):
-            checks.project_checks([{'id': 'metadata', 'argv': ['{home}']}], self.VALUES)
+            checkout.project_checks([{'id': 'metadata', 'argv': ['{home}']}], self.VALUES)
         for timeout in (0, 121):
             with self.subTest(timeout=timeout), self.assertRaisesRegex(ValueError, 'between 1 and 120 seconds'):
-                checks.project_checks([{'id': 'metadata', 'argv': ['true'], 'timeout': timeout}], self.VALUES)
+                checkout.project_checks([{'id': 'metadata', 'argv': ['true'], 'timeout': timeout}], self.VALUES)
 
 
 if __name__ == '__main__':

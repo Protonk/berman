@@ -1,9 +1,14 @@
-"""Guest study identifiers and research plan sequencing."""
+"""A study's inputs in the research guest: identities, recipes and research plans.
 
+The controller reads a recipe, and a plan when one is selected, as it commissions an engagement.
+Only the recipe's instructions travel to the host; the plan and a recipe's annotations stay here.
+"""
+
+from pathlib import Path
 import re
 
 from berman import schemas
-from berman.files import Decision, digest_json, read
+from berman.files import Decision, digest_json, read, regular
 
 IDENTITY = re.compile(r'[a-z][a-z0-9-]{0,62}')
 
@@ -52,3 +57,25 @@ class Plan:
         if len(started) == len(self.steps):
             raise Complete(f'The agreed fieldwork sequence is complete (plan {self.id})')
         return self.steps[len(started)]
+
+
+def recipe(root, name, connection):
+    """Recipe 2 wording is written for named connections; its instructions are all a recipe says to a fieldworker."""
+    if not re.fullmatch(r'[a-z][a-z0-9-]*', name):
+        raise ValueError('Invalid recipe name')
+    folder = root / 'recipes' / name
+    meta = read(folder / 'recipe.json')
+    schemas.validate('berman.recipe/2', meta, folder / 'recipe.json')
+    if meta['id'] != name:
+        raise ValueError('Recipe identity differs from its directory')
+    if meta['connections'] and connection not in meta['connections']:
+        raise Decision(
+            f'Recipe {name} is worded for {", ".join(meta["connections"])}. Select a recipe for {connection}'
+        )
+    path = Path(meta['instructions'])
+    if path.is_absolute() or '..' in path.parts:
+        raise ValueError('Recipe file must stay within its directory')
+    instructions = regular(folder / path).read_text()
+    if instructions.count('{{notes_directory}}') != 1:
+        raise ValueError('Instructions must contain exactly one notes_directory placeholder')
+    return {'metadata': meta, 'instructions': instructions}

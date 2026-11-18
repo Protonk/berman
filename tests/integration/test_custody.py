@@ -13,7 +13,8 @@ from unittest.mock import patch
 from uuid import uuid4
 import zipfile
 
-from berman import custody, evidence, files, protocol, snapshots
+from berman import custody, evidence, files, protocol
+from berman.executor import snapshots
 from berman.archive import package
 
 FIXTURE = Path(__file__).parents[1] / 'fixtures/split-0.26.4'

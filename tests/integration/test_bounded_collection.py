@@ -3,9 +3,9 @@
 from pathlib import Path
 import tempfile
 import unittest
-from berman import sources
 from berman.files import Decision, write
-from berman.recipes import snapshot
+from berman.executor import sources
+from berman.executor.checkout import snapshot
 from tests.support.project import git_repository
 
 

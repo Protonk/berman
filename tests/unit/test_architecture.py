@@ -31,17 +31,18 @@ SETTINGS = tomllib.loads(CONFIG.read_text())
 CONTRACTS = {c['id']: c for c in SETTINGS['tool']['importlinter']['contracts']}
 # (contract id, module to change, import to append). Each must break the named contract.
 VIOLATIONS = (
-    ('layers', 'config.py', 'from berman import controller'),
-    ('layers', 'capture/claude.py', 'from berman import controller'),
+    ('layers', 'study.py', 'from berman import controller'),
+    ('layers', 'executor/claude.py', 'from berman import controller'),  # The executor never imports the controller.
+    ('layers', 'controller.py', 'from berman import executor'),  # Nor the controller the executor.
     ('layers', 'archive/builder.py', 'from berman import controller'),
     ('layers', 'files.py', 'from berman import installation'),
     ('layers', 'schemas/__init__.py', 'from berman import files'),
-    ('layers', 'checks.py', 'from berman import verify'),
+    ('layers', 'executor/checkout.py', 'from berman import verify'),
     ('layers', 'protocol.py', 'from berman import custody'),
     ('hooks', 'files.py', 'import jsonschema'),
     ('hooks', 'files.py', 'import packaging.requirements'),
-    ('hooks', 'capture/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
-    ('hooks', 'executor/capture.py', 'from berman import recipes'),  # Indirectly, two modules away.
+    ('hooks', 'executor/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
+    ('hooks', 'executor/capture.py', 'from berman import study'),  # Indirectly, two modules away.
     ('archive', 'archive/package.py', 'import packaging'),
     ('confined', 'verify.py', 'import jsonschema'),
     ('confined', 'cli.py', 'import packaging'),
@@ -138,7 +139,8 @@ class StandardLibraryTests(unittest.TestCase):
         # The contracts name the packages Berman depends on; this refuses every other one too.
         files = hook_path()
         self.assertIn('executor/capture.py', files)
-        self.assertIn('capture/codex.py', files)
+        self.assertIn('executor/codex.py', files)
+        self.assertIn('executor/__init__.py', files)
         for relative in files:
             with self.subTest(file=relative):
                 self.assertLessEqual(top_level_imports(PACKAGE / relative), set(sys.stdlib_module_names) | {'berman'})

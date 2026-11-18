@@ -1,8 +1,10 @@
-"""Versioned worker guidance and bounded project snapshots.
+"""The bound checkout as the executor meets it: declared project checks and bounded document snapshots.
 
-The controller reads a recipe when it commissions an engagement; the executor snapshots the selected
-project documents when it prepares and when it collects.
+Preparation resolves and runs a connection's checks as host subprocesses in the checkout and records
+their arguments, return codes and output digests. Preparation and collection each snapshot the
+selected documents and the observed Git state; neither is a copy of the checkout.
 """
+
 import os
 from pathlib import Path
 import re
@@ -11,37 +13,57 @@ import subprocess
 import tempfile
 
 from berman import files
-from berman import schemas
 from berman.files import Decision, keep, read, write
 
+PLACEHOLDER = re.compile(r'\{(python|project|packet|executable:[a-z][a-z0-9-]*)\}')
 
-def recipe(root, name, connection):
-    """Recipe 2 wording is written for named connections; its instructions are all a recipe says to a fieldworker."""
-    if not re.fullmatch(r'[a-z][a-z0-9-]*', name):
-        raise ValueError('Invalid recipe name')
-    folder = root / 'recipes' / name
-    meta = read(folder / 'recipe.json')
-    schemas.validate('berman.recipe/2', meta, folder / 'recipe.json')
-    if meta['id'] != name:
-        raise ValueError('Recipe identity differs from its directory')
-    if meta['connections'] and connection not in meta['connections']:
-        raise Decision(f'Recipe {name} is worded for {", ".join(meta["connections"])}. Select a recipe for {connection}')
-    path = Path(meta['instructions'])
-    if path.is_absolute() or '..' in path.parts:
-        raise ValueError('Recipe file must stay within its directory')
-    instructions = files.regular(folder / path).read_text()
-    if instructions.count('{{notes_directory}}') != 1:
-        raise ValueError('Instructions must contain exactly one notes_directory placeholder')
-    return {'metadata': meta, 'instructions': instructions}
+
+def project_checks(declared, values):
+    """Resolve a connection's declared checks into explicit argument lists."""
+    resolved = []
+    seen = set()
+    for check in declared:
+        ident = check['id']
+        if not isinstance(ident, str) or ident in seen or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', ident):
+            raise ValueError(f'Invalid project check identity: {ident}')
+        seen.add(ident)
+
+        def substitute(match, ident=ident):
+            key = match.group(1)
+            if key.startswith('executable:'):
+                found = shutil.which(key.split(':', 1)[1])
+                if not found:
+                    raise Decision(f'The native check needs the {key.split(":", 1)[1]} executable for {ident}')
+                return found
+            return values[key]
+
+        argv = [PLACEHOLDER.sub(substitute, arg) for arg in check['argv']]
+        if any(re.search(r'\{[^}]*\}', arg) for arg in argv):
+            raise ValueError(f'Unknown placeholder in project check {ident}')
+        timeout = int(check.get('timeout', 30))
+        if not 0 < timeout <= 120:
+            raise ValueError(f'Project check {ident} needs a timeout between 1 and 120 seconds')
+        row = {'id': ident, 'argv': argv, 'timeout': timeout}
+        if 'stdout_contains' in check:
+            row['stdout_contains'] = str(check['stdout_contains'])
+        resolved.append(row)
+    return resolved
 
 
 def git_state(project):
     def git(*args):
-        p = subprocess.run(['git', '-C', str(project), *args], check=True,
-                           capture_output=True, env=dict(os.environ, GIT_OPTIONAL_LOCKS='0'))
+        p = subprocess.run(
+            ['git', '-C', str(project), *args],
+            check=True,
+            capture_output=True,
+            env=dict(os.environ, GIT_OPTIONAL_LOCKS='0'),
+        )
         return p.stdout.decode()
-    return {'head': git('rev-parse', 'HEAD').strip(),
-            'status': git('status', '--porcelain=v1', '--untracked-files=normal')}
+
+    return {
+        'head': git('rev-parse', 'HEAD').strip(),
+        'status': git('status', '--porcelain=v1', '--untracked-files=normal'),
+    }
 
 
 def selected_documents(project, selectors):
@@ -49,8 +71,14 @@ def selected_documents(project, selectors):
     selected = {}
     for selector in selectors:
         rel = Path(selector)
-        if (not selector or rel.is_absolute() or '..' in rel.parts or '.git' in rel.parts
-                or selector == 'snapshot.json' or '**' in selector):
+        if (
+            not selector
+            or rel.is_absolute()
+            or '..' in rel.parts
+            or '.git' in rel.parts
+            or selector == 'snapshot.json'
+            or '**' in selector
+        ):
             raise ValueError(f'Invalid selected document: {selector}')
         pattern = any(c in selector for c in '*?[')
         if not pattern and (project / rel).is_dir():
@@ -117,10 +145,17 @@ def snapshot(project, names, target, require_stable_git=True):
                     raise Decision('A selected document appeared during the snapshot; retry')
             elif files.digest(files.regular(source).read_bytes()) != row['sha256']:
                 raise Decision('A selected document changed during the snapshot; retry')
-        result = {'schema': 'berman.project-snapshot/1', 'observed_at_utc': files.now(),
-                  'project': str(project), **before, 'selectors': list(names), 'files': rows,
-                  'git_after': after, 'git_changed_during_collection': before != after,
-                  'scope': 'Selected documents and observed Git state at collection time; not a full checkout snapshot.'}
+        result = {
+            'schema': 'berman.project-snapshot/1',
+            'observed_at_utc': files.now(),
+            'project': str(project),
+            **before,
+            'selectors': list(names),
+            'files': rows,
+            'git_after': after,
+            'git_changed_during_collection': before != after,
+            'scope': 'Selected documents and observed Git state at collection time; not a full checkout snapshot.',
+        }
         write(staging / 'snapshot.json', result)
         staging.rename(target)
         return result

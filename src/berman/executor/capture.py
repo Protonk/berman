@@ -15,9 +15,9 @@ import shlex
 import sys
 from uuid import uuid4
 
-from berman import files, protocol, snapshots
-from berman.capture import claude, codex
-from berman.sources import IDENTITY, metadata
+from berman import files, protocol
+from berman.executor import claude, codex, snapshots
+from berman.executor.sources import IDENTITY, metadata
 
 MARKER = 'Berman-Assignment: '
 EVENTS = {'codex': ('UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'), 'claude': claude.EVENTS}

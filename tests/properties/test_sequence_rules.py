@@ -2,7 +2,7 @@
 
 import unittest
 from hypothesis import given, strategies as st
-from berman.config import Complete, Plan
+from berman.study import Complete, Plan
 from berman.files import Decision
 from tests.support.properties import budget
 

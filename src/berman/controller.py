@@ -17,7 +17,7 @@ import sys
 import tempfile
 from uuid import uuid4
 
-from berman import config, custody, evidence, files, protocol, recipes, schemas
+from berman import custody, evidence, files, protocol, schemas, study
 
 
 class Controller:
@@ -216,7 +216,7 @@ class Controller:
         return {'protocol': protocol.VERSION, 'command': 'status', 'collection_id': self.collection, 'result': result}
 
     def commission(self, db, request):
-        connection = config.identity(request['connection'], 'connection')
+        connection = study.identity(request['connection'], 'connection')
         definition_path = self.root / 'connections' / connection / 'connection.json'
         definition = files.read(definition_path)
         schemas.validate('berman.connection/1', definition, definition_path)
@@ -231,8 +231,8 @@ class Controller:
         if plan_id is not None:
             if request.get('recipe'):
                 raise ValueError('Choose either a recipe or a plan')
-            plan_id = config.identity(plan_id, 'plan')
-            plan = config.Plan(self.root, f'plans/{plan_id}/plan.json')
+            plan_id = study.identity(plan_id, 'plan')
+            plan = study.Plan(self.root, f'plans/{plan_id}/plan.json')
             if plan.id != plan_id or plan.connection != connection:
                 raise ValueError('Selected plan belongs to a different connection or identity')
             started_steps = []
@@ -248,7 +248,7 @@ class Controller:
             plan_decision = plan.reservation(step)
         if selected is None:
             raise ValueError('Choose a recipe or a research plan for this connection')
-        source = recipes.recipe(self.root, selected, connection)
+        source = study.recipe(self.root, selected, connection)
         floor = files.read(self.root / 'collection.json').get('reserved_through', 0)
         imported = (p.name for p in (self.root / 'custody').glob('run-*'))
         floor = max([floor, *(int(run[4:]) for run in imported if evidence.RUN.fullmatch(run))])
@@ -478,12 +478,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
-        study = config.identity(args.study, 'study')
+        name = study.identity(args.study, 'study')
         line = sys.stdin.buffer.readline(protocol.HEADER_LIMIT + 1)
         if len(line) > protocol.HEADER_LIMIT or not line.endswith(b'\n'):
             raise ValueError('Invalid command header')
         request = json.loads(line)
-        print(json.dumps(Controller(Path.home() / 'research' / study).execute(request, sys.stdin.buffer)))
+        print(json.dumps(Controller(Path.home() / 'research' / name).execute(request, sys.stdin.buffer)))
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error) as exc:
         print(f'Controller: {exc}', file=sys.stderr)
         return 1

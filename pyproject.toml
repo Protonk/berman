@@ -60,11 +60,10 @@ exclude = [
     "src/berman/archive/streams.py",
     # Written before the formatter. Remove a file from this list when formatting it.
     "src/berman/__main__.py",
-    "src/berman/capture/claude.py",
     "src/berman/evidence.py",
+    "src/berman/executor/claude.py",
     "src/berman/files.py",
     "src/berman/installation.py",
-    "src/berman/recipes.py",
     "tests/support/paths.py",
     "tests/unit/test_boundaries.py",
     "tests/unit/test_guidance.py",
@@ -78,34 +77,30 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: command line, connector, orchestration, operations, protocol, definitions, capture, foundations"
+name = "Layers: command line, connector, guest controller and native executor, custody and study inputs, protocol, recordings, foundations"
 type = "layers"
 layers = [
     "berman.__main__",
     "berman.cli",
     "berman.connector",
-    "berman.controller : berman.executor : berman.verify",
-    "berman.custody : berman.sources : berman.recipes : berman.checks",
+    "berman.controller | berman.executor | berman.verify",
+    "berman.custody | berman.study",
     "berman.protocol",
-    "berman.config",
-    "berman.capture",
-    "berman.evidence : berman.snapshots : berman.archive",
+    "berman.evidence : berman.archive",
     "berman.files | berman.installation | berman.environment | berman.schemas",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
-other; modules joined by '|' may not. The lowest layer imports nothing else in
-the package. Pass what the lower module needs as an argument instead."""
+other; modules joined by '|' may not, so the guest controller and the native
+executor never import each other. The lowest layer imports nothing else in the
+package. Pass what the lower module needs as an argument instead."""
 
 [[tool.importlinter.contracts]]
 id = "hooks"
-name = "Hook routing and what it imports load no third-party package"
+name = "The native executor and what it imports load no third-party package"
 type = "forbidden"
 source_modules = [
-    "berman.executor.capture",
-    "berman.capture",
-    "berman.sources",
-    "berman.snapshots",
+    "berman.executor",
     "berman.protocol",
     "berman.evidence",
     "berman.files",
@@ -114,7 +109,7 @@ source_modules = [
 forbidden_modules = ["jsonschema", "packaging"]
 broken_contract_guidance = """
 The executor's hook runs on every turn of a fieldworker's session and stages
-its observation while the research guest is offline. Routing and staging use the
+its observation while the research guest is offline. The whole executor uses the
 standard library and these modules only, directly and indirectly."""
 
 [[tool.importlinter.contracts]]
