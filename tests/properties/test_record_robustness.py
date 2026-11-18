@@ -15,15 +15,14 @@ import unittest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from berman import schemas
+from berman import records, schemas
 from berman._legacy.api import RUN
 from berman.files import json_bytes
 from berman.lifecycle import FACTS
 from berman.records import Store
-from berman.workflow import Workflow
 from tests.support.paths import REPO
 from tests.support.properties import budget
-from tests.support.workspace import FixtureHarness, git_repository, workspace
+from tests.support.workspace import git_repository, workspace
 
 VALID = [json.loads(p.read_text()) for p in sorted((REPO / 'tests/fixtures/records/operation-1/valid').glob('*.json'))]
 scalars = (
@@ -67,7 +66,6 @@ class RobustnessTests(unittest.TestCase):
         workspace(base / 'berman', base, base / 'stewart', documents=['README.md'])
         git_repository(base / 'stewart', {'README.md': 'Project context\n'})
         cls.store = Store(base / 'berman')
-        cls.workflow = Workflow(cls.store, FixtureHarness(cls.store))
 
     def place(self, document):
         """Write a document as an operation record, under the run it names when that is an identity."""
@@ -109,8 +107,7 @@ class RobustnessTests(unittest.TestCase):
         try:
             record, refusal = self.read(run)
             rows = {row['run']: row for row in self.store.discover()}
-            status = self.workflow.status()
-            self.workflow.cheatsheet()
+            status = records.status(self.store)
             if refusal is not None:
                 # Invalid data is a reported problem; what the record held is unknown, never a negative.
                 row = rows[run]
@@ -118,6 +115,8 @@ class RobustnessTests(unittest.TestCase):
                 self.assertIsNone(row['lifecycle']['ending']['value'])
                 self.assertIsNone(row['lifecycle']['packaged']['value'])
                 self.assertIn(run, [r['run'] for r in status['runs']])
+                # What a record nobody can read awaits is unknown; it is a problem, never a reason.
+                self.assertFalse(any(item.startswith(run + ':') for item in status['unsettled']))
             elif record.get('purpose') == 'support-trial':
                 self.assertNotIn(run, rows)  # Never research, whatever else the marker says.
             else:
@@ -127,23 +126,6 @@ class RobustnessTests(unittest.TestCase):
                     self.assertEqual(fact['value'] is None, bool(fact.get('unknown')), name)
         finally:
             shutil.rmtree(path.parent)
-
-    @budget(200)
-    @given(near_valid())
-    def test_a_record_that_can_be_saved_is_the_record_that_is_read(self, document):
-        named = document.get('run')
-        run = named if isinstance(named, str) and RUN.fullmatch(named) else 'run-001'
-        folder = self.store.folder(run)
-        try:
-            try:
-                self.store.save(document)
-            except ValueError, KeyError, TypeError:
-                self.assertFalse(folder.exists(), 'a refused record left something behind')
-                return
-            self.assertEqual((folder / 'operation.json').read_bytes(), json_bytes(document))
-            self.assertEqual(self.store.record(run), document)
-        finally:
-            shutil.rmtree(folder, ignore_errors=True)
 
     @budget(300)
     @given(values | near_valid(), st.sampled_from(schemas.SUPPORTED))

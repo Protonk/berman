@@ -20,8 +20,9 @@ from berman import cli
 ROOT = REPO
 # Current guidance and planning entry points; historical reports and preserved records are excluded.
 GUIDANCE = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/limitations.md', 'docs/development.md',
-            'docs/development-launchers.md')
-COMMANDS = ('AGENTS.md', 'docs/usage.md', 'docs/development.md')
+            'docs/capture.md', 'examples/minimal-study/README.md')
+COMMANDS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/limitations.md', 'docs/capture.md',
+            'examples/minimal-study/README.md')
 # Current procedure names maintained commands; experiment scripts are evidence of their own dates.
 NO_SCRIPTS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/capture.md')
 DIGESTS = ('docs/capture.md', 'docs/development.md')
@@ -146,11 +147,17 @@ class GuidanceTest(unittest.TestCase):
 
     def test_options_are_matched_exactly(self):
         # Help text mentioning an option, or an option's prefix, is not the option itself.
-        self.assertIn('--connection', options(('new',)))
-        self.assertNotIn('--run', options(('new',)))
-        self.assertTrue({'--reason', '--run', '--allow-incomplete'} <= options(('finish',)))  # Consecutive entries.
-        self.assertNotIn('--allow', options(('finish',)))
+        self.assertIn('--record', options(('verify',)))
+        self.assertNotIn('--run', options(('verify',)))
+        self.assertTrue({'--verify', '--freshness', '--path'} <= options(('archive',)))  # Consecutive entries.
+        self.assertNotIn('--fresh', options(('archive',)))
         self.assertTrue({'--root', '--json'} <= options(()))
+        # The connector's commands are documented and checked through berman remote.
+        self.assertTrue({'--request', '--connection', '--harness'} <= options(('remote', 'commission')))
+
+    def test_current_guidance_offers_no_command_of_the_retired_writer(self):
+        offered = {tokens[0] for name in COMMANDS for _, tokens in invocations(name) if tokens}
+        self.assertEqual(offered & set(cli.RETIRED), set())
 
     def test_frozen_collector_digest_matches_guidance(self):
         digest = hashlib.sha256((ROOT / 'src/berman/_legacy/capture_session.py').read_bytes()).hexdigest()

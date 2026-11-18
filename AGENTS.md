@@ -4,6 +4,18 @@ This repository owns reusable software. Read README.md, docs/usage.md and
 docs/development.md. Keep studies, local settings, native qualification and
 analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
 
+- Fieldwork has one lifecycle. The controller and executor (`controller.py`,
+  `custody.py`, `executor/`, `connector.py`, `protocol.py`) are the only code
+  that commissions, prepares, launches, captures, ends, collects, preserves,
+  migrates or supplements fieldwork. Add no second path.
+- A co-located workspace (a directory with berman.json made by release 0.26.3
+  or earlier) is read-only here. `records.py`, `lifecycle.py`, `recordings.py`
+  and `verify.py` read one and write no run, record, inventory or recording.
+  Unsettled work in one is reported with the statement that it has to be closed
+  with the release that opened it; never close it, and never infer an ending or
+  completeness for a historical record. `tests/support/legacy.py` builds such
+  workspaces for tests and is not a product writer.
+
 - Python 3.14, managed by uv. `uv sync`, then all five before reporting a
   change: `uv run ruff check`, `uv run ruff format --check`,
   `uv run lint-imports`, `uv run python -m unittest discover -s tests -t .` and
@@ -13,14 +25,14 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   study may have another program named `berman` on PATH, such as a pinned older
   installation. If `berman version` fails or names other source, it is not
   this package. Never modify a study's pinned runtime from here.
-- Some files are identity as well as source: the frozen collector, everything
-  an adapter's `implementation` list fingerprints, the archive builder, and the
-  execution probes. Do not reformat them or fix style in them; a
-  byte change there costs renewed qualification or a rebuilt edition
+- Some files are identity as well as source: the frozen collector and the
+  archive builder. Do not reformat them or fix style in them; a byte change
+  there costs a rebuilt edition. The executor records every module's digest in
+  each preparation and launch receipt
   (docs/development.md#byte-sensitive-files).
 - `jsonschema` is imported only by `berman.schemas` and `rich` only by
   `berman.presentation.terminal`; `packaging` only by `berman.environment`.
-  Hooks, probes and the archive
+  The executor's hook routing and the archive
   builder import the standard library only. The Import Linter contracts in
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new
@@ -47,18 +59,18 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   terminal gets the Rich rendering of the same result. `--json`, exit codes and
   redirected text must not depend on whether a terminal is attached.
 - `berman verify` includes a read-only `recordings` audit. Missing historical
-  authority remains unknown coverage; an integrity pass makes no completion assertion. Interrupted writer-owned
-  material goes into `.state/recovery` before inventory; nothing already
-  inventoried is cleaned retrospectively. Notes and selected project documents
-  can have temporary-looking filenames and must remain intact.
+  authority remains unknown coverage; an integrity pass makes no completion assertion.
+  Notes and selected project documents can have temporary-looking filenames and
+  are preserved members like any other.
 - Property tests are derandomized by default. Pin a failure found with
   `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
 - Workspace selection is silent. Run inside a study's repository, or with
-  `--root` naming it, this package operates on that study. `berman status` and a
-  plain `berman verify` only read. Do not run commands that write there unless adopting
-  this version in that study is the task; that needs the study's own procedure.
+  `--root` naming it, this package reads that study's co-located workspace.
+  `berman status` and a plain `berman verify` only read. `berman archive`
+  without `--verify` publishes an edition there and `berman verify --record`
+  adds an evidence folder; run neither unless that is the task.
 - Never edit src/berman/_legacy/capture_session.py. Its bytes are frozen for historical compatibility.
-- Capture hooks enter through the exclusive router, never direct collectors.
+- Capture hooks enter through the executor's exclusive router, never a direct collector.
 - A software change does not qualify a native installation, and neither does a
   passing suite: simulated callbacks and synthetic records establish no hook
   trust, native capture or native access. Real hook changes need closed

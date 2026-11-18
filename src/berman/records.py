@@ -1,23 +1,41 @@
-"""Discover run identities across connections and keep resumable, researcher-side operation records."""
-from contextlib import contextmanager
-import fcntl
+"""Read-only discovery of a co-located workspace: its runs, what their records establish, what is unsettled.
+
+A co-located workspace is a directory with berman.json, made by release 0.26.3 or earlier, where
+the research records and the worker's packets shared one machine account. This version
+commissions, captures and closes fieldwork only through the controller and executor
+(berman.controller, berman.executor). Here such a workspace is evidence to read: nothing in this
+module writes a file, takes a lock or runs a harness. A run that is not at rest is reported as
+unsettled and has to be closed with the release that opened it. No ending, package or
+completeness is inferred for it.
+"""
+
 import os
 from pathlib import Path
-import time
-import uuid
 
 from berman import evidence as recording_evidence
 from berman import files, schemas, snapshots
-from berman.capture import runtime
-from berman.capture.claude import ClaudeCollector
-from berman.config import Catalogue, Connection
-from berman.files import Decision, digest, read, safe_directory, write
+from berman.config import Catalogue, Complete, Connection
+from berman.files import Decision, digest, read, safe_directory
 from berman._legacy.api import RUN
-from berman.lifecycle import SESSION_MATERIAL, assess, journal_phase, validate_record, validate_request
+from berman.lifecycle import SESSION_MATERIAL, assess, describe, journal_phase, outstanding, unsettled, validate_record
 
-LOCK_LABELS = {'global': 'the Berman workspace allocation and index', 'connection': 'connection {}',
-               'run': '{}', 'installation': 'harness installation resource {}'}
 SUPPORT_RANGE = range(900101, 900200)  # Native support trials: run-900101 to run-900199.
+SUPPORT_SCHEMA = 'berman.support-trial/1'
+SUPPORT_CLOSED = ('cleaned', 'abandoned')
+PROBLEMS = (OSError, ValueError, KeyError, TypeError, AttributeError)
+READ_ONLY = (
+    'A co-located workspace is read-only in this version: fieldwork is commissioned and closed only through '
+    'the controller and executor (berman remote).'
+)
+
+
+def awaits(reason, version=None):
+    """The plain statement for anything this version found unsettled and will not settle."""
+    release = f' (Berman {version})' if version else ''
+    return (
+        f'{reason}. It has to be closed with the release that opened it{release}; this version does not close '
+        'co-located fieldwork.'
+    )
 
 
 def closed_by(root):
@@ -27,16 +45,17 @@ def closed_by(root):
 
 def packet_evidence(root):
     """Presence checks only (no reads, hashes or writes), so they are safe beneath runs/."""
-    return {'closed_by': closed_by(root),
-            'replacements': sorted(str(p.relative_to(root)) for p in root.glob('session-history/*/replacement.json')),
-            'session_material': any((root / name).exists() for name in SESSION_MATERIAL)}
+    return {
+        'closed_by': closed_by(root),
+        'replacements': sorted(str(p.relative_to(root)) for p in root.glob('session-history/*/replacement.json')),
+        'session_material': any((root / name).exists() for name in SESSION_MATERIAL),
+    }
 
 
 def capture_metadata(root, run):
     """Read a snapshot's minimum evidence, distinguishing absence from damage.
 
-    The collector's historical status reader treated false JSON values as no metadata. Do
-    this check before calling it, without changing the collector or any preserved bytes.
+    A false JSON value is damage, never "no metadata". Reading changes no preserved bytes.
     """
     try:
         path = snapshots.resolve(root / 'session') / 'capture.json'
@@ -45,8 +64,10 @@ def capture_metadata(root, run):
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise Decision(f'{run}: damaged capture metadata: {exc}') from exc
     if not path.exists() and not path.is_symlink():
-        if any((root / 'session' / name).exists() for name in
-               ('transcript.jsonl', 'captures.jsonl', 'conversation.txt', 'finalized.json', 'snapshots')):
+        if any(
+            (root / 'session' / name).exists()
+            for name in ('transcript.jsonl', 'captures.jsonl', 'conversation.txt', 'finalized.json', 'snapshots')
+        ):
             raise Decision(f'{run}: missing capture metadata for retained session evidence: {path}')
         return None
     value = read(path)
@@ -63,16 +84,20 @@ def capture_metadata(root, run):
 def unpublished(folder):
     """Whether an operations folder is only what a reservation left when its record never landed.
 
-    A reservation is published by the atomic write of operation.json. If that write fails, or the
-    process stops inside it, the folder made to hold it stays behind, empty or with the write's
-    temporary file. Nothing else exists for that identity yet, so it is not a run: discovery passes
-    over it and the retried command reserves the same identity. A folder with anything else in it,
-    or one that cannot be listed, is still reported.
+    A reservation was published by the atomic write of operation.json. If that write failed, or the
+    process stopped inside it, the folder made to hold it stayed behind, empty or with the write's
+    temporary file. Nothing else exists for that identity, so it is not a run and discovery passes
+    over it. A folder with anything else in it, or one that cannot be listed, is still reported.
     """
     try:
-        return folder.is_dir() and not folder.is_symlink() and all(
-            entry.name.startswith('.capture-') and entry.is_file() and not entry.is_symlink()
-            for entry in folder.iterdir())
+        return (
+            folder.is_dir()
+            and not folder.is_symlink()
+            and all(
+                entry.name.startswith('.capture-') and entry.is_file() and not entry.is_symlink()
+                for entry in folder.iterdir()
+            )
+        )
     except OSError:
         return False
 
@@ -86,26 +111,19 @@ def checked(value, run):
     return schemas.validate('berman.operation/1', validate_record(value, run))
 
 
-def checked_request(value):
-    """A combined new-run request unchanged, or ValueError; lifecycle rules first, then structure."""
-    checked = validate_request(value)
-    return schemas.validate(checked['schema'], checked)
-
-
-def runtime_adapters():
-    from berman.config import CAPTURE_ADAPTERS
-    return CAPTURE_ADAPTERS
-
-
 class Store:
+    """A co-located workspace as its berman.json describes it; loading and discovery only read."""
+
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve()
         safe_directory(self.root)
         raw = read(self.root / 'berman.json')
         family = raw.get('schema') if isinstance(raw, dict) else None
         if family == 'berman.configuration/1':
-            raise ValueError('The single-project berman.configuration/1 format is no longer read; describe the '
-                             'project as a connection in a berman.workspace/1 file')
+            raise ValueError(
+                'The single-project berman.configuration/1 format is not read by this version; read '
+                'that workspace with the release that wrote it'
+            )
         if family != 'berman.workspace/1':
             raise ValueError('Unsupported berman.json schema')
         schemas.validate('berman.workspace/1', raw, self.root / 'berman.json')
@@ -117,27 +135,12 @@ class Store:
         self.historical_runs = set(history)
         self.field = self.path(workspace['packet_root'])
         self.home = self.path(workspace['codex_home'])
-        self.python = self.path(workspace['python'])
-        # Hook commands run the installed package in isolated mode, so they name an interpreter that
-        # has it. Project checks use the configured general interpreter above.
-        self.runtime_python = self.path(workspace.get('runtime_python', workspace['python']))
-        self.codex = self.path(workspace['codex'])
-        self.claude = self.path(workspace.get('claude', '~/.local/bin/claude'))
-        self.claude_home = self.path(workspace.get('claude_home', '~/.claude'))
         self.operations = self.root / 'operations'
-        self.lock_dir = self.root / '.berman-locks'
-        self.tag = digest(str(self.root).encode())[:8]
-        self.collectors = {'berman-codex': runtime.Collector(self.field, self.home, self.root),
-                           'berman-claude': ClaudeCollector(self.field, self.claude_home, self.root)}
-        self.collector = self.collectors['berman-codex']
+        # Where the workspace's own release kept each adapter's session registrations.
+        self.registries = (self.home / 'berman-capture', self.root / '.claude-fieldwork/sessions')
         self.catalogue = Catalogue(self, workspace)
         self.connections = {ident: Connection(self, ident, entry) for ident, entry in workspace['connections'].items()}
         self.default_connection = workspace.get('default_connection')
-        # Adapters this installation keeps qualified even while no connection selects them.
-        self.qualified_adapters = tuple(workspace.get('qualified_adapters', ()))
-        for name in self.qualified_adapters:
-            if name not in runtime_adapters():
-                raise ValueError(f'Unknown capture adapter in qualified_adapters: {name}')
         self.edition = workspace.get('edition', 'connections')
         if self.edition not in ('connections', 'stewart'):
             raise ValueError(f'Unknown reading edition: {self.edition}')
@@ -145,32 +148,10 @@ class Store:
         for name in (self.default_connection, self.legacy_connection):
             if name is not None and name not in self.connections:
                 raise ValueError(f'Configured connection is not registered: {name}')
-        # The assigned packet must never reopen the research repository or a project.
-        roots = [('Berman', self.root), ('the shared packet root', self.field)]
-        roots += [(f'connection {c.id} checkout', c.checkout) for c in self.connections.values()]
-        for i, (left, a) in enumerate(roots):
-            for right, b in roots[i + 1:]:
-                if a == b or a in b.parents or b in a.parents:
-                    if left.startswith('connection') and right.startswith('connection'):
-                        continue  # Two projects may share a parent; neither is a research root.
-                    raise ValueError(f'{left} and {right} overlap; research and project roots must be disjoint')
 
     def path(self, value):
         p = Path(value).expanduser()
         return Path(os.path.abspath(p if p.is_absolute() else self.root / p))
-
-    def connection(self, name=None):
-        name = name or self.default_connection
-        if name is None:
-            raise Decision('Choose a connection with --connection; no default connection is configured')
-        if name not in self.connections:
-            raise Decision(f'Unknown connection {name}; registered connections: {", ".join(sorted(self.connections))}')
-        return self.connections[name]
-
-    @property
-    def project(self):
-        """The default connection's checkout, for compatibility with single-project callers."""
-        return self.connection().checkout
 
     def folder(self, run):
         if not RUN.fullmatch(run):
@@ -185,109 +166,6 @@ class Store:
             return checked(read(path), run)
         except ValueError as exc:
             raise ValueError(f'Invalid operation record: {path}: {exc}') from exc
-
-    def save(self, record):
-        path = self.folder(record['run']) / 'operation.json'
-        try:
-            checked(record, record['run'])
-        except ValueError as exc:
-            raise ValueError(f'Invalid operation record: {path}: {exc}') from exc
-        write(path, record)
-
-    def adapter(self, record):
-        """The adapter a run was reserved with. Records made before adapters were named used legacy-codex."""
-        if record is None:
-            return 'berman-codex'
-        return (record.get('capture') or {}).get('adapter', 'legacy-codex')
-
-    def collector_for(self, record):
-        self.check_installation(record)
-        name = self.adapter(record)
-        if name not in self.collectors:
-            raise Decision(f'{record["run"]} was recorded with the removed {name} adapter. Its preserved packet is '
-                           'read in place; it can no longer be captured, supplemented or migrated')
-        collector = self.collectors[name]
-        return collector.for_run(record['run']) if record else collector
-
-    def check_installation(self, record):
-        """Never reinterpret a reservation under a different local installation."""
-        expected = (record or {}).get('harness') or {}
-        claude = expected.get('id') == 'claude'
-        current = {'binary': str(self.claude if claude else self.codex), 'python': str(self.python),
-                   'runtime_python': str(self.runtime_python),
-                   'home': str(self.claude_home if claude else self.home)}
-        current['profile'] = f'berman-{self.tag}-{record["run"]}' if record else None
-        changed = [f'{key}: recorded {expected[key]}, configured {value}' for key, value in current.items()
-                   if key in expected and expected[key] != value]
-        workspace = (record or {}).get('workspace') or {}
-        if workspace.get('root', str(self.root)) != str(self.root):
-            changed.append(f'workspace: recorded {workspace["root"]}, configured {self.root}')
-        if changed:
-            raise Decision(f'{record["run"]}: harness installation differs from its reservation (' + '; '.join(changed)
-                           + '). Restore the recorded settings before continuing; relocation requires an explicit recorded transition.')
-
-    def harness_identity(self, adapter, run, model=None):
-        claude = adapter == 'berman-claude'
-        result = {'id': 'claude' if claude else 'codex',
-                  'binary': str(self.claude if claude else self.codex),
-                  'home': str(self.claude_home if claude else self.home),
-                  'python': str(self.python)}
-        if self.runtime_python != self.python:
-            result['runtime_python'] = str(self.runtime_python)
-        if claude:
-            result['session_id'] = str(uuid.uuid4())
-            if model is not None:
-                if not isinstance(model, str) or not model.strip():
-                    raise ValueError('The configured fieldwork model must be a nonempty string')
-                result['model'] = model
-        return result
-
-    def lock_path(self, kind, name=None):
-        if kind == 'global':
-            return self.root / '.berman.lock'
-        self.lock_dir.mkdir(exist_ok=True)
-        return self.lock_dir / f'{kind}-{name}.lock'
-
-    @contextmanager
-    def lock(self, kind, name=None, wait=0):
-        """Lock order: connection, runs in numeric order, then the short global section."""
-        label = LOCK_LABELS[kind].format(name)
-        fd = os.open(self.lock_path(kind, name), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        try:
-            deadline = time.monotonic() + wait
-            while True:
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= deadline:
-                        raise Decision(f'Another Berman operation is using {label}; retry this same command '
-                                       'when it finishes') from None
-                    time.sleep(0.02)
-            yield
-        finally:
-            os.close(fd)
-
-    def occupied(self):
-        """Read-only probe of held locks for status; never creates a lock file."""
-        held = []
-        candidates = [('global', None, self.root / '.berman.lock')]
-        if self.lock_dir.exists():
-            for path in sorted(self.lock_dir.glob('*.lock')):
-                kind, _, name = path.stem.partition('-')
-                if kind in LOCK_LABELS:
-                    candidates.append((kind, name, path))
-        for kind, name, path in candidates:
-            if not path.exists():
-                continue
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-            except BlockingIOError:
-                held.append(LOCK_LABELS[kind].format(name))
-            finally:
-                os.close(fd)
-        return held
 
     def attribute(self, run, record):
         if run in getattr(self, 'recording_errors', {}):
@@ -304,7 +182,7 @@ class Store:
             metadata = base / run / 'run.json'
             try:
                 connection = read(metadata).get('connection') if metadata.exists() else None
-            except (OSError, ValueError, TypeError, AttributeError):
+            except OSError, ValueError, TypeError, AttributeError:
                 connection = None
             if isinstance(connection, str) and connection in self.connections:
                 return connection, 'packet metadata'
@@ -335,9 +213,11 @@ class Store:
         identities = set()
         problems = {}
         self.discovery_problems = []
+
         def problem(run, path, error):
             identities.add(run)
             problems.setdefault(run, []).append(f'{run}: cannot inspect {path}: {error}')
+
         for base in (self.field, self.root / 'runs', self.operations):
             if base.exists():
                 safe_directory(base)
@@ -363,13 +243,17 @@ class Store:
             identities.add(run)
             try:
                 if not (path.parent / 'publication.json').exists():
-                    continue  # Publication is unfinished; the resumable operation still owns it.
+                    continue  # Publication never finished; the run is read from its other records.
                 manifest = recording_evidence.validate(read(path))
                 publication = read(path.parent / 'publication.json')
-                if (manifest['run'] != run or manifest['collection_id'] != recording_evidence.collection(self.root)
-                        or publication['manifest_sha256'] != recording_evidence.identity(manifest)):
+                if (
+                    manifest['run'] != run
+                    or manifest['collection_id'] != recording_evidence.collection(self.root)
+                    or publication['manifest_sha256'] != recording_evidence.identity(manifest)
+                ):
                     raise Decision('Published recording identity disagrees')
                 members = {item['path']: item for item in manifest['entries']}
+
                 def retained(name, member_rows=members, folder=path.parent):
                     source = self.root / name if name.startswith('runs/') else folder / name
                     data = files.regular(source).read_bytes()
@@ -377,6 +261,7 @@ class Store:
                     if item['type'] != 'file' or digest(data) != item['sha256'] or len(data) != item['size']:
                         raise Decision('Retained authority differs from its manifest: ' + name)
                     return data
+
                 recording_evidence.check_authority(manifest, retained, snapshot_bytes=False)
                 ref = manifest['evidence']['operation']
                 record = None
@@ -388,7 +273,13 @@ class Store:
                         raise Decision('Retained operation differs from its manifest')
                     record = checked(read(source), run)
                     # A derived discovery view, never written over retained operation bytes.
-                    record = dict(record, phase='archived', package=dict(publication, path=str(self.root / recording_evidence.relative(publication['relative_path']))))
+                    record = dict(
+                        record,
+                        phase='archived',
+                        package=dict(
+                            publication, path=str(self.root / recording_evidence.relative(publication['relative_path']))
+                        ),
+                    )
                 self.published_recordings[run] = (manifest, record)
                 indexed.add(run)
             except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -420,13 +311,13 @@ class Store:
                         bindings.setdefault(binding['session_id'], set()).add(run)
                         if binding.get('run') == run:
                             run_bindings.setdefault(run, []).append(binding)
-                except (OSError, ValueError, TypeError, AttributeError):
+                except OSError, ValueError, TypeError, AttributeError:
                     pass  # locate() reports a damaged binding against its run.
         registered = {}
-        for collector in self.collectors.values():
-            if not collector.state.exists():
+        for registry in self.registries:
+            if not registry.exists():
                 continue
-            for p in collector.state.glob('*.json'):
+            for p in registry.glob('*.json'):
                 try:
                     registration = read(p)
                     run = registration.get('run')
@@ -447,14 +338,22 @@ class Store:
                     if run in support and registration.get('session_id') == support[run]:
                         continue
                     identities.add(run)
-                    registered.setdefault(run, []).append({'path': f'{collector.state.name}/{p.name}',
-                                                           'retired': bool(registration.get('retired'))})
+                    registered.setdefault(run, []).append(
+                        {'path': f'{registry.name}/{p.name}', 'retired': bool(registration.get('retired'))}
+                    )
         rows = []
         self.support_trials = {}
         for run in sorted(identities, key=lambda r: int(r[4:])):
-            row = {'run': run, 'location': 'problem', 'state': 'needs-attention', 'binding': None,
-                   'record': None, 'migration_pending': run in pending, 'problems': problems.get(run, []),
-                   'capture_status': None}
+            row = {
+                'run': run,
+                'location': 'problem',
+                'state': 'needs-attention',
+                'binding': None,
+                'record': None,
+                'migration_pending': run in pending,
+                'problems': problems.get(run, []),
+                'capture': None,
+            }
             candidates = run_bindings.get(run, [])
             if len(candidates) == 1:
                 row['binding'] = candidates[0]
@@ -462,7 +361,9 @@ class Store:
             try:
                 if run in self.recording_errors:
                     raise Decision(self.recording_errors[run])
-                row['record'] = (self.published_recordings[run][1] if run in self.published_recordings else self.record(run))
+                row['record'] = (
+                    self.published_recordings[run][1] if run in self.published_recordings else self.record(run)
+                )
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 record_error = str(exc)
                 row['problems'].append(record_error)
@@ -472,7 +373,7 @@ class Store:
                 continue
             try:
                 if record_error and self.damaged_support(run):
-                    # Never research, and no connection is known: it blocks every connection until recovered.
+                    # Never research, and no connection is known.
                     row['connection'], row['connection_basis'] = None, 'damaged support-trial marker'
                 else:
                     row['connection'], row['connection_basis'] = self.attribute(run, row['record'])
@@ -484,9 +385,12 @@ class Store:
             evidence = self.evidence(row, record_error, registered.get(run, []), run in indexed, phases.get(run))
             row['lifecycle'] = assess(row['record'], evidence)
             row['started'] = row['lifecycle']['registered']['value']
-            row['reading_pending'] = (row['location'] == 'archived' and row['lifecycle']['packaged']['value'] is True
-                                      and (row['record'] or {}).get('closeout_contract') == 'reading/1'
-                                      and not (self.folder(run) / 'closeout.json').is_file())
+            row['reading_pending'] = (
+                row['location'] == 'archived'
+                and row['lifecycle']['packaged']['value'] is True
+                and (row['record'] or {}).get('closeout_contract') == 'reading/1'
+                and not (self.folder(run) / 'closeout.json').is_file()
+            )
             if row['reading_pending']:
                 row['state'] = 'reading-pending'
             rows.append(row)
@@ -494,10 +398,14 @@ class Store:
         return rows
 
     def evidence(self, row, record_error, registrations, indexed, journal):
-        """What discovery observed about one run, for berman_lifecycle.assess."""
+        """What discovery observed about one run, for berman.lifecycle.assess."""
         run, location = row['run'], row['location']
-        roots = {'active': self.field / run, 'archived': self.root / 'runs' / run,
-                 'unused': self.folder(run) / 'unused-packet', 'reserved': self.field / run}
+        roots = {
+            'active': self.field / run,
+            'archived': self.root / 'runs' / run,
+            'unused': self.folder(run) / 'unused-packet',
+            'reserved': self.field / run,
+        }
         placed, root = location, roots.get(location)
         if location == 'problem':
             # A problem row's presence evidence counts only from a single packet root without symlinks.
@@ -506,18 +414,27 @@ class Store:
                 if len(existing) == 1:
                     safe_directory(roots[existing[0]])
                     placed, root = existing[0], roots[existing[0]]
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 pass
         packet = packet_evidence(root) if root else {'closed_by': [], 'replacements': [], 'session_material': False}
-        return dict(packet, location=location, placed=placed, record_error=record_error, binding=row['binding'],
-                    registrations=registrations, capture=row['capture_status'], journal=journal, indexed=indexed,
-                    problems=list(row['problems']))
+        return dict(
+            packet,
+            location=location,
+            placed=placed,
+            record_error=record_error,
+            binding=row['binding'],
+            registrations=registrations,
+            capture=row['capture'],
+            journal=journal,
+            indexed=indexed,
+            problems=list(row['problems']),
+        )
 
     def locate(self, row, indexed, pending):
         run, record = row['run'], row['record']
         active = self.field / run
         archived = self.root / 'runs' / run
-        status = None
+        capture = None
         if active.exists() and archived.exists():
             raise Decision(f'{run} exists in active and archived locations; neither was selected')
         if archived.exists():
@@ -526,32 +443,40 @@ class Store:
                 raise Decision(f'{run} is in the archive without inventory or migration journal')
             root = archived
         elif active.exists():
+            # Presence and the packet's own last capture record only; its native source is never consulted.
             location, root = 'active', active
-            capture_metadata(root, run)
-            status = self.collector_for(record).status(run)
-            state = status['state']
-            if state in ('damaged', 'unbound-session-files', 'identity-collision'):
-                raise Decision(f'{run}: {state}: {status["warnings"]}')
+            capture = capture_metadata(root, run)
+            closed = closed_by(root)
+            state = (
+                closed[0].removesuffix('.json')
+                if closed
+                else 'registered'
+                if (root / 'session/binding.json').exists()
+                else 'prepared'
+            )
         elif record and record.get('phase') in ('cancelled', 'cancelling'):
             location, state, root = 'unused', record['phase'], self.folder(run) / 'unused-packet'
         elif record and record.get('phase') == 'reserved':
             location, state, root = 'reserved', 'reserved', active
         else:
-            raise Decision(f'{run} is recorded but its packet is missing; recover it before allocating another identity')
-        binding = read(root / 'session/binding.json') if (root / 'session/binding.json').exists() else None
+            raise Decision(f'{run} is recorded but its packet is missing')
+        path = root / 'session/binding.json'
+        try:
+            binding = read(path) if path.exists() else None
+            if binding is not None and not isinstance(binding, dict):
+                raise ValueError('expected an object')
+        except (OSError, ValueError) as exc:
+            raise Decision(f'{run}: damaged session binding at {path}: {exc}') from exc
         if binding and binding.get('run') != run:
             raise Decision(f'{run}: session binding belongs to a different run')
-        if run not in getattr(self, 'published_recordings', {}) and record and record.get('packet') and record['packet'] != str(active):
+        if (
+            run not in getattr(self, 'published_recordings', {})
+            and record
+            and record.get('packet')
+            and record['packet'] != str(active)
+        ):
             raise Decision(f'{run}: recorded packet {record["packet"]} is outside the shared packet root')
-        row.update(location=location, state=state, binding=binding, capture_status=status)
-
-    def require(self, rows, connection):
-        """Problems on a connection's own runs block its operations; others are only reported."""
-        if getattr(self, 'discovery_problems', []):
-            raise Decision(self.discovery_problems[0] + '; recover its identity before allocating or selecting a run')
-        for row in rows:
-            if row['problems'] and row.get('connection') in (connection, None):
-                raise Decision(row['problems'][0])
+        row.update(location=location, state=state, binding=binding, capture=capture)
 
     def damaged_support(self, run):
         """Whether a damaged operation record was a support marker: by its identity, or by the purpose it states."""
@@ -559,23 +484,144 @@ class Store:
             return True
         try:
             return read(self.folder(run) / 'operation.json').get('purpose') == 'support-trial'
-        except (OSError, ValueError, TypeError, AttributeError):
+        except OSError, ValueError, TypeError, AttributeError:
             return False
 
-    def allocate(self, rows):
-        """The next research identity; the support range neither sets research numbering nor receives it."""
-        number = max((int(run[4:]) for run in {r['run'] for r in rows} | self.historical_runs
-                      if int(run[4:]) not in SUPPORT_RANGE), default=0) + 1
-        while number in SUPPORT_RANGE or f'run-{number:03d}' in getattr(self, 'support_identities', set()):
-            number += 1
-        if number > 999999:
-            raise Decision('The supported run identity range is exhausted')
-        return f'run-{number:03d}'
 
-    def allocate_support(self, rows):
-        """The smallest support identity that no research row or support identity uses; research numbering is unaffected."""
-        used = {r['run'] for r in rows} | getattr(self, 'support_identities', set())
-        for number in SUPPORT_RANGE:
-            if f'run-{number}' not in used:
-                return f'run-{number}'
-        raise Decision(f'The support identity range run-{SUPPORT_RANGE[0]} to run-{SUPPORT_RANGE[-1]} is exhausted')
+def plan_status(connection, rows):
+    """How far a selected plan's recorded sequence got; a broken plan never hides other records."""
+    result = {'plan': None, 'next_step': None, 'next_recipe': None, 'plan_note': None, 'plan_error': None}
+    try:
+        plan = connection.plan
+        if plan is not None:
+            result['plan'] = plan.id
+            step = plan.next_step(rows)
+            result.update(next_step=step['id'], next_recipe=step['recipe'])
+    except Complete:
+        result['plan_note'] = 'every step was started'
+    except PROBLEMS as exc:
+        result['plan_error'] = str(exc)
+    return result
+
+
+def requests(store):
+    """Combined finish-and-prepare requests that never completed, and those that cannot be read."""
+    pending, problems = [], []
+    for path in sorted((store.operations / 'new-requests').glob('*.json')):
+        try:
+            value = read(path)
+            state = value.get('state')
+            if state not in ('pending', 'complete', 'cancelled'):
+                raise ValueError(f'unknown state {state!r}')
+        except PROBLEMS as exc:
+            problems.append(f'Combined request {path} cannot be read: {exc}')
+            continue
+        if state == 'pending':
+            pending.append(
+                {
+                    'path': str(path),
+                    'previous_run': value.get('previous_run'),
+                    'result_run': value.get('result_run'),
+                    'connection': value.get('connection'),
+                }
+            )
+    return pending, problems
+
+
+def support_trials(store):
+    """Native support trials the workspace never closed, from the latest discover(); never research."""
+    result = []
+    for run, found in sorted(store.support_trials.items()):
+        record, problems = found['record'], list(found['problems'])
+        receipt, phase = store.root / record['support_trial'], None
+        if not receipt.exists():
+            problems.append(f'{run}: its marker names {record["support_trial"]}, which was never written')
+        else:
+            try:
+                trial = read(receipt)
+                if not isinstance(trial, dict) or trial.get('schema') != SUPPORT_SCHEMA or trial.get('run') != run:
+                    raise ValueError(f'not the {SUPPORT_SCHEMA} receipt of {run}')
+                phase = trial.get('phase')
+            except PROBLEMS as exc:
+                problems.append(f'{run}: {receipt} cannot be read: {exc}')
+        if phase in SUPPORT_CLOSED and not problems:
+            continue
+        result.append(
+            {
+                'run': run,
+                'adapter': record['capture']['adapter'],
+                'phase': phase,
+                'evidence': Path(record['support_trial']).parent.as_posix(),
+                'problems': problems,
+                'opened_with': (record.get('software') or {}).get('version'),
+            }
+        )
+    return result
+
+
+def status(store):
+    """What a co-located workspace holds and what in it is unsettled. Reads only; settles nothing."""
+    rows = store.discover()
+    connections = {}
+    for conn in store.connections.values():
+        connections[conn.id] = {
+            'name': conn.name,
+            'checkout': str(conn.checkout),
+            **plan_status(conn, rows),
+            'problems': [p for r in rows if r.get('connection') == conn.id for p in r['problems']],
+        }
+    runs, waiting = [], []
+    for row in filter(outstanding, rows):
+        record, lifecycle = row['record'] or {}, row['lifecycle']
+        reason, version = unsettled(row), (record.get('software') or {}).get('version')
+        if reason:
+            waiting.append(f'{row["run"]}: ' + awaits(reason, version))
+        runs.append(
+            {
+                'run': row['run'],
+                'connection': row.get('connection'),
+                'state': row['state'],
+                'recipe': ((record.get('recipe') or {}).get('metadata') or {}).get('id'),
+                'assignment_origin': record.get('assignment_origin'),
+                'phase': record.get('phase'),
+                'session': (row['binding'] or {}).get('session_id'),
+                'ending_declared': lifecycle['ending']['value'] is True,
+                'started': row['started'],
+                'record': str(store.folder(row['run'])) if record else None,
+                'last_capture': (row['capture'] or {}).get('captured_at_utc'),
+                'problems': row['problems'],
+                'summary': describe(lifecycle, record.get('phase') or row['state']),
+                'unsettled': reason,
+                'opened_with': version,
+                'unknown': lifecycle['unknown'],
+                'lifecycle': lifecycle,
+            }
+        )
+    pending, unreadable = requests(store)
+    for request in pending:
+        waiting.append(
+            f'{request["path"]}: '
+            + awaits(
+                f'a combined request to end {request["previous_run"]} and prepare {request["result_run"]} never completed'
+            )
+        )
+    trials = support_trials(store)
+    for trial in trials:
+        if not trial['problems']:
+            waiting.append(
+                f'{trial["run"]}: '
+                + awaits(f'support trial {trial["evidence"]} was left at phase {trial["phase"]}', trial['opened_with'])
+            )
+    return {
+        'runs': runs,
+        'archived': sum(r['location'] == 'archived' for r in rows) + len(store.historical_runs),
+        'historical_runs': sorted(store.historical_runs),
+        'workspace_problems': store.discovery_problems + unreadable,
+        'default_connection': store.default_connection,
+        'connections': connections,
+        'pending_requests': pending,
+        'support_trials': trials,
+        'unsettled': waiting,
+        'meaning': READ_ONLY + ' Session activity and declared engagement endings are distinct facts, and none '
+        'is inferred. No files were changed.',
+    }

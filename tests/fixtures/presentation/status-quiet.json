@@ -1,24 +1,23 @@
 {
   "runs": [],
   "archived": 0,
+  "historical_runs": [],
   "workspace_problems": [],
   "default_connection": "orchard",
   "connections": {
     "orchard": {
       "name": "Orchard",
-      "plan": "orchard-roles",
-      "next_recipe": "work-accounts",
-      "capture": "berman-codex",
       "checkout": "/synthetic/orchard",
-      "pending_requests": [],
-      "blocked_by": [],
-      "operation_in_progress": false,
+      "plan": "orchard-roles",
+      "next_step": "accounts-first",
+      "next_recipe": "work-accounts",
+      "plan_note": null,
       "plan_error": null,
-      "next_note": null
+      "problems": []
     }
   },
-  "next_recipe": "work-accounts",
-  "operations_in_progress": [],
+  "pending_requests": [],
   "support_trials": [],
-  "meaning": "Session activity and declared engagement endings are distinct. No files were changed."
+  "unsettled": [],
+  "meaning": "A co-located workspace is read-only in this version: fieldwork is commissioned and closed only through the controller and executor (berman remote). Session activity and declared engagement endings are distinct facts, and none is inferred. No files were changed."
 }

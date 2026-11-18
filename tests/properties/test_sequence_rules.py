@@ -1,19 +1,17 @@
-"""Which step a plan issues next and which identity a run receives, over generated histories.
+"""Which step a plan issues next, over generated histories.
 
-Both answers are made from discovered rows. A retry sees the same rows and must get the same
-answer; an own-plan unknown start must never be read as "not started"; an identity is never issued twice.
+The answer is made from rows: the controller's ledger rows when it commissions, or the discovered
+rows of a co-located workspace when its recorded sequence is read. A retry sees the same rows and
+must get the same answer; an own-plan unknown start must never be read as "not started".
 """
 
-from types import SimpleNamespace
 import unittest
 
 from hypothesis import given
 from hypothesis import strategies as st
 
-from berman._legacy.api import RUN
 from berman.config import Complete, Plan
 from berman.files import Decision
-from berman.records import SUPPORT_RANGE, Store
 from tests.support.properties import budget
 
 STEPS = ('first', 'second', 'third', 'fourth', 'fifth')
@@ -141,53 +139,6 @@ class NextStepTests(unittest.TestCase):
         direct = direct_row(800, STEPS[completed], True)
         rows = started_prefix(completed) + [direct] + others
         self.assertEqual(plan(STEPS[:total]).next_step(rows)['id'], STEPS[completed])
-
-
-research = st.integers(1, 999_990).filter(lambda n: n not in SUPPORT_RANGE)
-support = st.sampled_from(SUPPORT_RANGE)
-
-
-def name(number):
-    return f'run-{number:03d}'
-
-
-class AllocationTests(unittest.TestCase):
-    @budget(300)
-    @given(
-        st.lists(research | support, max_size=12, unique=True), st.lists(research | support, max_size=6, unique=True)
-    )
-    def test_a_research_identity_is_new_later_and_outside_the_support_range(self, existing, reserved):
-        rows = [{'run': name(number)} for number in existing]
-        store = SimpleNamespace(historical_runs=set(), support_identities={name(number) for number in reserved})
-        run = Store.allocate(store, rows)
-        number = int(run[4:])
-        self.assertTrue(RUN.fullmatch(run))
-        self.assertNotIn(number, SUPPORT_RANGE)
-        self.assertNotIn(run, {r['run'] for r in rows} | store.support_identities)
-        self.assertGreater(number, max((n for n in existing if n not in SUPPORT_RANGE), default=0))
-        # Asking again without recording the first answer gives it again: allocation alone reserves nothing.
-        self.assertEqual(Store.allocate(store, rows), run)
-        # Once recorded, it is never issued a second time.
-        self.assertGreater(int(Store.allocate(store, rows + [{'run': run}])[4:]), number)
-
-    @budget(200)
-    @given(st.lists(research | support, max_size=12, unique=True), st.lists(support, max_size=20, unique=True))
-    def test_a_support_identity_stays_in_its_range_and_never_moves_research_numbering(self, existing, reserved):
-        rows = [{'run': name(number)} for number in existing]
-        store = SimpleNamespace(historical_runs=set(), support_identities={name(number) for number in reserved})
-        before = Store.allocate(store, rows)
-        run = Store.allocate_support(store, rows)
-        self.assertIn(int(run[4:]), SUPPORT_RANGE)
-        self.assertNotIn(run, {r['run'] for r in rows} | store.support_identities)
-        store.support_identities.add(run)
-        self.assertEqual(Store.allocate(store, rows), before)
-
-    def test_exhausted_ranges_are_refused_not_wrapped(self):
-        store = SimpleNamespace(historical_runs=set(), support_identities=set())
-        with self.assertRaisesRegex(Decision, 'identity range is exhausted'):
-            Store.allocate(store, [{'run': 'run-999999'}])
-        with self.assertRaisesRegex(Decision, 'support identity range .* is exhausted'):
-            Store.allocate_support(store, [{'run': name(number)} for number in SUPPORT_RANGE])
 
 
 if __name__ == '__main__':

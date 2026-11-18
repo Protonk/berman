@@ -1,31 +1,44 @@
-"""Distinct lifecycle facts for a run, each with its evidence or the reason it is unknown.
+"""What a co-located run's records establish: distinct facts, each with its evidence or why it is unknown.
 
-Facts never imply one another. A Stop or SessionEnd callback leaves a capture open; finalized.json
-or ended.json closes it; finalization freezes bytes; only an operator declaration ends an
-engagement; migration moves and indexes a packet; packaging writes its recording package. A value
+These are the records releases up to 0.26.3 wrote in a co-located workspace. This version reads
+them and writes none; the controller keeps the lifecycle of new fieldwork in its own ledger
+(berman.controller).
+
+Facts never imply one another. A Stop or SessionEnd callback left a capture open; finalized.json
+or ended.json closed it; finalization froze bytes; only an operator declaration ended an
+engagement; migration moved and indexed a packet; packaging wrote its recording package. A value
 of None means the evidence a fact needs is damaged or missing: it never counts as False, and the
-fact's `unknown` says why. This module reads no files; discovery gathers evidence and passes it in.
+fact's `unknown` says why. Nothing here infers an ending, a package or completeness that the
+records do not state. This module reads no files; discovery gathers evidence and passes it in.
 """
+
 from pathlib import Path
 
 from berman._legacy.api import RUN, SESSION
 
 PHASES = ('reserved', 'prepared', 'ready', 'launching', 'active', 'closing', 'archived', 'cancelling', 'cancelled')
-BEFORE_SESSION = PHASES[:4]
 CANCELLATION = ('cancelling', 'cancelled')
 JOURNAL_PHASES = ('inventoried', 'moved-and-verified', 'indexed')
 FACTS = ('registered', 'capture', 'finalized', 'ending', 'migration', 'packaged')
 SESSION_MATERIAL = ('session', 'session-history', 'session-supplements')
 CLOSURE = {'finalized.json': 'frozen', 'ended.json': 'registration moved to another run'}
 INFERRED_ENDING = 'Previously written finalized.json or migration journal; no new completion inferred.'
-ENDING_MEANING = 'Operator declares this engagement ended; not a claim that its development or inquiry is complete.'
 LOW_LEVEL = 'migrated without a declared ending (low-level migration); no recording package is made automatically'
 # Collector events that are not callbacks; a finalization attempt still open did not freeze anything.
-MANUAL_EVENTS = {'manual-finalize': 'a finalization attempt that did not freeze it', 'manual-refresh': 'a manual refresh',
-                 'manual-adopt': 'manual adoption'}
-# The workflow writes each of these phases only together with one of the named fields.
-REQUIRES = {'launching': ('launch_attempts',), 'active': ('started_session',), 'closing': ('ending', 'migration_authority'),
-            'archived': ('package',), 'cancelling': ('cancellation',), 'cancelled': ('cancellation',)}
+MANUAL_EVENTS = {
+    'manual-finalize': 'a finalization attempt that did not freeze it',
+    'manual-refresh': 'a manual refresh',
+    'manual-adopt': 'manual adoption',
+}
+# The workflow wrote each of these phases only together with one of the named fields.
+REQUIRES = {
+    'launching': ('launch_attempts',),
+    'active': ('started_session',),
+    'closing': ('ending', 'migration_authority'),
+    'archived': ('package',),
+    'cancelling': ('cancellation',),
+    'cancelled': ('cancellation',),
+}
 
 
 def fact(value, evidence=(), unknown=(), **detail):
@@ -42,12 +55,8 @@ def declared(record):
     return bool(ending and ending.get('basis') != INFERRED_ENDING)
 
 
-def declaration(reason, allow_incomplete, at_utc):
-    return {'declared_at_utc': at_utc, 'reason': reason, 'allow_incomplete': allow_incomplete, 'meaning': ENDING_MEANING}
-
-
 def validate_record(value, run):
-    """The record unchanged, or ValueError naming each shape the workflow never writes."""
+    """The record unchanged, or ValueError naming each shape the workflow never wrote."""
     if not isinstance(value, dict) or value.get('schema') != 'berman.operation/1' or value.get('run') != run:
         raise ValueError(f'not a berman.operation/1 record for {run}')
     purpose = value.get('purpose')
@@ -69,7 +78,12 @@ def research(value):
             problems.append('a direct assignment cannot claim a plan or step')
         elif origin == 'plan':
             plan = value.get('plan')
-            if not isinstance(plan, dict) or not plan.get('id') or 'step' not in plan or plan['step'] != value.get('step'):
+            if (
+                not isinstance(plan, dict)
+                or not plan.get('id')
+                or 'step' not in plan
+                or plan['step'] != value.get('step')
+            ):
                 problems.append('a planned assignment needs its plan identity and matching step')
     phase = value.get('phase')
     if phase not in PHASES:
@@ -99,23 +113,35 @@ def research(value):
 
 
 def support(value):
-    """Problems in a support trial's reservation marker; berman_support writes it once and never changes it."""
+    """Problems in a support trial's reservation marker, which was written once and never changed."""
+
     def field(*keys):
         found = value
         for key in keys:
             found = found.get(key) if isinstance(found, dict) else None
         return found if isinstance(found, str) and found else None
+
     problems = [] if value.get('phase') == 'support-trial' else [f'unknown support phase {value.get("phase")!r}']
-    required = {'workspace.root': ('workspace', 'root'), 'packet': ('packet',), 'packet_root': ('packet_root',),
-                'capture.adapter': ('capture', 'adapter'), 'harness.home': ('harness', 'home'),
-                'support_trial': ('support_trial',)}
+    required = {
+        'workspace.root': ('workspace', 'root'),
+        'packet': ('packet',),
+        'packet_root': ('packet_root',),
+        'capture.adapter': ('capture', 'adapter'),
+        'harness.home': ('harness', 'home'),
+        'support_trial': ('support_trial',),
+    }
     problems += [f'{name} is missing' for name, keys in required.items() if field(*keys) is None]
     if field('packet') and field('packet_root') and Path(value['packet']) != Path(value['packet_root']) / value['run']:
         problems.append('packet must be the run directly within packet_root')
     trial = field('support_trial')
     parts = Path(trial).parts if trial else ()
-    if trial and (Path(trial).is_absolute() or '..' in parts or len(parts) != 3 or parts[0] != 'experiments'
-                  or parts[-1] != 'trial.json'):
+    if trial and (
+        Path(trial).is_absolute()
+        or '..' in parts
+        or len(parts) != 3
+        or parts[0] != 'experiments'
+        or parts[-1] != 'trial.json'
+    ):
         problems.append('support_trial must name experiments/NAME/trial.json')
     return problems
 
@@ -124,39 +150,15 @@ def support(value):
 PURPOSES = {None: research, 'support-trial': support}
 
 
-def validate_request(value):
-    """A combined new-run request unchanged, or ValueError naming its problems."""
-    if not isinstance(value, dict) or value.get('schema') not in ('berman.new-request/1', 'berman.new-request/2'):
-        raise ValueError('not a berman.new-request/1 or berman.new-request/2 record')
-    reserved = value['schema'] == 'berman.new-request/2'
-    problems = []
-    states = ('pending', 'complete', 'cancelled') if reserved else ('pending', 'complete')
-    if value.get('state') not in states:
-        problems.append(f'unknown state {value.get("state")!r}')
-    for key in ('previous_run', 'result_run'):
-        run = value.get(key)
-        if (reserved or run is not None or key == 'previous_run') and not (isinstance(run, str) and RUN.fullmatch(run)):
-            problems.append(f'{key} is not a run identity')
-    for key in (('finish_reason', 'connection') if reserved else ('finish_reason', 'step')):
-        if not isinstance(value.get(key), str) or not (value[key].strip() if reserved else value[key]):
-            problems.append(f'{key} is missing')
-    if reserved and value.get('previous_run') == value.get('result_run'):
-        problems.append('previous_run and result_run must differ')
-    if reserved and value.get('state') == 'cancelled':
-        cancellation = value.get('cancellation')
-        if (not isinstance(cancellation, dict) or not isinstance(cancellation.get('reason'), str)
-                or not cancellation['reason'].strip() or not isinstance(cancellation.get('at_utc'), str)):
-            problems.append('a cancelled request needs a reason and at_utc')
-    if problems:
-        raise ValueError('; '.join(problems))
-    return value
-
-
 def journal_phase(value, run):
     """A migration journal's phase. Destinations are not compared: run-006 names a pre-rename root."""
     if not isinstance(value, dict) or value.get('schema') != 'stewart.migration/1':
         raise ValueError('not a stewart.migration/1 journal')
-    if value.get('run') not in (None, run) or not isinstance(value.get('entry'), dict) or value['entry'].get('run') != run:
+    if (
+        value.get('run') not in (None, run)
+        or not isinstance(value.get('entry'), dict)
+        or value['entry'].get('run') != run
+    ):
         raise ValueError('Journal names another run')
     if value.get('phase') not in JOURNAL_PHASES:
         raise ValueError(f'unknown migration phase {value.get("phase")!r}')
@@ -168,18 +170,25 @@ def assess(record, evidence):
 
     evidence: location, placed (where presence evidence was read: the location, or for a problem
     row its single packet root's location, else None), record_error, binding, registrations
-    [{path, retired}], replacements, closed_by, session_material, capture (collector status of an
-    active packet), journal (migration journal phase, or 'damaged'), indexed, problems.
+    [{path, retired}], replacements, closed_by, session_material, capture (the last capture
+    metadata an active packet holds), journal (migration journal phase, or 'damaged'), indexed,
+    problems.
     """
     registered = registration(record, evidence)
     capture = capture_state(evidence, registered['value'])
-    lifecycle = {'registered': registered, 'capture': capture, 'finalized': finalization(evidence, capture),
-                 'ending': recorded(record, evidence, ending,
-                                    'no operation record; preserved before Berman recorded ending declarations'),
-                 'migration': migration(evidence),
-                 'packaged': recorded(record, evidence, packaged,
-                                      'no operation record; preserved before Berman made recording packages'),
-                 'disagreements': disagreements(record, evidence, registered['value'])}
+    lifecycle = {
+        'registered': registered,
+        'capture': capture,
+        'finalized': finalization(evidence, capture),
+        'ending': recorded(
+            record, evidence, ending, 'no operation record; preserved before Berman recorded ending declarations'
+        ),
+        'migration': migration(evidence),
+        'packaged': recorded(
+            record, evidence, packaged, 'no operation record; preserved before Berman made recording packages'
+        ),
+        'disagreements': disagreements(record, evidence, registered['value']),
+    }
     lifecycle['unknown'] = [name for name in FACTS if lifecycle[name]['value'] is None]
     return lifecycle
 
@@ -203,10 +212,9 @@ def registration(record, evidence):
 
 
 def capture_state(evidence, registered):
-    status = evidence['capture'] or {}
+    """Whether a capture is closed, by the files that close it. An open capture is not compared with its source."""
     closed = evidence['closed_by']
-    detail = {'closed_by': list(closed), 'last_event': (status.get('capture') or {}).get('event'),
-              'consistent': status.get('snapshot_consistent'), 'turn_pending': status.get('prompt_without_terminal_callback')}
+    detail = {'closed_by': list(closed), 'last_event': (evidence['capture'] or {}).get('event')}
     if closed:
         return fact('closed', ['session/' + name for name in closed], **detail)
     if registered is False:
@@ -218,10 +226,11 @@ def capture_state(evidence, registered):
     if evidence['binding'] is None:
         return fact(None, unknown=['a session is recorded but the packet has no session binding'], **detail)
     if evidence['location'] != 'active':
-        return fact(None, unknown=[f'{evidence["location"]} packet has neither session/finalized.json nor session/ended.json'],
-                    **detail)
-    if detail['consistent'] is False:
-        return fact(None, unknown=status.get('warnings') or ['capture bytes and metadata disagree'], **detail)
+        return fact(
+            None,
+            unknown=[f'{evidence["location"]} packet has neither session/finalized.json nor session/ended.json'],
+            **detail,
+        )
     last = detail['last_event']
     return fact('open', ['session/binding.json', f'last capture event {last}' if last else 'no snapshot yet'], **detail)
 
@@ -246,8 +255,11 @@ def recorded(record, evidence, build, missing):
 def ending(record):
     value = record.get('ending')
     if declared(record):
-        return fact(True, [f'declared {value.get("declared_at_utc")}: {value["reason"]}'],
-                    allow_incomplete=value.get('allow_incomplete'))
+        return fact(
+            True,
+            [f'declared {value.get("declared_at_utc")}: {value["reason"]}'],
+            allow_incomplete=value.get('allow_incomplete'),
+        )
     notes = ['earlier inferred interpretation retained; not a declaration'] if value else []
     if record.get('previous_ending_interpretations'):
         notes.append('previous inferred interpretations retained; not declarations')
@@ -278,58 +290,66 @@ def migration(evidence):
 
 def disagreements(record, evidence, registered):
     found = []
-    if (record and evidence['location'] == 'archived' and evidence['journal'] in (None, 'indexed') and not declared(record)
-            and not record.get('migration_authority') and not record.get('package')):
+    if (
+        record
+        and evidence['location'] == 'archived'
+        and evidence['journal'] in (None, 'indexed')
+        and not declared(record)
+        and not record.get('migration_authority')
+        and not record.get('package')
+    ):
         found.append(LOW_LEVEL)
     if (record or {}).get('phase') == 'archived' and evidence['location'] in ('active', 'reserved', 'unused'):
         found.append('record says archived but the packet is not under runs/')
     if registered is False and evidence['session_material']:
-        found.append('session material is present although no session registered; retirement as an unused preparation is refused')
+        found.append('session material is present although no session registered')
     return found
 
 
-def unused(row):
-    """A preparation no session has registered with; only these are launched or retired."""
-    return row['location'] in ('active', 'reserved') and row['lifecycle']['registered']['value'] is False
-
-
-def open_engagement(row):
-    """A registered session whose packet is still in the shared root, whatever its capture state."""
-    return row['location'] == 'active' and row['lifecycle']['registered']['value'] is True
-
-
 def outstanding(row):
-    """Whether status lists a row: problems, unfinished work, and archived records without a package."""
+    """Whether status lists a row: problems, work that is not at rest, and archived records without a package."""
     record = row['record'] or {}
     if row['problems'] or row.get('reading_pending'):
         return True
     if record.get('phase') == 'cancelled':
         return False
     if row['location'] == 'archived':
-        return row['migration_pending'] or record.get('phase') == 'closing' or bool(row['record'] and not record.get('package'))
+        return (
+            row['migration_pending']
+            or record.get('phase') == 'closing'
+            or bool(row['record'] and not record.get('package'))
+        )
     return True
 
 
-def authorized(row):
-    """The custody step already authorized for a row: 'retire', 'preserve', 'resume-migration' or None."""
-    record = row['record'] or {}
+def unsettled(row):
+    """What a run still awaits from the release that opened it, or None when it awaits nothing.
+
+    This version never prepares, launches, ends, preserves, migrates or packages a co-located
+    run, so each of these stays as it is until that release finishes it. A run at rest is not
+    unsettled because history left it without an ending or a package: that absence is reported as
+    what it is. A row with problems states no reason here; what it awaits is unknown.
+    """
+    record, location = row['record'] or {}, row['location']
+    if row['problems'] or record.get('phase') == 'cancelled':
+        return None
     if row.get('reading_pending'):
-        return 'publish-reading'
+        return 'its recording is preserved, but its closeout never published a reading edition'
     if record.get('phase') == 'cancelling':
-        return 'retire'
-    if declared(record) and record.get('phase') != 'archived':
-        return 'preserve'
+        return 'retiring its unused preparation was begun and not completed'
     if row['migration_pending'] or (record.get('migration_authority') and record.get('phase') != 'archived'):
-        return 'resume-migration'
+        return 'its migration was begun and not completed'
+    if location == 'reserved':
+        return 'it was reserved and its packet was never prepared'
+    if location == 'active':
+        if declared(record):
+            return 'its ending is declared, but its packet was never preserved'
+        if row['lifecycle']['registered']['value'] is False:
+            return 'its prepared packet was never started or retired'
+        return 'its engagement is open: the packet is still in the packet root with no declared ending'
+    if declared(record) and record.get('phase') != 'archived':
+        return 'its ending is declared and its packet moved, but its recording package was never made'
     return None
-
-
-def progress_state(record, migrated):
-    if migrated:
-        return 'archived' if record.get('package') else 'migrated; packaging pending'
-    if declared(record):
-        return 'ending recorded; preservation pending'
-    return record.get('phase', 'unknown')
 
 
 def describe(lifecycle, phase):
@@ -353,19 +373,31 @@ def describe(lifecycle, phase):
         parts = ['no capture session registered']
     elif capture['value'] == 'open':
         last = capture['last_event']
-        parts = ['session registered; capture open ' + (f'after {MANUAL_EVENTS.get(last, last)}' if last else 'without a snapshot yet')]
+        parts = [
+            'session registered; capture open '
+            + (f'after {MANUAL_EVENTS.get(last, last)}' if last else 'without a snapshot yet')
+        ]
     elif capture['value'] == 'displaced':
         parts = ['session displaced; awaiting its replacement registration']
     else:
         parts = ['session registered; capture state unknown']
     value = lifecycle['ending']['value']
-    parts.append('ending declared' if value else 'no engagement ending declared' if value is False else 'ending unknown')
+    parts.append(
+        'ending declared' if value else 'no engagement ending declared' if value is False else 'ending unknown'
+    )
     stage, package = lifecycle['migration']['value'], lifecycle['packaged']['value']
     if stage == 'none':
         if value:
             parts.append('preservation pending')
     else:
         parts.append(f'migration {stage or "unknown"}')
-        parts.append('recording package made' if package else 'recording package unknown' if package is None
-                     else 'no recording package' if LOW_LEVEL in lifecycle['disagreements'] else 'recording package pending')
+        parts.append(
+            'recording package made'
+            if package
+            else 'recording package unknown'
+            if package is None
+            else 'no recording package'
+            if LOW_LEVEL in lifecycle['disagreements']
+            else 'recording package pending'
+        )
     return '; '.join(parts + unknown)

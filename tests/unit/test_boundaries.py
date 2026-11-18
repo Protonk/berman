@@ -6,15 +6,17 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 
-from berman import config, files, records, recovery
+from berman import config, files, records
 from berman.capture import collector
 from berman._legacy import api
 from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256
+from tests.support.paths import REPO
 
 frozen = collector.capture
-LEGACY = {'RUN', 'SESSION', 'CODEX_HOME'}
+LEGACY = {'RUN', 'SESSION'}
 
 
 def imports(path):
@@ -76,10 +78,10 @@ class CompatibilityTests(unittest.TestCase):
         self.assertIs(config.Decision, files.Decision)
         self.assertIs(records.Decision, files.Decision)
         self.assertTrue(issubclass(config.Complete, files.Decision))
-        for module in (records, recovery, config):
+        for module in (records, config):
             self.assertFalse(hasattr(module, 'capture'), f'{module.__name__} re-exports the frozen collector')
-        for name in ('fieldwork', 'keep'):
-            self.assertFalse(hasattr(records, name), f'berman_records re-exports {name}')
+        for name in ('fieldwork', 'keep', 'write'):
+            self.assertFalse(hasattr(records, name), f'berman.records holds {name}, and it only reads')
 
 
     def test_frozen_bytes_are_preserved(self):
@@ -87,29 +89,29 @@ class CompatibilityTests(unittest.TestCase):
 
 
 class ImportBoundaryTests(unittest.TestCase):
-    def test_hook_dependencies_are_fingerprinted(self):
-        from berman.capture.adapters import ADAPTERS
+    def test_everything_hook_routing_imports_is_held_to_the_hooks_contract(self):
+        # The executor's router runs on every turn of a fieldworker's session. Whatever it can import,
+        # at any depth and wherever the import statement is, must be named by the contract that keeps
+        # third-party packages out.
+        contracts = tomllib.loads((REPO / 'pyproject.toml').read_text())['tool']['importlinter']['contracts']
+        held = next(c for c in contracts if c['id'] == 'hooks')['source_modules']
 
         def dependencies(relative, seen):
             if relative in seen:
                 return
             seen.add(relative)
-            path = PACKAGE / relative
-            for parent in path.parents:
-                if not parent.is_relative_to(PACKAGE):
-                    break
-                initializer = parent / '__init__.py'
-                if initializer.is_file():
-                    dependencies(initializer.relative_to(PACKAGE).as_posix(), seen)
-            for module in imports(path):
+            for module in imports(PACKAGE / relative):
                 target = PACKAGE / module.removeprefix('berman.').replace('.', '/')
                 file = target.with_suffix('.py') if target.with_suffix('.py').is_file() else target / '__init__.py'
                 dependencies(file.relative_to(PACKAGE).as_posix(), seen)
 
-        for name, adapter in ADAPTERS.items():
-            reached = set()
-            dependencies(adapter['entry'], reached)
-            self.assertLessEqual(reached, set(adapter['implementation']), name)
+        reached = set()
+        dependencies('executor/capture.py', reached)
+        self.assertIn(FROZEN, reached)
+        for relative in sorted(reached):
+            name = 'berman.' + relative.removesuffix('.py').removesuffix('/__init__').replace('/', '.')
+            with self.subTest(module=name):
+                self.assertTrue(any(name == module or name.startswith(module + '.') for module in held))
 
     def test_runtime_modules_never_reach_the_test_suite_or_edit_the_import_path(self):
         # Which module may import which is stated by the Import Linter contracts in pyproject.toml;
@@ -138,7 +140,19 @@ print(json.dumps({'copies': len(copies), 'same': copies == [collector.capture]})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'copies': 1, 'same': True})
 
-    def test_low_level_command_imports_under_isolation(self):
-        result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman.recovery', '--help'],
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_fieldwork_entry_points_import_under_isolation(self):
+        for module in ('berman.executor', 'berman.controller', 'berman.connector', 'berman.custody'):
+            with self.subTest(module=module):
+                result = subprocess.run([sys.executable, '-I', '-B', '-m', module, '--help'],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_hook_entry_point_loads_no_third_party_package(self):
+        code = """
+import sys
+before = set(sys.modules)
+import berman.executor
+print(sorted(m for m in set(sys.modules) - before if m.partition('.')[0] not in {*sys.stdlib_module_names, 'berman'}))
+"""
+        result = subprocess.run([sys.executable, '-I', '-B', '-c', code], capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, '[]'), result.stderr)

@@ -1,7 +1,8 @@
-"""Schema validation where records are read and written: what is refused, how, and what is never touched.
+"""Schema validation where a co-located workspace's records are read: what is refused, how, and what is never touched.
 
 Invalid data, a missing record, an incomplete operation and an unknown fact are four different
-reports. Reading validates and changes nothing; an invalid record is never written.
+reports. Reading validates and changes nothing. The records are synthetic, written by
+tests/support/legacy.py as release 0.26.3 wrote them.
 """
 
 import contextlib
@@ -14,13 +15,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from berman import cli, files, preserve, schemas, verify
+from berman import cli, recipes, records, schemas, verify
 from berman.files import Decision, json_bytes, read, write
-from berman.recipes import prepare
 from berman.records import Store
-from berman.workflow import Workflow
-from tests.support.sessions import start
-from tests.support.workspace import FixtureHarness, git_repository, workspace
+from tests.support import legacy
+from tests.support.workspace import git_repository, workspace
 
 
 def state(path):
@@ -40,7 +39,9 @@ class RecordTests(unittest.TestCase):
 
     def load(self):
         self.store = Store(self.root)
-        self.workflow = Workflow(self.store, FixtureHarness(self.store))
+
+    def status(self):
+        return records.status(self.store)
 
     def edit(self, relative, **changes):
         """Rewrite one JSON input with fields replaced, or removed when given as ...; returns its path."""
@@ -63,7 +64,7 @@ class RecordTests(unittest.TestCase):
 
 class OperationRecordTests(RecordTests):
     def test_missing_incomplete_invalid_and_unknown_are_four_reports(self):
-        run = self.workflow.new()['run']
+        run = legacy.prepare(self.store)
         path = self.store.folder(run) / 'operation.json'
         # Incomplete: a prepared, unstarted run has a valid record, and the facts nobody recorded are False.
         row = self.store.discover()[0]
@@ -91,66 +92,46 @@ class OperationRecordTests(RecordTests):
             with self.subTest(fact=fact):
                 self.assertIsNone(row['lifecycle'][fact]['value'])
                 self.assertIn('documents must be an array', ' '.join(row['lifecycle'][fact]['unknown']))
-        status = self.workflow.status()['runs'][0]
-        self.assertEqual((status['ending_declared'], status['prepared_unstarted']), (False, False))
+        status = self.status()['runs'][0]
+        self.assertEqual((status['ending_declared'], status['started']), (False, None))
         self.assertIn('unknown: registered', status['summary'])
         self.assertNotIn('not yet started', status['summary'])
-        # The damaged run blocks its connection: no second identity is allocated around it.
-        with self.assertRaisesRegex(Decision, 'documents must be an array'):
-            self.workflow.new()
+        # What a damaged run awaits is unknown: it is a problem, and no reason is offered for it.
+        self.assertIsNone(status['unsettled'])
+        self.assertEqual(self.status()['unsettled'], [])
         self.assertEqual([r['run'] for r in self.store.discover()], [run])
         self.assertEqual(state(path), damaged, 'reading a damaged record changed it')
 
     def test_reading_validates_and_never_rewrites(self):
-        run = self.workflow.new()['run']
+        run = legacy.prepare(self.store)
         path = self.store.folder(run) / 'operation.json'
-        start(self.store, run)
-        self.workflow.synchronize(self.store.discover())
-        for step in ('active', 'archived'):
+        legacy.start(self.store, run)
+        for step in ('ready', 'archived'):
             if step == 'archived':
-                self.workflow.finish('The researcher said the encounter ended.', run)
+                legacy.finish(self.store, run, 'The researcher said the encounter ended.')
             with self.subTest(phase=step):
                 before = state(path)
                 record = self.store.record(run)
                 self.assertEqual(record['phase'], step)
                 self.assertEqual(json_bytes(record), before[0], 'a record does not round-trip to its own bytes')
                 self.store.discover()
-                self.workflow.status()
-                self.workflow.cheatsheet()
+                self.status()
                 self.assertEqual(self.command('status')[0], 0)
                 self.assertEqual(state(path), before)
 
-    def test_an_invalid_record_is_never_written(self):
-        run = self.workflow.new()['run']
-        path = self.store.folder(run) / 'operation.json'
-        before = state(path)
-        for change, message in (
-            ({'packet': 12}, 'packet must be a string or null, not an integer \\(12\\)'),
-            ({'harness': 'codex'}, 'harness must be an object'),
-            ({'phase': 'paused'}, "unknown phase 'paused'"),  # Lifecycle wording, unchanged.
-        ):
-            with self.subTest(change=change), self.assertRaisesRegex(ValueError, message):
-                self.store.save(dict(self.store.record(run), **change))
-            self.assertEqual(state(path), before)
-
-    def test_a_reservation_whose_record_never_landed_reserves_nothing(self):
-        # Found by tests/properties/test_workflow_sequences.py. The folder is made before the record's
-        # atomic write; a full disk, or a stop inside the write, leaves it empty or with a temporary file.
+    def test_a_reservation_whose_record_never_landed_is_not_a_run(self):
+        # The writer made the folder before the record's atomic write; a full disk, or a stop inside the
+        # write, left it empty or with a temporary file.
+        folder = self.store.operations / 'run-001'
+        folder.mkdir(parents=True)
         for debris in ((), ('.capture-interrupted',)):
             with self.subTest(debris=debris):
-                with mock.patch.object(files, 'atomic', side_effect=OSError('No space left on device')):
-                    with self.assertRaisesRegex(OSError, 'No space left'):
-                        self.workflow.new()
-                folder = self.store.operations / 'run-001'
-                self.assertEqual(list(folder.iterdir()), [])
                 for name in debris:
                     (folder / name).write_bytes(b'{"schema": "berman.oper')
                 self.assertEqual(self.store.discover(), [])
-                status = self.workflow.status()
-                self.assertEqual((status['runs'], status['workspace_problems']), ([], []))
-                self.assertEqual(self.workflow.new()['run'], 'run-001')  # The retry reserves the same identity.
-                self.workflow.cancel('Fixture only.', 'run-001')
-                shutil.rmtree(folder)
+                status = self.status()
+                self.assertEqual((status['runs'], status['workspace_problems'], status['unsettled']), ([], [], []))
+        shutil.rmtree(folder)
         # Anything else in such a folder is still a run that needs attention, not debris to pass over.
         (self.store.operations / 'run-007').mkdir()
         (self.store.operations / 'run-007/notes.txt').write_text('Kept by an operator.\n')
@@ -158,34 +139,10 @@ class OperationRecordTests(RecordTests):
         self.assertEqual(row['run'], 'run-007')
         self.assertIn('run-007 is recorded but its packet is missing', row['problems'][0])
 
-    def test_an_interrupted_finish_is_retried_by_name_while_another_engagement_is_open(self):
-        # Found by tests/properties/test_workflow_sequences.py: with another engagement open, the
-        # retry was refused with "Expected one open engagement; found none".
-        first = self.workflow.new()['run']
-        start(self.store, first)
-        second = self.workflow.new(keep_open=True)['run']
-        start(self.store, second)
-        with mock.patch.object(preserve, 'package', side_effect=OSError('interrupted before packaging')):
-            with self.assertRaisesRegex(OSError, 'interrupted before packaging'):
-                self.workflow.finish('The second encounter ended.', second)
-        declared_at = self.store.record(second)['ending']['declared_at_utc']
-        self.assertTrue((self.root / 'runs' / second).is_dir())
-        self.assertEqual(self.store.record(second)['phase'], 'closing')
-        retried = self.workflow.finish('The second encounter ended.', second)
-        self.assertEqual((retried['run'], retried['state']), (second, 'archived'))
-        self.assertEqual(self.store.record(second)['ending']['declared_at_utc'], declared_at)
-        # Asked again, with other words, it is answered and nothing is declared twice.
-        again = self.workflow.finish('Said differently.', second)
-        self.assertEqual((again['state'], again['package']), ('already-archived', retried['package']))
-        self.assertEqual(self.store.record(second)['ending']['reason'], 'The second encounter ended.')
-        # The other engagement is untouched, and an unnamed finish still selects it.
-        self.assertNotIn('ending', self.store.record(first))
-        self.assertEqual(self.workflow.finish('The first encounter ended.')['run'], first)
-
     def test_a_record_holding_text_no_stream_can_encode_is_still_reported(self):
         # Found in review: the refusal quoted the offending value, a lone surrogate made that message
         # unprintable, and one such record took plain status down with exit 2 and no output.
-        run = self.workflow.new()['run']
+        run = legacy.prepare(self.store)
         path = self.store.folder(run) / 'operation.json'
         path.write_text(json.dumps(dict(self.store.record(run), documents='\ud83d')))
         code, out, err = self.command('status')
@@ -194,28 +151,34 @@ class OperationRecordTests(RecordTests):
         self.assertIn(f'{run} (stewart): starting state unknown', out)
         self.assertIn('documents must be an array or null, not a string ("\\ud83d")', out)
 
-    def test_a_combined_request_is_validated_when_read(self):
+    def test_a_pending_combined_request_is_reported_and_never_resumed(self):
         path = self.store.operations / 'new-requests/fixture.json'
         request = {
-            'schema': 'berman.new-request/1',
+            'schema': 'berman.new-request/2',
             'state': 'pending',
+            'connection': 'stewart',
             'previous_run': 'run-001',
             'finish_reason': 'ended',
-            'step': 'repeat-after-008',
-            'result_run': None,
-            'previous_preserved': [],
+            'result_run': 'run-002',
         }
         write(path, request)
         before = state(path)
-        with self.assertRaises(Decision) as refused:
-            self.workflow.new()
-        self.assertEqual(
-            str(refused.exception),
-            f'Invalid new-run request: {path}: does not satisfy berman.new-request/1: '
-            'previous_preserved must be an object or null, not an array',
-        )
-        self.assertEqual(state(path), before)
-        self.assertEqual(self.store.discover(), [], 'a refused request allocated a run')
+        status = self.status()
+        self.assertEqual([row['path'] for row in status['pending_requests']], [str(path)])
+        self.assertEqual(len(status['unsettled']), 1)
+        self.assertIn('a combined request to end run-001 and prepare run-002 never completed', status['unsettled'][0])
+        self.assertIn('It has to be closed with the release that opened it', status['unsettled'][0])
+        self.assertEqual(self.store.discover(), [], 'reading a request made a run')
+        # A completed or cancelled request awaits nothing; one that cannot be read is a problem, not a guess.
+        for settled in ('complete', 'cancelled'):
+            write(path, dict(request, state=settled))
+            self.assertEqual((self.status()['pending_requests'], self.status()['unsettled']), ([], []))
+        write(path, dict(request, state='paused'))
+        status = self.status()
+        self.assertEqual(status['unsettled'], [])
+        self.assertIn(f"Combined request {path} cannot be read: unknown state 'paused'", status['workspace_problems'])
+        write(path, request)
+        self.assertEqual(state(path)[0], before[0])
 
 
 class ResearcherInputTests(RecordTests):
@@ -305,7 +268,7 @@ class ResearcherInputTests(RecordTests):
                 changed = state(path)
                 with self.assertRaisesRegex(schemas.InvalidRecord, f'{path} does not satisfy {name}: {message}'):
                     if loaded is not None:
-                        _ = loaded.connection('stewart').plan
+                        _ = loaded.connections['stewart'].plan
                     else:
                         Store(self.root)
                 self.assertEqual(state(path), changed)
@@ -314,7 +277,7 @@ class ResearcherInputTests(RecordTests):
 
     def test_inputs_that_version_0_4_worked_with_still_work(self):
         # Found in review: a first set of schemas refused these. Each is a value 0.4 converted, read as
-        # absent or never read, and with each of them status and preparation ran. They still do.
+        # absent or never read, and with each of them the workspace loaded. It still does.
         connection, plan = 'connections/stewart/connection.json', 'plans/stewart-fieldwork-roles/plan.json'
         checks = read(self.root / connection)['checks']
         tolerated = {
@@ -378,48 +341,30 @@ class ResearcherInputTests(RecordTests):
                 self.load()
                 code, _, err = self.command('status')
                 self.assertEqual((code, err), (0, ''))
-                run = self.workflow.new()['run']
-                self.assertEqual(self.store.record(run)['phase'], 'ready')
-                self.workflow.cancel('Fixture only.', run)
-            shutil.rmtree(self.store.folder(run))
             path.write_bytes(original)
 
-    def test_a_connection_with_no_fieldwork_fields_serves_development(self):
+    def test_a_connection_with_no_fieldwork_fields_still_loads(self):
         project = self.base / 'tools'
         git_repository(project, {'README.md': 'Tools\n'})
         write(self.root / 'connections/tools/connection.json', {'schema': 'berman.connection/1', 'id': 'tools'})
-        launcher = self.base / 'tools-dev'
-        launcher.write_text('#!/bin/sh\n')
-        launcher.chmod(0o755)
         value = read(self.root / 'berman.json')
         value['connections']['tools'] = {
             'definition': 'connections/tools/connection.json',
             'checkout': str(project),
-            'development': {'codex': str(launcher)},
+            'development': {'codex': str(self.base / 'tools-dev')},
         }
         write(self.root / 'berman.json', value)
         self.load()
         self.assertEqual(self.command('status')[0], 0)
-        self.assertEqual(self.workflow.dev('codex', (), 'tools')['argv'], [str(self.store.codex)])
-        self.assertEqual(self.workflow.new()['connection'], 'stewart')  # Fieldwork elsewhere is unaffected.
-        with self.assertRaisesRegex(Decision, 'No assignment selected for connection tools; choose a recipe'):
-            self.workflow.new(connection='tools')
+        self.assertEqual(self.status()['connections']['tools']['plan'], None)
 
-    def test_text_the_opening_message_no_longer_carries_is_refused_not_ignored(self):
+    def test_text_the_opening_message_no_longer_carried_is_refused_in_a_recipe_and_still_read(self):
         connection, recipe = 'connections/stewart/connection.json', 'recipes/work-accounts/recipe.json'
         originals = {name: (self.root / name).read_bytes() for name in (connection, recipe)}
         for relative, changes, message in (
-            (
-                connection,
-                {'commission': 'COMMISSION.md'},
-                'Connection stewart names commission, which no longer reaches',
-            ),
-            (
-                connection,
-                {'revision': 'Stewart at {head}'},
-                'Connection stewart names revision, which no longer reaches',
-            ),
-            (connection, {'commission': 'COMMISSION.md', 'revision': 'x {head}'}, 'names commission and revision,'),
+            # A connection is only read here; what it once said to a fieldworker commissions nothing.
+            (connection, {'commission': 'COMMISSION.md'}, None),
+            (connection, {'revision': 'Stewart at {head}'}, None),
             (recipe, {'research_commission': 'COMMISSION.md'}, 'Recipe work-accounts names research_commission, which'),
             (recipe, {'commission': 'COMMISSION.md'}, 'Recipe work-accounts names commission, which no longer reaches'),
         ):
@@ -427,35 +372,30 @@ class ResearcherInputTests(RecordTests):
             self.load()
             with self.subTest(changes=changes):
                 self.assertEqual(self.command('status')[0], 0, 'reading must still work')
-                with self.assertRaisesRegex(Decision, message) as caught:
-                    self.workflow.new()
-                self.assertIn(str(path), str(caught.exception))
-                self.assertEqual(self.store.discover(), [], 'a refused input allocated a run')
+                if message:
+                    with self.assertRaisesRegex(Decision, message) as caught:
+                        recipes.recipe(self.store, 'work-accounts', self.store.connections['stewart'])
+                    self.assertIn(str(path), str(caught.exception))
+                self.assertEqual(self.store.discover(), [], 'reading an input made a run')
             path.write_bytes(originals[relative])
         self.load()
-        self.assertEqual(self.workflow.new()['run'], 'run-001')
-
-    def test_an_unprepared_reservation_that_carried_a_commission_is_refused(self):
-        run = self.workflow.new()['run']
-        record = self.store.record(run)
-        shutil.rmtree(self.store.field / run)
-        record.update(phase='reserved', commission='Discuss the work with me.')
-        self.store.save(record)
-        with self.assertRaisesRegex(
-            Decision, f'{run} was reserved by an earlier version .* cancel this unused preparation'
-        ):
-            prepare(self.store, self.store.record(run))
-        self.assertFalse((self.store.field / run).exists())
+        self.assertEqual(
+            recipes.recipe(self.store, 'work-accounts', self.store.connections['stewart'])['metadata']['id'],
+            'work-accounts',
+        )
 
     def test_a_recipe_is_refused_when_selected_and_earlier_wording_is_kept(self):
         relative = 'recipes/work-accounts/recipe.json'
         path, original = self.root / relative, (self.root / relative).read_bytes()
+
+        def selected():
+            return recipes.recipe(self.store, 'work-accounts', self.store.connections['stewart'])
+
         self.edit(relative, instructions=...)
         with self.assertRaisesRegex(
             schemas.InvalidRecord, f'{path} does not satisfy berman.recipe/2: instructions is required'
         ):
-            self.workflow.new()
-        self.assertEqual(self.store.discover(), [], 'a refused recipe allocated a run')
+            selected()
         # Rules berman.recipes already stated keep their own words.
         for changes, message in (
             ({'recording_protocol': 'diary/9'}, 'Recipe must explicitly name a supported recording protocol'),
@@ -465,9 +405,10 @@ class ResearcherInputTests(RecordTests):
             path.write_bytes(original)
             self.edit(relative, **changes)
             with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
-                self.workflow.new()
+                selected()
         path.write_bytes(original)
-        self.assertEqual(self.workflow.new()['run'], 'run-001')
+        self.assertEqual(selected()['metadata']['id'], 'work-accounts')
+        self.assertEqual(self.store.discover(), [], 'selecting a recipe made a run')
 
 
 class OutputTests(RecordTests):
@@ -480,22 +421,6 @@ class OutputTests(RecordTests):
         self.assertEqual(schemas.problems('berman.verification/1', workspace_result), [])
         kept = read(self.root / 'experiments/check/verification.json')
         self.assertEqual(schemas.problems('berman.verification/1', kept), [])
-
-    def test_initialization_writes_records_that_satisfy_their_schemas(self):
-        code, out, _ = self.command(
-            'init', str(self.base / 'study'), '--project', str(self.project), '--connection', 'orchard'
-        )
-        self.assertEqual(code, 0)
-        study = self.base / 'study'
-        for relative, name in (
-            ('berman.json', 'berman.workspace/1'),
-            ('connections/orchard/connection.json', 'berman.connection/1'),
-            ('connections/catalogue.json', 'berman.run-catalogue/1'),
-            ('software.json', 'berman.software/1'),
-        ):
-            with self.subTest(file=relative):
-                self.assertEqual(schemas.problems(name, read(study / relative)), [])
-        self.assertEqual(json.loads(out)['software'], read(study / 'software.json'))
 
 
 if __name__ == '__main__':

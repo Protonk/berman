@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:operation-1",
   "title": "berman.operation/1",
-  "description": "A run's researcher-side operation record (operations/RUN/operation.json): a research engagement, or the immutable marker of a native support trial. Berman writes these, so this states the types it has written, and every field a workflow ever wrote is optional, because a record is valid at each step of an incomplete operation and older workflows wrote fewer fields. null is read as absent. Which phase needs which field, what counts as a declared ending, and run and session identities are judged first by berman.lifecycle. Unknown fields are kept.",
+  "description": "A run's operation record in a co-located workspace (operations/RUN/operation.json): a research engagement, or the immutable marker of a native support trial. Releases up to 0.26.3 wrote these and this version only reads them, so this states the types that were written, and every field a workflow ever wrote is optional, because a record was valid at each step of an incomplete operation and older workflows wrote fewer fields. null is read as absent. Which phase needs which field, what counts as a declared ending, and run and session identities are judged first by berman.lifecycle. Unknown fields are kept.",
   "type": "object",
   "required": [
     "schema",

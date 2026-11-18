@@ -1,15 +1,20 @@
 # Presentation fixtures
 
 Synthetic command results (`*.json`) and the deliberately pinned redirected text
-beside each (`*.txt`). These began with the 0.4.1 command-line and verification
-renderers before presentation moved into `berman.presentation`.
+beside each (`*.txt`), for the two results `berman.presentation` renders:
+`status` and `verify`.
 
-The optional-study-plans change updates assignment output to show retained recipe
-and origin, represents absent/exhausted plans without a fictitious next role,
-reports selected-plan errors separately, and labels direct-assignment command
-templates requiring a recipe choice. The optional-plans fixtures also retain a
-prepared launch beside a broken plan, and show open-engagement templates without
-a plan. Historical missing assignment origins remain explicitly unrecorded.
+The status fixtures are what this version reports for a co-located workspace
+made by release 0.26.3 or earlier, which it reads and never writes. They show
+each connection's selected plan as its records left it, the lifecycle facts of
+each listed run, and everything unsettled with the statement that it has to be
+closed with the release that opened it. A run at rest without an ending or a
+package and a run whose record cannot be read are listed without being called
+unsettled. Historical missing assignment origins remain explicitly unrecorded.
+
+The verification fixtures carry the checks this version runs on such a
+workspace, including `settled`, and name what it never checks: hook trust,
+native capture and native access.
 
 They are the contract for redirected output: `berman.presentation.plain` must reproduce each
 `.txt` byte for byte. A difference is a change to what scripts and saved output receive, and

@@ -1,35 +1,40 @@
 # Current limits
 
 The standalone software is experimental and supports Python 3.14 only. Its
-portable tests establish simulated workflow, preservation and rendering
-behavior. A fresh installation still needs
-native access and capture qualification for its actual CLI versions and platform.
-The separated source has not inherited another installation's trust.
+portable tests establish simulated commissioning, staging, custody and rendering
+behavior. A fresh installation still needs native qualification for its actual
+CLI versions and platform: run a designated one-turn assignment and evaluate it
+with `berman remote qualify RUN`. No installation inherits another's trust.
+
+Fieldwork runs only through the controller and executor. This version carries
+no other way to prepare, launch, capture, end, preserve or supplement an
+engagement, and it creates no co-located workspace.
+
+A co-located workspace made by release 0.26.3 or earlier is read-only here:
+
+- Anything unsettled in it has to be closed with the release that opened it.
+  This version reports the work and cannot finish, cancel, migrate or package
+  it. A study with outstanding work keeps that released runtime installed.
+- Authority does not move by itself. Moving a study to guest custody is the
+  researcher's procedure in the [deployment guide](guest-deployment.md#historical-studies):
+  export, import, and reserve every run number already used.
+- Hook trust, native capture and native access of a co-located installation are
+  not checked. Its recorded reviews, support trials and access receipts remain
+  evidence of their own dates and say nothing about this version.
+- `status` reads without locks and never compares an open capture with its
+  native source. A workspace its own release is operating at the same moment can
+  be read mid-operation; read it again when that operation has finished.
+- A run whose records cannot be read is reported as a problem. What it awaits is
+  unknown, so a clean `settled` check requires a clean `workspace` check.
 
 Research plans are optional ordered assignments. Their `commitment` and
-`relationships` fields are annotations; Berman no longer enforces cross-project
-promises. A study can retain such promises in its own practice. Direct assignment
-requires an explicit recipe choice, and a broken selected plan remains visible
-without preventing retained work or a direct assignment with valid inputs.
+`relationships` fields are annotations; Berman does not enforce cross-project
+promises. A study can retain such promises in its own practice.
 
-Pending historical `berman.new-request/1` combined requests need settlement with
-their original installation before adoption. Berman reads completed historical
-requests unchanged; it does not infer a reserved assignment for a pending old
-request. New requests reserve the target before declaring the previous ending.
-
-The local-workspace Codex diagnostic uses the actual checkout and temporary
-packet and configuration directories. The configured Python runs positive file,
-Git and project-tool checks on the host. Codex renders the permission context
-using the same checkout and assigned-packet arguments as launch. These are
-distinct observations. A model executing tools and hooks requires a separate
-native session. The disposable configuration copies config.toml and hooks.json;
-live policy can differ.
-
-The project must be a Git checkout with a commit. The diagnostic makes a
-disposable repository inside its temporary project fixture for a Git write.
-A linked worktree or external service can need its own declared project checks.
-Ordinary development starts the native binary under the operator's chosen
-policy. [Ordinary development on macOS](development-launchers.md)
+The project must be a Git checkout with a commit. Project checks run as host
+subprocesses in the checkout; a linked worktree or external service can need its
+own declared checks. A model executing tools under hooks requires a native
+session, which the portable tests do not start.
 
 Research plans, prior analysis and fieldwork history belong in the research
 environment. The executor needs the assigned packet and space for working
@@ -39,9 +44,9 @@ installed hooks may recognize the study. Record consequential exposure and
 the researcher's response alongside the engagement; discovery alone leaves
 its status intact.
 
-Claude uses per-launch hooks. Qualification is based on native hook events; the
-CLI's hook browser has not demonstrated a review of flag-supplied hooks. The
-workspace's CLAUDE_CONFIG_DIR must match its selected configuration home.
+Claude receives its capture hooks at launch. Qualification is based on native
+hook events; the CLI's hook browser has not demonstrated a review of
+flag-supplied hooks.
 
 Context snapshots contain selected project documents and observed Git state,
 not a full backup of every dependency or service. A stored symlink or Git pointer
@@ -53,8 +58,6 @@ by `jsonschema`) is a compiled wheel for one platform and Python version. Their
 installed versions are recorded beside the software identity as context. Nothing
 fingerprints them; a study that needs the environment's bytes keeps the wheels.
 
-Repeating an interrupted command completes it, with one exception. Once
-`berman cancel` has moved an unused packet aside, repeating `cancel` is refused;
-`berman status` lists the run as being retired and the next `berman new`
-finishes its retirement. The property tests interrupt commands by raising an
-error at a durable write. A process killed outright is not modelled.
+The tests of the co-located reader build their workspaces from synthetic
+records written as release 0.26.3 wrote them. They show that this version reads
+those shapes; a real workspace is the only evidence of what a real one holds.

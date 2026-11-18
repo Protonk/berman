@@ -127,7 +127,7 @@ def fingerprint(prepared, folder):
 
 def prepare(spool, assignment, binding):
     from berman import recipes
-    from berman.harnesses.codex import project_checks
+    from berman.checks import project_checks
 
     b = check_assignment(assignment, binding)
     project, home = Path(b['project']), Path(b['home'])
@@ -198,7 +198,7 @@ def prepare(spool, assignment, binding):
 
 
 def verify_hooks(installed, expected):
-    from berman.capture.adapters import capture_entry
+    from berman.capture.hooks import capture_entry
 
     for event in set(installed.get('hooks', {})) | set(expected['hooks']):
         found = []

@@ -1,9 +1,6 @@
 0 archived runs. Default connection: orchard
-orchard: next planned fieldwork role: none
-  Choose a recipe with berman new --recipe NAME
-broken: next planned fieldwork role: none
-  plan needs attention: Research plan is missing: plans/missing/plan.json
-  Selected plan needs attention; choose a recipe directly
-exhausted: next planned fieldwork role: none
-  Research plan complete-plan is complete
-No outstanding engagements or preparations.
+orchard: no research plan selected
+broken: selected plan needs attention: Research plan is missing: plans/missing/plan.json
+exhausted: plan complete-plan: every step was started
+No outstanding runs.
+A co-located workspace is read-only in this version: fieldwork is commissioned and closed only through the controller and executor (berman remote). Session activity and declared engagement endings are distinct facts, and none is inferred. No files were changed.

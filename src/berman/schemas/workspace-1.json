@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:workspace-1",
   "title": "berman.workspace/1",
-  "description": "A fieldwork workspace's local installation settings (berman.json). Required and typed here is what loading a workspace reads as a path, iterates or indexes; a wrong value there used to end in a bare key name or a traceback. Adapter names, the reading edition, the fieldwork model, registered connection names and the disjointness of roots are judged by berman.records and berman.config in their own words. Fields Berman only stores are not constrained.",
+  "description": "A co-located workspace's local installation settings (berman.json), as release 0.26.3 or earlier wrote them; this version reads the file and never writes it. Required and typed here is what loading a workspace reads as a path, iterates or indexes; a wrong value there used to end in a bare key name or a traceback. The reading edition and registered connection names are judged by berman.records in its own words. Harness executables, interpreters, adapters and the fieldwork model are settings of the release that operated the workspace and are not used. Fields Berman only stores are not constrained.",
   "type": "object",
   "required": [
     "schema",
@@ -117,7 +117,7 @@
           ]
         },
         "development": {
-          "description": "Historical development wrapper paths. Current native development uses the configured harness executable.",
+          "description": "Historical development wrapper paths; not used.",
           "type": [
             "object",
             "null"

@@ -1,7 +1,7 @@
 """What an operator sees: finished results in, text out. Nothing here computes state or a verdict.
 
-There are two renderings of the same results. `plain` is the established text, byte for byte
-what version 0.4.1 printed: a pipe, a file and anything that reads Berman's output receive it.
+There are two renderings of the same results. `plain` is the established text, pinned byte for
+byte by tests/fixtures/presentation: a pipe, a file and anything that reads Berman's output receive it.
 `terminal` is a Rich rendering, used when standard output is an interactive terminal. An
 operator who wants the plain text there too sets BERMAN_OUTPUT=plain. `--json` output is
 printed by the command line itself and never comes through here.
@@ -15,7 +15,7 @@ import sys
 
 from berman.presentation import plain
 
-KINDS = ('status', 'cheatsheet', 'verification', 'prepared', 'finished', 'ready')
+KINDS = ('status', 'verification')
 CHOICE = 'BERMAN_OUTPUT'  # Set to 'plain' to keep the plain text on an interactive terminal.
 
 
