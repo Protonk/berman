@@ -82,7 +82,8 @@ class VerifyTests(Fixture, Base):
         self.assertTrue(all(c['meaning'] and c['required'] for c in checks.values()))
         self.assertEqual(result['python'], sys.executable)
         self.assertRegex(result['python_version'], r'^Python 3\.\d+\.\d+')
-        self.assertEqual(result['not_covered'], verify.NOT_COVERED)
+        # Counted here, not read back from the module: a dropped statement must fail this test.
+        self.assertEqual(3, len(result['not_covered']))
         self.assertIn('Hook trust, native capture and native access', ' '.join(result['not_covered']))
         self.assertIsNone(result['record'])
         self.assertFalse(any('unittest' in argv for argv, _ in self.runner.calls))
