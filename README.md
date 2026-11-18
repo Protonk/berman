@@ -16,6 +16,8 @@ This repository contains the reusable software. Each study keeps its own
 project connections, optional research plans, instructions, recordings and analysis.
 You can develop and test Berman using the included synthetic examples.
 
+See [guest deployment and historical import](docs/guest-deployment.md) for the Linux controller and macOS executor installation.
+
 ## Getting started
 
 Python 3.14 and Git are required. Berman has three runtime dependencies, which
