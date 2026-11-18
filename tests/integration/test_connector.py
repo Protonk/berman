@@ -5,7 +5,8 @@ the executor, the controller and custody are the real ones.
 """
 
 from argparse import Namespace
-from io import BytesIO
+from io import BytesIO, StringIO
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -111,7 +112,13 @@ class ConnectorTests(unittest.TestCase):
 
     def run_command(self, action, run=None, **fields):
         defaults = dict(
-            supplement=None, one_turn=True, missing_reason=None, expected_child=None, prompt=None, request=None
+            supplement=None,
+            one_turn=True,
+            reason=None,
+            missing_reason=None,
+            expected_child=None,
+            prompt=None,
+            request=None,
         )
         return self.operator.perform(Namespace(action=action, run=run, **{**defaults, **fields}))
 
@@ -120,6 +127,97 @@ class ConnectorTests(unittest.TestCase):
             action='commission', request=label, connection='example', harness=harness, recipe=None, plan=None
         )
         return self.operator.perform(args)
+
+    def test_one_closeout_resumes_from_every_committed_boundary(self):
+        run = self.commission()['run']
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        with self.assertRaisesRegex(ValueError, '--reason'):
+            self.run_command('closeout', run)
+        for command in ('ending', 'capture', 'transfer', 'accept', 'preserve', 'publish', 'verify'):
+            with self.subTest(lost_reply=command):
+                self.guest.lose_reply_to = command
+                with self.assertRaisesRegex(ValueError, 'reply lost'):
+                    self.run_command('closeout', run, reason='Researcher ended the run')
+        first = self.run_command('closeout', run)
+        self.assertEqual(('verified', 1, 1), (first['status'], first['sittings'], first['notes']))
+        self.assertEqual(first['observed_members'], first['accepted_members'])
+        self.assertEqual([], first['omitted'])
+        self.assertTrue(first['recording'].endswith('custody/run-001/recording.zip'))
+        self.assertTrue(first['edition'].endswith(first['edition_sha256'] + '.zip'))
+        self.spool.rename(self.root / 'offline spool')
+        self.guest.calls.clear()
+        self.assertEqual(first, self.run_command('closeout', run))
+        self.assertEqual(['status', 'verify'], self.guest.calls)
+        with self.assertRaisesRegex(ValueError, 'different input'):
+            self.run_command('closeout', run, reason='Different declaration')
+
+    def test_closeout_transfers_available_files_and_waits_for_a_missing_reason(self):
+        run = self.commission()['run']
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        folder = self.closed_out(run)
+        name = 'packet/notes/account.md'
+        (folder / 'collection/payload' / name).unlink()
+        blocked = self.run_command('closeout', run)
+        self.assertEqual([name], blocked['outstanding'])
+        self.assertEqual([name], [s['path'] for s in blocked['unavailable']])
+        self.assertNotIn('accept', self.guest.calls)
+        reason = 'The staged note was lost'
+        self.guest.lose_reply_to = 'accept'
+        with self.assertRaisesRegex(ValueError, 'reply lost'):
+            self.run_command('closeout', run, missing_reason=reason)
+        result = self.run_command('closeout', run)
+        self.assertEqual(reason, result['missing_reason'])
+        self.assertEqual(result['observed_members'] - 1, result['accepted_members'])
+        self.assertEqual([name], [row['path'] for row in result['missing']])
+        self.assertIn(name, connector.closeout_text(result))
+
+    def test_closeout_cli_reports_a_damaged_guest_object_until_the_host_can_repair_it(self):
+        run = self.commission()['run']
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        folder = self.closed_out(run)
+        self.run_command('transfer', run)
+        path = 'packet/notes/account.md'
+        staged = folder / 'collection/payload' / path
+        original = staged.read_bytes()
+        obj = self.guest.controller.store / 'objects' / files.digest(original)
+        obj.chmod(0o600)
+        obj.write_bytes(b'x' * len(original))
+        staged.unlink()
+        settings = self.root / 'connector.json'
+        files.write(settings, self.operator.settings)
+        args = ['--config', str(settings), 'closeout', run]
+        with patch.object(connector, 'Remote', return_value=self.guest):
+            with patch('sys.stdout', new_callable=StringIO) as out, patch('sys.stderr', new_callable=StringIO) as err:
+                self.assertEqual(1, connector.main([*args, '--json']))
+                self.assertEqual([path], json.loads(out.getvalue())['outstanding'])
+                self.assertIn('--missing-reason', err.getvalue())
+            staged.write_bytes(original)
+            with patch('sys.stdout', new_callable=StringIO) as out:
+                self.assertEqual(0, connector.main(args))
+                self.assertIn('Guest reading edition:', out.getvalue())
+        self.assertEqual(1, len(self.run_command('status', run)['result']['repairs']))
+
+    def test_closeout_reports_collection_omissions_and_discovers_the_supplement_edition(self):
+        run = self.commission()['run']
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        folder = next((self.spool / 'operations').iterdir())
+        (folder / 'packet/notes/link').symlink_to('account.md')
+        with patch('sys.stderr', new_callable=StringIO) as err:
+            first = self.run_command('closeout', run, reason='Ended')
+        self.assertIn('packet/notes/link', err.getvalue())
+        self.assertEqual(['packet/notes/link'], [row['path'] for row in first['omitted']])
+        self.run_command('resume', run, request='later', prompt='continued')
+        self.run_command('supplement', run, request='fieldwork-returned', reason='Later work')
+        with patch('sys.stderr', new_callable=StringIO):
+            later = self.run_command('closeout', run, supplement=1)
+        self.assertEqual(1, later['supplement'])
+        self.assertNotEqual(first['edition_sha256'], later['edition_sha256'])
+        self.assertEqual(later, self.run_command('closeout', run, supplement=1))
+        self.assertEqual(first['recording_sha256'], self.run_command('closeout', run)['recording_sha256'])
 
     def test_a_lost_reply_never_makes_a_second_run_or_a_second_process(self):
         self.guest.lose_reply_to = 'commission'

@@ -201,6 +201,7 @@ class Controller:
                 connection=state['connection'],
                 facts=list(facts),
                 capture_limits=facts.get('capture', {}).get('limitations'),
+                omitted=facts.get('capture', {}).get('omitted', []),
                 exposures=len(state.get('exposures', [])),
                 observed=[row['path'] for row in members],
                 transferred=transferred,

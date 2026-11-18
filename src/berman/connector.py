@@ -122,6 +122,105 @@ class Operator:
             return self.action('launch', run, observation=observed)
         return self.action('sitting', run, key=f'sitting-{number}', number=number, observation=observed)
 
+    def collect(self, run, supplement, assignment):
+        declaration = self.read('closeout', run, supplement)['result']['operation']
+        for observed in executor.sitting_receipts(self.spool, assignment['operation']):
+            if observed.get('exit') is not None:
+                self.report_sitting(run, observed)
+        return executor.collect(self.spool, assignment['operation'], declaration, supplement)
+
+    def transfer(self, run, supplement, held):
+        """Only send outstanding members. Read the frozen inventory once for the batch."""
+        unavailable = []
+        if held['outstanding']:
+            operation = self.ticket(run)['operation']
+            declaration = self.read('closeout', run, supplement)['result']['operation']
+            try:
+                folder, manifest = executor.frozen_manifest(self.spool, operation, declaration, supplement)
+            except OSError as error:
+                unavailable = [dict(path=name, problem=str(error)) for name in held['outstanding']]
+            else:
+                members = protocol.inventory(manifest['members'])
+                for name in held['outstanding']:
+                    if name not in members:
+                        raise ValueError(f'Frozen host inventory does not list the guest member: {name}')
+                    size, digest = members[name]
+                    try:
+                        source = executor.verify_payload(folder, dict(path=name, size=size, sha256=digest))
+                    except (OSError, ValueError) as error:
+                        unavailable.append({'path': name, 'problem': str(error)})
+                        continue
+                    self.action('transfer', run, supplement, body=source, path=name, size=size, sha256=digest)
+        result = (
+            self.read('status', run, supplement, deep=True) if unavailable else self.read('status', run, supplement)
+        )
+        result['unavailable_on_host'] = unavailable
+        return result
+
+    def closeout(self, args):
+        run, supplement = args.run, args.supplement
+        if args.reason is not None:
+            self.action('ending', run, reason=args.reason)
+        state = self.read('status', run, supplement)['result']
+        if supplement is None and 'ending' not in state['facts']:
+            raise ValueError('Supply --reason with the researcher’s ending declaration to start closeout.')
+        if 'capture' not in state['facts']:
+            observation = self.collect(run, supplement, self.ticket(run))
+            self.action('capture', run, supplement, observation=observation)
+            state = self.read('status', run, supplement)['result']
+
+        report = dict(
+            collection_id=self.remote.collection,
+            study=self.settings['study'],
+            run=run,
+            supplement=supplement,
+            sittings=state['sittings'],
+            notes=sum(n.startswith('packet/notes/') for n in state['observed']),
+            observed_members=len(state['observed']),
+            limitations=state['capture_limits'],
+            omitted=state['omitted'],
+        )
+        if not state['preserved']:
+            state = self.read('status', run, supplement, deep=True)['result']
+            if state['outstanding']:
+                transferred = self.transfer(run, supplement, state)
+                state = transferred['result']
+                if state['outstanding'] and (not args.missing_reason or state['accepted']):
+                    return dict(
+                        report,
+                        status='transfer incomplete',
+                        outstanding=state['outstanding'],
+                        unavailable=transferred['unavailable_on_host'],
+                        already_accepted=bool(state['accepted']),
+                    )
+            if not state['accepted']:
+                for line in report['limitations']:
+                    print(f'Capture limitation: {line}', file=sys.stderr)
+                for row in report['omitted']:
+                    print(f'Omitted: {row["path"]} ({row["detail"]})', file=sys.stderr)
+                for name in state['outstanding']:
+                    print(f'Missing from transfer: {name}', file=sys.stderr)
+                extra = {'missing_reason': args.missing_reason} if state['outstanding'] else {}
+                state['accepted'] = self.action('accept', run, supplement, **extra)['result']
+            state['preserved'] = self.action('preserve', run, supplement)['result']
+        if not state['published']:
+            state['published'] = self.action('publish', run, supplement)['result']
+        verified = self.read('verify', run)['result']
+        if supplement is not None:
+            verified = next(row for row in verified['supplements'] if row['sequence'] == supplement)
+        return dict(
+            report,
+            status='verified',
+            accepted_members=state['accepted']['accepted_members'],
+            missing=state['accepted'].get('missing', []),
+            missing_reason=state['accepted'].get('missing_reason'),
+            recording=f'~/research/{self.settings["study"]}/{state["preserved"]["relative_path"]}',
+            recording_sha256=verified['recording']['package_sha256'],
+            edition=verified['edition']['archive_path'],
+            edition_sha256=verified['edition']['archive_sha256'],
+            coverage=verified['recording']['coverage'],
+        )
+
     def perform(self, args):
         if args.action == 'status':
             if args.run is None:
@@ -132,6 +231,8 @@ class Operator:
         if not re.fullmatch(r'run-[0-9]{3,6}', args.run):
             raise ValueError('Invalid run identity')
         supplement = getattr(args, 'supplement', None)
+        if args.action == 'closeout':
+            return self.closeout(args)
         if args.action == 'verify':
             return self.remote.call('verify', run=args.run)
         if args.action == 'exposure':
@@ -166,39 +267,43 @@ class Operator:
                     'The sitting is recorded as started and its exit is not yet observed. Retry when it ends.'
                 )
             return self.report_sitting(args.run, observed)
-        if args.action in ('collect', 'transfer', 'qualify'):
+        if args.action == 'qualify':
             declaration = self.read('closeout', args.run, supplement)['result']['operation']
-            if args.action == 'qualify':
-                return executor.qualify(self.spool, a['operation'], declaration, args.expected_child)
-            # Report every finished sitting first. Each has its own identity, so this repeats safely.
-            for observed in executor.sitting_receipts(self.spool, a['operation']):
-                if observed.get('exit') is not None:
-                    self.report_sitting(args.run, observed)
-            observation = executor.collect(self.spool, a['operation'], declaration, supplement)
+            return executor.qualify(self.spool, a['operation'], declaration, args.expected_child)
+        if args.action in ('collect', 'transfer'):
+            observation = self.collect(args.run, supplement, a)
             if args.action == 'collect':
                 return self.action('capture', args.run, supplement, observation=observation)
-            # Send each member the guest lacks. A staged file that is gone or changed is
-            # reported and skipped, so one bad member never strands the rest on the host.
-            # Ask the guest to reread its objects, so damage of the same length is resent too.
             held = self.read('status', args.run, supplement, deep=True)['result']
             if 'capture' not in held['facts']:
                 raise ValueError('The guest has no inventory for this collection yet. Run collect first.')
-            outstanding = set(held['outstanding'])
-            rows = protocol.inventory(observation['members'])
-            unavailable = []
-            for name, (size, digest) in rows.items():
-                if name not in outstanding:
-                    continue
-                try:
-                    source = executor.payload_path(self.spool, a['operation'], declaration, name, supplement)
-                except (OSError, ValueError) as error:
-                    unavailable.append({'path': name, 'problem': str(error)})
-                    continue
-                self.action('transfer', args.run, supplement, body=source, path=name, size=size, sha256=digest)
-            result = self.read('status', args.run, supplement)
-            result['unavailable_on_host'] = unavailable
-            return result
+            return self.transfer(args.run, supplement, held)
         raise ValueError('Unknown operator command')
+
+
+def closeout_text(report):
+    label = report['run']
+    if report['supplement'] is not None:
+        label += f' supplement {report["supplement"]}'
+    lines = [
+        f'{report["study"]}/{label}: {report["status"]}. Sittings: {report["sittings"]}. Note files observed: {report["notes"]}.'
+    ]
+    if report['status'] != 'verified':
+        problems = {row['path']: row['problem'] for row in report['unavailable']}
+        lines.extend(
+            f'Outstanding: {name} ({problems.get(name, "missing in guest")})' for name in report['outstanding']
+        )
+        lines.extend(report['limitations'])
+    else:
+        lines.extend(
+            [
+                f'Accepted {report["accepted_members"]} of {report["observed_members"]} observed files.',
+                f'Guest recording: {report["recording"]}',
+                f'Guest reading edition: {report["edition"]}',
+            ]
+        )
+        lines.extend(report['coverage']['unknown'])
+    return '\n'.join(lines)
 
 
 def main(argv=None):
@@ -227,6 +332,7 @@ def main(argv=None):
         'prepare': 'stage the worker packet for the bound checkout and report the preparation',
         'launch': 'start the first sitting and wait for it; repeating this never starts another process',
         'resume': 'start a further sitting of the same engagement, resuming its native session',
+        'closeout': 'end fieldwork and resume through a verified recording and reading edition',
         'end': 'record the researcher ending; a native exit never does this',
         'supplement': 'declare later activity after a frozen collection; returns its number',
         'collect': 'freeze what the host holds for the ending, or for --supplement N',
@@ -241,6 +347,11 @@ def main(argv=None):
     for action, text in helps.items():
         cmd = commands.add_parser(action, help=text)
         cmd.add_argument('run')
+        if action == 'closeout':
+            origin = cmd.add_mutually_exclusive_group()
+            origin.add_argument('--reason', help='researcher’s ending declaration; omit to resume a recorded ending')
+            origin.add_argument('--supplement', type=int, help='close out an already declared supplement')
+            cmd.add_argument('--json', action='store_true', help='print a machine-readable closeout summary')
         if action == 'qualify':
             cmd.add_argument('--expected-child')
         if action == 'exposure':
@@ -252,7 +363,7 @@ def main(argv=None):
             cmd.add_argument('--request', required=True, help='a unique label for this declaration; reuse on retry')
         if action in ('collect', 'transfer', 'accept', 'preserve', 'publish'):
             cmd.add_argument('--supplement', type=int, help='act on this supplement instead of the first collection')
-        if action == 'accept':
+        if action in ('closeout', 'accept'):
             cmd.add_argument(
                 '--missing-reason',
                 help='accept what arrived although observed members are missing; the reason and the members are recorded',
@@ -269,6 +380,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         result = Operator(files.read(args.config.resolve(strict=True))).perform(args)
+        if args.action == 'closeout':
+            if args.json:
+                print(json.dumps(result, indent=2))
+            else:
+                print(closeout_text(result))
+            if result['status'] != 'verified':
+                print('Restore the unavailable evidence and repeat closeout.', file=sys.stderr)
+                if not result['already_accepted']:
+                    print(
+                        'To accept the remaining evidence, repeat with --missing-reason and the researcher’s reason.',
+                        file=sys.stderr,
+                    )
+                return 1
+            return 0
         print(json.dumps(result, indent=2))
         if args.action == 'qualify' and not result['passed']:
             return 1
@@ -281,6 +406,8 @@ def main(argv=None):
             return 1
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'Berman connector: {error}', file=sys.stderr)
+        if args.action == 'closeout':
+            print('After resolving the error, repeat closeout for the same run.', file=sys.stderr)
         return 1
     return 0
 

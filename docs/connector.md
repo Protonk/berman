@@ -30,24 +30,29 @@ berman-research prepare run-001
 berman-research launch run-001
 berman-research resume run-001 --request second   # each later sitting of the same engagement
 berman-research status run-001
-berman-research end run-001 --reason 'The researcher ended fieldwork after the project review'
-berman-research collect run-001
-berman-research transfer run-001
-berman-research accept run-001
-berman-research preserve run-001
-berman-research publish run-001
-berman-research verify run-001
+berman-research closeout run-001 --reason 'The researcher ended fieldwork after the project review'
 ```
+
+Run closeout once the sitting has finished and the researcher has declared the ending.
+Repeat the same command after an interruption. Once the ending is recorded, the
+shorter `berman-research closeout run-001` also resumes it. The connector uses the
+guest receipts, transfers outstanding files, and reopens the recording and edition
+before reporting success. A completed run can be checked this way with its host
+staging offline. Output includes the guest paths, sitting and note counts, and
+coverage. Add `--json` for the counts, hashes and detailed gaps.
+
+Closeout reports capture omissions and limitations before acceptance. If an
+inventoried file cannot reach the guest, it transfers the rest, names the gaps
+and exits unsuccessfully before acceptance. Restore the file and repeat, or
+supply the researcher's reason with `closeout run-001 --missing-reason TEXT`.
+The guest records the reason and the missing members. The individual operations
+remain available for inspection and recovery.
 
 If the worker is active again after collection, keep that too. A supplement adds a second recording beside the first and changes nothing already preserved.
 
 ```sh
 berman-research supplement run-001 --request returned --reason 'The worker continued after the ending'
-berman-research collect run-001 --supplement 1
-berman-research transfer run-001 --supplement 1
-berman-research accept run-001 --supplement 1
-berman-research preserve run-001 --supplement 1
-berman-research publish run-001 --supplement 1
+berman-research closeout run-001 --supplement 1
 ```
 
 Use the run returned by commission. Reuse the same request label and arguments after a lost response. Give a fresh commission a fresh label. Omit the recipe to use the connection's default, or pass `--plan NAME` to select the next step from the guest's `plans/NAME/plan.json`. Include prior step consumption when continuing an existing study, or start a separately identified plan for its continuation. The worker does not receive the plan, the recipe's research annotations or the reason for ending.

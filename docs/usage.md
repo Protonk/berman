@@ -22,13 +22,7 @@ berman remote commission --request first-account --connection example --harness 
 berman remote prepare run-001
 berman remote launch run-001
 berman remote status run-001
-berman remote end run-001 --reason 'The researcher ended fieldwork after the project review'
-berman remote collect run-001
-berman remote transfer run-001
-berman remote accept run-001
-berman remote preserve run-001
-berman remote publish run-001
-berman remote verify run-001
+berman remote closeout run-001 --reason 'The researcher ended fieldwork after the project review'
 ```
 
 The [command and receipt guide](connector.md) explains each step, the request
@@ -38,8 +32,11 @@ staging, closeout and qualification. [Custody](custody.md) covers the portable
 recording and the reading edition the guest publishes from it.
 
 Each of these is a separate fact with its own receipt: native exit, a
-`SessionEnd` callback, a successful transfer, the researcher's ending. Only
-`end --reason` records the researcher's declaration. Capture coverage is
+`SessionEnd` callback, a successful transfer, the researcher's ending. The researcher supplies the ending
+declaration to `closeout --reason` or to the individual `end` command.
+Repeat closeout after an interruption. If some observed files cannot be
+transferred, the command names them and awaits recovery or the researcher's
+missing-evidence reason. Capture coverage is
 reported with its limitations and is never inferred from a later step.
 
 ## Study inputs
