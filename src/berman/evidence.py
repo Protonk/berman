@@ -315,7 +315,9 @@ def native_streams(manifest, controller, read):
     primary = manifest['evidence'].get('capture')
     capture = collection_facts(manifest, controller)[0]['capture']
     refs = [primary] if primary else []
-    refs.extend(f'runs/{run}/associated/{sid}/capture.json' for sid in capture.get('associated_sessions', []))
+    associated = capture.get('associated_sessions')
+    if associated is not None:  # Discovery was performed; the retained list may be empty.
+        refs.extend(f'runs/{run}/associated/{sid}/capture.json' for sid in associated)
     streams = []
     native_format = controller['assignment']['harness'] + '-jsonl/1'
     for ref in sorted(set(refs)):

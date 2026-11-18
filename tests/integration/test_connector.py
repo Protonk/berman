@@ -12,11 +12,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from uuid import uuid4
 
 from unittest.mock import patch
 
-from berman import connector, executor, files, protocol
+from berman import connector, evidence, executor, files, protocol
+from berman.archive import package
 from berman.connector import Operator
 from berman.controller import Controller
 from berman.executor import capture
@@ -351,6 +353,34 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual([], self.run_command('transfer', run)['unavailable_on_host'])
         self.run_command('accept', run)
         self.assertTrue(files.read(folder / 'session-id.json'))
+
+    def test_failed_codex_sitting_can_be_published_with_unknown_associated_sessions(self):
+        (self.root / 'fixture harness').write_text(
+            '#!' + sys.executable + '\nimport sys\nsys.exit(0 if sys.argv[1:] == ["--version"] else 1)\n'
+        )
+        files.write(self.home / 'hooks.json', capture.definition(self.spool, self.home))
+        run = self.commission('codex')['run']
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        report = self.run_command('closeout', run, reason='Fixture sitting ended')
+        self.assertEqual(report['observed_members'], report['accepted_members'])
+        self.assertFalse(self.run_command('qualify', run)['passed'])
+        guest = self.guest.controller.root
+        recording = self.root / 'detached-recording.zip'
+        recording.write_bytes((guest / 'custody' / run / 'recording.zip').read_bytes())
+        edition = self.root / 'detached-edition.zip'
+        edition.write_bytes(Path(report['edition']).read_bytes())
+        manifest = evidence.verify_package(recording, report['recording_sha256'])['manifest']
+        self.assertEqual(manifest['streams'], [])
+        self.assertIn('No verified parent transcript observed.', manifest['coverage']['unknown'])
+        with zipfile.ZipFile(recording) as archive:
+            facts = json.loads(archive.read('evidence/controller.json'))['facts']
+            self.assertIsNone(facts['capture']['associated_sessions'])
+            self.assertEqual(1, facts['launch']['exit']['returncode'])
+            self.assertEqual(
+                files.digest(archive.read('recording.json')),
+                package.verify_edition(edition, report['edition_sha256'])['recording_manifest_sha256'],
+            )
 
     def test_transfer_needs_a_recorded_collection(self):
         run = self.commission()['run']
