@@ -48,7 +48,7 @@ uses the active application. Provisioning and Python package installation
 require access to the distribution or package mirrors. Research evidence
 travels over the local SSH connection.
 
-## Study and executor bindings
+## The study in the guest
 
 Create `~/research/STUDY` as a private directory in the guest. Select a new UUID
 once for a new collection. For a qualification collection the initial files are
@@ -61,15 +61,51 @@ recipes/baseline/INSTRUCTIONS.md
 ```
 
 Copy the two recipe files from `examples/minimal-study/recipes/baseline`.
-Keep the matching collection ID and study name in the operator's connection
-settings on macOS, with host `lima-berman-research` and `ssh_config` pointing
-to the generated file. The connector invokes
-`.local/berman/bin/python -I -m berman.controller --study STUDY` in the guest
-login directory. Its versioned commands carry collection and run identity.
-Machine paths and VM names belong to installation settings. The guest
-controller alone allocates run numbers and records ending declarations.
-Only designated assignments and execution requirements travel to the host.
-Keep analysis outside the worker packet and the connected checkout.
+[Study inputs](operating.md#study-inputs) describes connections, recipes and
+plans. The guest controller alone allocates run numbers and records ending
+declarations. Only designated assignments and execution requirements travel to
+the host. Keep analysis outside the worker packet and the connected checkout.
+
+## Connector settings on macOS
+
+Install the same build in a macOS Python 3.14 environment. The operator's
+settings name the guest, the study and, for each connection, the checkout and
+harness on this host. The default file is `~/.config/berman/connector.json`;
+`--config FILE` or `BERMAN_CONNECTOR` selects another, which is how one
+workstation keeps several studies apart.
+
+```json
+{
+  "host": "lima-berman-research",
+  "ssh_config": "~/.lima/berman-research/ssh.config",
+  "study": "example-study",
+  "collection_id": "29525f31-3e9d-4c3d-9078-cedd71216be9",
+  "spool": "~/.local/share/berman/spool",
+  "bindings": {
+    "example": {
+      "codex": {"project": "/Users/me/project", "home": "~/.codex", "executable": "~/.local/bin/codex"},
+      "claude": {"project": "/Users/me/project", "home": "~/.claude", "executable": "~/.local/bin/claude"}
+    }
+  }
+}
+```
+
+Replace the UUID with the one in the guest's `collection.json`. `spool` is the
+executor's staging directory and must lie outside the checkout and the harness
+home. Each project must be a Git checkout with a commit. `home` and
+`executable` identify the ordinary native installation. A binding may also set
+a harness `policy` and a `model`
+([binding fields](executor.md#preparing-a-checkout)).
+
+Codex needs the executor's hook definition for this spool installed in its
+home and reviewed in the actual CLI before the first launch
+([hooks and launch](executor.md#hooks-and-launch)). Claude receives its capture
+settings at each launch. `berman cheatsheet --config FILE` then shows the
+commission command for every binding.
+
+A new installation has no native evidence of its own. Run one designated
+one-turn assignment and evaluate it before relying on capture
+([qualification](executor.md#qualification-evidence)).
 
 A stopped guest interrupts commissioning and transfers. Local hooks can keep
 staging evidence on macOS. After `limactl start berman-research`, retry the same
@@ -82,8 +118,10 @@ declaration each have their own evidence.
 
 Keep the collection UUID and set `reserved_through` in `collection.json` to
 the highest run number previously allocated, including cancellations and gaps.
-The controller also checks its ledger and occupied custody numbers. A fresh
-study starts with its own UUID. [Guest recording custody](custody.md)
+The controller also checks its ledger and occupied custody numbers. When a plan
+continues from the earlier study, account for the steps already consumed or
+start a separately identified plan. A fresh study starts with its own UUID.
+[Importing an earlier recording](custody.md#importing-a-guest-recording)
 
 The VM and its SSH configuration remain visible to a participant with host
 access. Ordinary project searches can stay within the checkout while a

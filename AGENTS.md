@@ -1,62 +1,67 @@
 # Working on Berman core
 
-This repository owns reusable software. Read README.md, docs/usage.md and
-docs/development.md. Keep studies, local settings, native qualification and
-analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
+This repository is the reusable software. Studies, connector settings, native
+qualification evidence and analysis live outside it, and tests use the
+synthetic inputs under `tests/fixtures/`. Start from README.md and the code map
+in docs/development.md.
 
-- Fieldwork has one lifecycle. The controller and executor (`controller.py`,
-  `custody.py`, `executor/`, `connector.py`, `protocol.py`) are the only code
-  that commissions, prepares, launches, captures, ends, collects, preserves,
-  or supplements fieldwork. Add no second path.
-- Python 3.14, managed by uv. `uv sync`, then all five before reporting a
-  change: `uv run ruff check`, `uv run ruff format --check`,
-  `uv run lint-imports`, `uv run python -m unittest discover -s tests -t .` and
-  `uv run berman verify`. Report their scope and omissions.
-- For integration across the Mac and Linux guest use the [mini-CI](docs/ci.md).
-  Keep its assignment and three acceptance questions stable. Add ordinary
-  regression coverage to the source suite. Live harness qualification is explicit.
-- Use this checkout's environment explicitly: `uv run berman`, `.venv/bin/berman`
-  or `python -m berman` with the environment active. A workstation that runs a
-  study may have another program named `berman` on PATH, such as a pinned older
-  installation. If `berman version` fails or names other source, it is not
-  this package. Never modify a study's pinned runtime from here.
-- Each edition pins the reader source that produced it. Keep the archive builder
-  out of formatting-only changes. The executor records every module's digest in
-  each preparation and launch receipt
-  (docs/development.md#byte-sensitive-files).
-- `jsonschema` is imported only by `berman.schemas` and `packaging` only by `berman.environment`.
-  The executor's hook routing and the archive
-  builder import the standard library only. The Import Linter contracts in
-  pyproject.toml hold this; add a violation case to
-  tests/unit/test_architecture.py with any new contract, and give any new
-  module a layer.
-- Versions are `0.YY.N`: the release year and a serial within it. They name
-  released artifacts and say nothing about compatibility or severity. Never
-  choose or increment a version because of what a change does; increment the
-  serial only when explicitly asked to prepare a release, and never move or
-  reuse a released tag (docs/development.md#release-numbering).
-- GitHub is the backup of released artifacts: every release from 0.4.4 on stays
-  there with its assets, and none is deleted. Locally, `dist/` holds only the
-  current version's build (docs/development.md#keeping-release-artifacts).
-- Any release may deliberately change behavior and record requirements. Prefer
-  the simplest robust implementation over compatibility machinery, and add no
-  pre-release stage, migration guarantee or compatibility accommodation unless
-  asked. Document changes and brief the researcher when adoption needs
-  repair, a user response or changes to analysis. Preserve original bytes and
-  the meaning of historical evidence; never invent a missing ending or silently
-  rewrite old records. Validation never changes the value it checks.
-- CLI behavior may change as part of an authorized corrective task. Describe
-  the change and test its consequences rather than retaining a known defect.
-- Property tests are derandomized by default. Pin a failure found with
-  `BERMAN_HYPOTHESIS_PROFILE=explore` as a plain regression test.
-- Capture hooks enter through the executor's exclusive router, never a direct collector.
-- A software change does not qualify a native installation, and neither does a
-  passing suite: simulated callbacks and synthetic records establish no hook
-  trust, native capture or native access. Real hook changes need closed
-  captures, an actual CLI trust review where applicable and native evidence.
-- Read guest recordings from verified packages. Keep original bytes and custody receipts intact.
-- Use explicit Git repository targets. Keep independent study repositories out of
+## Who owns what
+
+- The guest controller (`controller.py`, with `custody.py`) owns every
+  authoritative research fact: run numbers, commissions, the researcher's
+  ending, acceptance, recordings and editions. Nothing on the host decides any
+  of them, and a native exit or `SessionEnd` never ends an engagement.
+- The executor (`executor/`) owns native staging on macOS: the packet, hooks,
+  sittings and the frozen collection.
+- The connector (`connector.py`) carries. It turns operator commands into
+  `protocol.py` requests and calls the local executor.
+- That is the one lifecycle. Add no second path that commissions, prepares,
+  launches, captures, ends, collects, preserves or supplements fieldwork.
+- The controller and the executor never import each other, and the executor
+  imports only the standard library because its hook runs on every turn of a
+  worker's session. `pyproject.toml` holds the contracts. A new module needs a
+  layer and a new contract needs a violation case in
+  `tests/unit/test_architecture.py`.
+
+## Bytes that are evidence
+
+- Every edition records the digests of `archive/builder.py`,
+  `archive/package.py` and `archive/streams.py`. Make no formatting-only or
+  cosmetic change to them.
+- Every installed module's digest goes into each preparation and launch
+  receipt. Any change here gives an installation new bytes, so no earlier
+  native qualification covers it.
+- Recordings, editions and custody receipts are never rewritten. Read them from
+  verified packages. Never invent a missing ending or repair an old record in
+  place. Validation never changes the value it checks.
+- Any release may change behavior and record formats on purpose. Prefer the
+  simplest robust implementation over compatibility machinery, and write what
+  an adopting study must do in docs/releases/unreleased.md.
+
+## Evidence for a change
+
+- Before reporting a change run all five: `uv run ruff check`,
+  `uv run ruff format --check`, `uv run lint-imports`,
+  `uv run python -m unittest discover -s tests -t .` and `uv run berman verify`
+  (after `uv sync`). Say which ran and which did not.
+- Those are synthetic. For the path from the Mac to the guest use the
+  mini-CI (docs/ci.md). Keep its assignment and three questions as they are
+  unless the integration contract itself is meant to change.
+- Only a native session qualifies a harness installation, and hook trust is a
+  review in the actual CLI. Claim neither from tests
+  (docs/development.md#what-each-check-establishes).
+- Use `uv run berman` or `.venv/bin/berman`. A workstation that runs a study
+  can have another `berman` on `PATH`. Never modify a study's installed
+  runtime from here.
+
+## Releases and Git
+
+- Versions are `0.YY.N` and change only when a release is explicitly
+  requested. Never move or reuse a tag or delete a GitHub release
+  (docs/development.md#releases).
+- Commit at useful checkpoints. Push only when asked.
+- This checkout usually sits inside a study's ledger as an ignored directory.
+  Name the repository explicitly (`git -C`), and keep study repositories out of
   commits, submodules and release payloads.
-- Commit at useful checkpoints. Publish only when requested.
 
 `CLAUDE.md` is a symlink to this file.
