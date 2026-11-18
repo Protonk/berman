@@ -51,18 +51,17 @@ def results(draw, texts=visible):
     incomplete = any(check['required'] and check['status'] != 'passed' for check in found.values())
     return {
         'schema': 'berman.verification/1',
+        'scope': 'software',
         'verdict': 'failed' if failed else 'incomplete' if incomplete else 'passed',
         'checked_at_utc': '2026-11-13T00:00:00.000000Z',
-        'root': '/synthetic/study',
+        'root': None,
         'code': '/synthetic/berman',
         'checks': found,
         'failed': by_status['failed'],
         'not_run': by_status['not-run'],
         'not_established': by_status['not-established'],
         'not_covered': draw(st.lists(texts, max_size=3)),
-        'record': draw(
-            st.none() | st.just({'directory': '/synthetic/study/experiments/check', 'files': ['verification.json']})
-        ),
+        'record': None,
         'meaning': 'Synthetic.',
     }
 

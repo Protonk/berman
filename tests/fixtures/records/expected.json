@@ -1,31 +1,10 @@
 {
-  "workspace-1/invalid/missing-roots.json": [
-    "codex_home is required",
-    "packet_root is required"
-  ],
-  "workspace-1/invalid/connections-as-list.json": [
-    "connections must be an object, not an array"
-  ],
-  "workspace-1/invalid/connection-entry.json": [
-    "connections.orchard.checkout must be a string, not an integer (12)",
-    "connections.orchard.definition is required",
-    "connections.orchard.development must be an object or null, not an array",
-    "connections.orchard.plan must be a string or null, not a boolean (false)"
-  ],
-  "workspace-1/invalid/interpreter-not-a-path.json": [
-    "python must be a string, not an integer (7)",
-    "qualified_adapters must be an array, not a string (\"berman-codex\")"
-  ],
-  "workspace-1/invalid/not-an-object.json": [
-    "the document must be an object, not an array"
-  ],
   "connection-1/invalid/documents-as-text.json": [
     "documents must be an array, not a string (\"README.md\")"
   ],
   "connection-1/invalid/lists-as-text.json": [
     "checks[0] must be an object, not a string (\"cargo check\")",
-    "checks[1].argv must be an array, not a string (\"cargo check\")",
-    "readers must be an array, not a string (\"stewart-historical\")"
+    "checks[1].argv must be an array, not a string (\"cargo check\")"
   ],
   "connection-1/invalid/checks-as-object.json": [
     "checks must be an array, not an object"
@@ -43,27 +22,6 @@
   "research-plan-1/invalid/steps-as-object.json": [
     "steps must be an array, not an object"
   ],
-  "run-catalogue-1/invalid/rows.json": [
-    "runs[0].run is required",
-    "runs[1].run must be a string, not an integer (7)",
-    "support_collections must be an array, not an object"
-  ],
-  "operation-1/invalid/documents-as-text.json": [
-    "documents must be an array or null, not a string (\"README.md\")"
-  ],
-  "operation-1/invalid/nested-types.json": [
-    "capture.implementation_sha256.capture/router.py must be a string, not null",
-    "harness must be an object or null, not a string (\"codex\")",
-    "launch_attempts[0].pid must be an integer, not a string (\"4242\")",
-    "packet must be a string or null, not an integer (12)"
-  ],
-  "operation-1/invalid/missing-phase.json": [
-    "phase is required"
-  ],
-  "operation-1/invalid/package-as-path.json": [
-    "package must be an object or null, not a string (\"/synthetic/study/archive/recordings/...)",
-    "retained_open_runs must be an array or null, not a string (\"run-000\")"
-  ],
   "software-1/invalid/digests.json": [
     "environment.dependencies is required",
     "files_sha256.cli.py must be a SHA-256 digest in lowercase hexadecimal, not a string (\"abc\")"
@@ -76,7 +34,7 @@
   "verification-1/invalid/lists.json": [
     "failed must be an array, not a string (\"none\")",
     "not_covered is required",
-    "record.files is required"
+    "record must be null, not an object"
   ],
   "recording-2/invalid/schema.json": [
     "schema must be \"berman.recording/2\", not a string (\"berman.wrong/1\")"
@@ -86,8 +44,5 @@
   ],
   "reading-edition-2/invalid/schema.json": [
     "schema must be \"berman.reading-edition/2\", not a string (\"berman.wrong/1\")"
-  ],
-  "operation-1/invalid/assignment-origin.json": [
-    "assignment_origin must be one of \"direct\", \"plan\", null, not a string (\"inferred\")"
   ]
 }

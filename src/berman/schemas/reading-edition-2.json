@@ -21,7 +21,7 @@
       "type": "string"
     },
     "namespace": {
-      "type": "string"
+      "const": "berman-analysis/"
     },
     "selection": {
       "type": "object"
@@ -30,7 +30,9 @@
       "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "minItems": 1,
+      "maxItems": 1
     },
     "members": {
       "type": "array",
@@ -168,8 +170,21 @@
         "recordings": {
           "type": "array",
           "items": {
-            "type": "object"
-          }
+            "type": "object",
+            "required": [
+              "run",
+              "basis",
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "basis": {
+                "const": "recording manifest"
+              }
+            }
+          },
+          "minItems": 1,
+          "maxItems": 1
         },
         "streams": {
           "type": "array",

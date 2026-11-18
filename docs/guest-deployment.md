@@ -79,45 +79,12 @@ the guest has accepted the inventory and verified its hashes. A transfer
 receipt describes delivered bytes. Capture coverage and the researcher's
 declaration each have their own evidence.
 
-## Historical studies
+## Continuing a collection
 
-1. Retain the host runtime and verify the source on the host. A study with
-   ongoing work needs a researcher decision about that work before authority
-   can move. Create a distinct guest collection for qualification.
-2. Copy each existing recording/2 ZIP unchanged with its independently recorded
-   SHA-256. For an older preserved run, the released 0.26.3
-   `recording export --historical --run RUN --output NEW_PATH` reads the
-   original inventory and emits a portable companion. Keep the old packages,
-   journals, inventories, research declarations and edition ZIPs.
-3. Transfer the study originals as a separate archive that retains subsecond
-   mtimes, modes and symlink targets, including metadata in any nested Git
-   trees. Transfer the analysis repository separately. Git checkout rewrites
-   mtimes. Linux ext4 also exposes ordinary symlinks as mode 0777. A PAX
-   archive preserves a macOS source mode even when the working copy differs.
-   Compare SHA-256 at both ends and inspect archive contents independently.
-4. In a guest directory for historical readings, copy the original
-   `collection.json`. The custody API accepts the portable recording under
-   its original UUID and run number. For example, with absolute guest paths
-   `root`, `source` and the observed `digest`:
-
-```python
-from berman import custody
-from berman.archive import package
-
-receipt = custody.import_recording(root, source, expected_sha256=digest)
-custody.verify_recording(root, receipt)
-edition = custody.publish_edition(root, receipt)
-package.verify_edition(root / edition['archive_path'], edition['archive_sha256'])
-```
-
-A researcher can keep this historical directory and continue to read it
-without starting a controller there. Before a future cutover reconcile
-every previously allocated number, including cancelled or unpublished work,
-set the new controller's allocation floor in `collection.json` using
-`reserved_through`, retire the old writer and record which installation
-owns the next commission. Keep earlier missing sources and coverage
-limitations attached to their occurrences. Qualification under a new UUID
-does not transfer authority for an existing study.
+Keep the collection UUID and set `reserved_through` in `collection.json` to
+the highest run number previously allocated, including cancellations and gaps.
+The controller also checks its ledger and occupied custody numbers. A fresh
+study starts with its own UUID. [Guest recording custody](custody.md)
 
 The VM and its SSH configuration remain visible to a participant with host
 access. Ordinary project searches can stay within the checkout while a

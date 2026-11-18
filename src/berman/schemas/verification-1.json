@@ -2,16 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:verification-1",
   "title": "berman.verification/1",
-  "description": "The result of berman verify, as printed with --json and kept with --record. Each check is a separate fact. A check that is not passed is failed, not run or not established, and those three are never merged.",
+  "description": "Software verification reported by berman --json verify. Each check records its own status and scope.",
   "type": "object",
-  "required": ["schema", "verdict", "checked_at_utc", "root", "code", "checks", "failed", "not_run",
+  "required": ["schema", "scope", "verdict", "checked_at_utc", "root", "code", "checks", "failed", "not_run",
                "not_established", "not_covered", "record", "meaning"],
   "properties": {
     "schema": {"const": "berman.verification/1"},
     "scope": {"enum": ["software"]},
     "verdict": {"enum": ["passed", "failed", "incomplete"]},
     "checked_at_utc": {"type": "string"},
-    "root": {"type": ["string", "null"]},
+    "root": {"type": "null"},
     "code": {"type": "string"},
     "python": {"type": "string"},
     "python_version": {"type": ["string", "null"]},
@@ -34,14 +34,7 @@
     "not_run": {"$ref": "#/$defs/names"},
     "not_established": {"$ref": "#/$defs/names"},
     "not_covered": {"$ref": "#/$defs/names"},
-    "record": {
-      "type": ["object", "null"],
-      "required": ["directory", "files"],
-      "properties": {
-        "directory": {"type": "string"},
-        "files": {"$ref": "#/$defs/names"}
-      }
-    },
+    "record": {"type": "null"},
     "meaning": {"type": "string"}
   },
   "$defs": {

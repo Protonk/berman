@@ -15,7 +15,7 @@ import shlex
 from uuid import uuid4
 
 from berman import files, protocol, snapshots
-from berman.capture import claude, collector
+from berman.capture import claude, codex
 from berman.installation import command
 from berman.sources import IDENTITY, metadata
 
@@ -153,7 +153,7 @@ def observe(folder, preparation, session_id, event, known=None):
         meta = first.get('payload') if isinstance(first, dict) and first.get('type') == 'session_meta' else None
         if not isinstance(meta, dict) or (meta.get('id') or meta.get('session_id')) != session_id:
             raise ValueError('Codex transcript metadata differs from the assigned parent')
-        reader, messages, malformed = collector.capture.render(raw)
+        reader, messages, malformed = codex.render(raw)
 
     expected = event.get('last_assistant_message')
     expected_hash = (

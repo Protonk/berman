@@ -1,35 +1,12 @@
 Berman verification: FAILED
-  passed                      frozen-collector: Frozen collector SHA-256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; expected ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-  FAILED                      recorded-hashes: 14 of 120 recorded hashes do not hold
-                              mismatched: experiments/a/file-0.txt
-                              mismatched: experiments/a/file-1.txt
-                              mismatched: experiments/a/file-2.txt
-                              mismatched: experiments/a/file-3.txt
-                              mismatched: experiments/a/file-4.txt
-                              mismatched: experiments/a/file-5.txt
-                              mismatched: experiments/a/file-6.txt
-                              mismatched: experiments/a/file-7.txt
-                              mismatched: experiments/a/file-8.txt
-                              mismatched: experiments/a/file-9.txt
-                              ... and 2 more
-                              missing: experiments/b/gone.txt
-                              missing: experiments/b/[bold]also-gone[/bold].txt
-                              next: Restore the recorded bytes from Git; preserved evidence is never edited
-  FAILED                      workspace: berman status reports 2 problem(s)
-                              orchard: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md")
-                              support trial: run-900102: never written
-                              next: berman status
-  not established             settled: 2 unsettled; this version reads a co-located workspace and closes nothing in it
-                              run-004: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.
-                              run-900101: support trial experiments/trial-a was left at phase launching. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.
-                              next: Close each with the Berman release that opened it and keep that runtime installed until none remain; this version commissions and closes fieldwork only through the controller and executor (docs/usage.md)
-  not run                     archive: Skipped with --skip
-                              next: berman verify without --skip archive
-Failed: recorded-hashes, workspace
-Not run: archive
-Not established: settled
+  passed                      installation: Synthetic pass for installation
+  FAILED                      dependencies: Synthetic failure for dependencies
+                              missing: [bold]missing[/bold]
+                              next: Reinstall the package with its dependencies
+  FAILED                      schemas: Synthetic failure for schemas
+                              next: Reinstall the package with its dependencies
+Failed: dependencies, schemas
 Never checked by berman verify:
   Developer regression tests (run separately from the source checkout).
-  Hook trust, native capture and native access. This version operates no harness in a co-located workspace; the executor qualifies each launch from its own evidence (berman remote qualify RUN).
-  Fieldwork commissioned through the controller. Its recording and edition are verified in the guest study (berman remote verify RUN).
-Recorded in /synthetic/study/experiments/check
+  Guest study records, preserved recordings and reading editions.
+  Native harness execution, hook trust and native capture.

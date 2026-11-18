@@ -6,9 +6,8 @@ collected. A native executor on macOS prepares the worker's packet, launches the
 designated harness and stages its observations. Nothing else in Berman prepares,
 launches, captures, ends, collects, preserves, migrates or supplements fieldwork.
 
-The remaining `berman` commands read: the installed software, portable
-recordings, reading editions, and a [co-located workspace](#co-located-workspaces)
-made by an earlier release, which this version never writes.
+Standalone commands check the installed software and read portable guest recordings
+and reading editions.
 
 ## From commission to edition
 
@@ -91,89 +90,6 @@ Fieldwork packets and capture registration belong to designated assignments;
 the executor's Codex router ignores every session that does not open with a
 prepared assignment from the assigned checkout.
 
-## Co-located workspaces
-
-Releases up to 0.26.3 ran everything in one co-located workspace: a directory
-with `berman.json`, named connections, recipes, plans, `operations/` and
-preserved `runs/`, on the same machine account as the worker. This version
-keeps that evidence readable and verifiable and takes no part in operating it.
-
-- **It is read-only here.** `status`, `verify`, `recording export` and
-  `archive --verify` read the workspace. No command prepares, launches, ends,
-  supplements, cancels or migrates a run, creates a workspace, installs a hook
-  or runs a harness there. `archive` without `--verify` publishes a new edition
-  under `archive/editions/`, where edition retention applies, and
-  `verify --record` adds one new evidence folder under `experiments/`; neither
-  touches a run, an operation record, an inventory or a recording.
-- **Unsettled work stays with the release that opened it.** A reserved,
-  prepared or open engagement, a declared ending whose preservation, migration,
-  packaging or reading publication never finished, a pending combined request
-  and an open support trial are reported by `status` and by the `settled` check
-  of `verify`, each with the statement that it has to be closed with the release
-  that opened it. This version does not close it. Keep that released runtime
-  installed for the workspace, and use it, until nothing is outstanding.
-- **Nothing is inferred.** A run at rest without an ending declaration or a
-  recording package is reported as it is. It is not called unsettled, and it
-  gains no ending, no package and no completeness by being read.
-- **A study continues in the guest.** Export each preserved run as a portable
-  recording, import it into guest custody and reserve the run numbers already
-  used, as [historical studies](guest-deployment.md#historical-studies)
-  describes. New engagements are commissioned there.
-
-Select a workspace with `berman --root PATH status` or run the command from
-within that workspace's repository. Selection is silent and stops at Git
-boundaries.
-
-`status` lists each connection's selected plan as its records left it (the
-first unstarted step, or that every step was started), every run that is not at
-rest, and what is unsettled. On an interactive terminal it shows each listed
-run's lifecycle facts with the evidence for each, or the reason a fact is
-unknown. Unknown is never shown as no. Redirected output is plain text,
-`BERMAN_OUTPUT=plain` keeps the plain text on a terminal, and `--json` carries
-everything either rendering shows.
-
-A run whose operation record is refused is listed as needing attention and its
-facts are unknown. What such a run awaits is unknown too, so it is reported as a
-problem and not as unsettled work.
-
-A workspace may list `historical_runs` in berman.json. Those identities must
-exist under runs/ and have no active packet. Discovery and the default edition
-leave them opaque; `verify` still audits their retained evidence, and an
-explicit `archive --run RUN` may read them.
-
-## Verify a co-located workspace
-
-`berman verify` runs these checks on a selected workspace, each a separate fact:
-
-| Check | What it establishes |
-| --- | --- |
-| `frozen-collector` | The installed historical collector retains its frozen bytes. |
-| `recorded-hashes` | Files listed in experiment checksum lists and preparation manifests keep their recorded bytes. |
-| `workspace` | berman.json, the catalogue and the connections load, and `status` reports no problem. |
-| `settled` | Nothing awaits the release that opened it. Unsettled work makes the verdict incomplete; it is never closed. |
-| `recordings` | Preserved originals match their inventory; capture, migration and ending evidence agree; recording ZIPs match their recorded hashes and contents. |
-| `archive` | The published reading edition matches its retained member manifest. |
-
-It runs no harness and reads no harness configuration, so it says nothing about
-hook trust, native capture or native access. The executor qualifies a native
-installation from its own launches (`berman remote qualify RUN`), and a guest
-study's recording and edition are verified there (`berman remote verify RUN`).
-
-The `recordings` check reads preserved runs and their inventories, capture
-records, migration journals, ending declarations and recording ZIPs. It never
-repairs, rebuilds or makes an engagement-ending decision. A recorded ZIP that is
-missing or changed fails. Historical absence of an ending, operation or capture
-record is reported under `coverage.unknown`; it is not repaired and does not
-prevent an integrity pass. A publication that never finished remains
-`not-established`. An integrity pass means retained evidence agrees, not that
-capture was complete or an engagement ended.
-
-Use `berman --json verify --skip archive` to inspect recording evidence without
-checking the reading edition. `--skip recordings` leaves the overall verdict
-incomplete. `--record experiments/NAME` keeps the result and raw receipts in a
-new folder. Without a workspace, or with `--software`, `berman verify` checks the
-installed package only.
-
 ## Portable recordings
 
 Recordings use `berman.recording/2`. Their immutable manifest retains the
@@ -189,29 +105,12 @@ berman recording materialize /copies/run-008.zip /analysis/source-copy --sha256 
 berman recording verify /analysis/source-copy
 ```
 
-These commands need no workspace and read a guest study's recordings and a
-co-located workspace's alike. A separately retained package digest pins the
+These commands read a guest recording or its materialized working copy. A separately retained package digest pins the
 source; without one, verification establishes internal consistency, not external
 authenticity. Materialization requires a new destination. Relative links confined
 to existing material are preserved; external and parent-traversing links are
 refused and remain readable as link bytes in the ZIP. Never attach an unchecked
 ZIP using a general-purpose extraction command.
-
-A preserved run of a co-located workspace is exported without changing that
-workspace:
-
-```sh
-berman --root /study recording export --run run-008 --historical --output /copies/run-008.zip
-```
-
-Export uses the agreed UUID in `collection.json` (`schema: berman.collection/1`,
-`id: UUID`) or `berman.json`'s `collection_id`. `--collection-id UUID` supplies an
-explicit identity for a historical source that has none. Copies of the same
-collection must share the agreed identity; do not mint a new UUID per export.
-`--historical` preserves missing authority as unknown and never creates a
-researcher ending; without it, a run that has no ending declaration is refused.
-The output path must be new and lies outside the preserved originals. The export
-is what [guest custody imports](custody.md#importing-an-existing-study).
 
 ## Capture generations
 
@@ -220,12 +119,9 @@ metadata and receipt history become visible together when
 `session/current.json` changes. Readers follow that pointer and never assume
 `session/transcript.jsonl`. Superseded full snapshots are removed only after a
 committed successor contains their prefix, or displaced raw and reader bytes
-have been retained. Distinct partial tails remain retained. The executor stages
-with this format, and the packets a co-located workspace preserved hold it.
+have been retained. Distinct partial tails remain retained. The executor stages native captures in this format.
 
-Freezing a capture and ending an engagement are different facts. A frozen
-capture in a co-located workspace is still an open engagement until its own
-release records the researcher's declaration.
+Freezing a capture and ending an engagement are different facts.
 
 ## Reading editions
 
@@ -237,40 +133,10 @@ no study beside it:
 berman archive --path /copies/edition.zip
 ```
 
-For a co-located workspace, build or check its edition explicitly:
-
-```sh
-berman --root /path/to/study archive
-berman --root /path/to/study archive --verify
-berman --root /path/to/study archive --freshness
-```
-
-The default selects the workspace's recorded connections. `--connection NAME`
-and `--run RUN` narrow it. Its edition.json declares additional relative document
-paths to include. The generic payload contains inventoried runs, their selected
-inventory, chosen documents and generated aids; it does not collect configuration,
-hook receipts or software merely because they share a directory.
-
-`--edition stewart` preserves the explicit historical Stewart packaging behavior.
-Its workspace must supply the legacy context documents. A workspace names the
-edition it maintains with `edition` in berman.json; `berman archive` and the
-archive check of `berman verify` then use it without the option. Never run a builder
-against a Git worktree of a preserved collection: Git does not restore recorded
-modification times.
-
 Published editions are immutable files under `archive/editions/SHA256.zip`.
 A selection pointer identifies the latest publication for an edition/connection/
 run selection. Each ZIP contains an edition manifest naming its inputs, reader
 identity, generated outputs and exact member hashes and modes.
-
-`--verify` checks the published edition using its retained manifest; it neither
-rerenders nor compares against today's analysis files or builder. `--freshness`
-separately reports `current` or `stale` against current selected inputs. A stale
-edition can be intact and exits successfully; a missing or damaged publication
-fails. Building again creates a new immutable edition. The current and previous
-publication for each selection are retained; older editions are removed only
-when no other selection references them. Recordings and original evidence are
-never removed.
 
 Reading aids decode explicitly identified Codex and Claude streams into neutral
 blocks, preserving native roles and source physical lines/JSON pointers. Raw

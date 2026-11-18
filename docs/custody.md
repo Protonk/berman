@@ -17,7 +17,7 @@ edition = custody.publish_edition(study, recording)
 
 `preserve_split_run` checks each received file's size and SHA-256 against the observed inventory. It also checks the transfer map, the acceptance count and the fingerprint of the accepted inventory. The capture receipt must identify the operation that declared the ending. When the executor supplies a parent transcript, its native session, digest and capture generation must agree with the retained capture. Associated session files can accompany that transcript. Their inclusion says which related sources the host found within its search scope.
 
-A split recording uses the `split` profile of `berman.recording/2`. Run-relative names come from the executor, including `packet/notes/`, `events/`, `session/` and `associated/`. The guest records package permissions for returned regular files. Historical imports retain their original recorded modes and times. `evidence/controller.json` carries the assignment, the private decision if supplied, native preparation and launch receipts when available, the explicit ending, capture receipt, transfer map and acceptance. `evidence/ending.json` preserves the ending with the portable reader's `declared_at_utc` field. The recording carries the native coverage limitations. An incomplete capture can enter custody with those limitations.
+A split recording uses the `split` profile of `berman.recording/2`. Run-relative names come from the executor, including `packet/notes/`, `events/`, `session/` and `associated/`. The guest records package permissions for returned regular files. `evidence/controller.json` carries the assignment, the private decision if supplied, native preparation and launch receipts when available, the explicit ending, capture receipt, transfer map and acceptance. `evidence/ending.json` preserves the ending with the portable reader's `declared_at_utc` field. The recording carries the native coverage limitations. An incomplete capture can enter custody with those limitations.
 
 Evidence that was observed on the host and never reached the guest can also enter custody as a stated gap. When acceptance was given a reason for missing members, `preserve_split_run` packages the accepted members only and adds one coverage line for each missing member, with its path and why it is absent. The acceptance in `evidence/controller.json` keeps the full list with lengths and digests, and the verifier requires exactly that coverage line for each. If a missing member is any file of the parent transcript generation under `session/`, the recording makes no claim about the parent: its capture reference is null and its coverage says the generation is not complete in custody and is not verified.
 
@@ -25,32 +25,28 @@ Evidence that was observed on the host and never reached the guest can also ente
 
 Preservation returns a `berman.custody-recording/1` receipt. Its `relative_path` resolves under the study root. Its `package_sha256` identifies the exact ZIP and `manifest_sha256` identifies the manifest value under Berman's recording identity convention. The stored pair lives at `custody/RUN/recording.zip` and `custody/RUN/receipt.json`. The writer syncs both staged files and installs their enclosing directory with a single rename. A conflicting occurrence fails with its first accepted bytes available for inspection.
 
-`verify_recording(study, recording)` checks the stored receipt and reopens the recording. `publish_edition` takes that receipt, verifies again and uses a private temporary view of the recorded regular files for the common readers. Modes, link targets and recorded timestamps come from the verified package. The renderer never installs recorded symlinks or executes saved programs. Host path strings remain available for citation. Reading an absolute path in a receipt requires no access to that path.
+`verify_recording(study, recording)` checks the stored receipt and reopens the recording. `publish_edition` takes that receipt, verifies again and reads the retained ZIP members directly for the reading aids. Modes, link targets and recorded timestamps come from the verified package. The renderer never installs recorded symlinks or executes saved programs. Host path strings remain available for citation. Reading an absolute path in a receipt requires no access to that path.
 
-The standard edition sealer, selection pointer, publication lock and detached verifier produce `archive/editions/SHA256.zip`. The returned `archive_path` is relative to the study root. A retry checks a committed edition against its source manifest. If publication stopped before the pointer committed, a retry can finish from the recording alone. Temporary directories prefixed with `.incoming-` or `.reader-` have no custody authority. They can be inspected after interruption and removed with writers stopped. Publication renders text and transcript indexes in memory. Large recordings can require more guest memory than their transfer size suggests.
+The standard edition sealer, selection pointer, publication lock and detached verifier produce `archive/editions/SHA256.zip`. The returned `archive_path` is relative to the study root. A retry checks a committed edition against its source manifest. A run or supplement gets one immutable selection pointer. If publication stopped after the ZIP was installed, a retry can reuse those bytes and finish installing the pointer. Temporary directories prefixed with `.incoming-` have no custody authority. They can be inspected after interruption and removed with writers stopped. Publication renders text and transcript indexes in memory. Large recordings can require more guest memory than their transfer size suggests.
 
-## Importing an existing study
+## Importing a guest recording
 
-Start with the study's supported recording exporter and retain its installed runtime, original inventory and verification receipts. If a run already has a portable v2 ZIP, use those exact bytes with its recorded package digest. For a run with older inventory, the released installation can export a portable copy to a new file.
+Use the original split recording ZIP and its independently retained SHA-256.
+Select a guest study with the same collection UUID. Importing stores the original
+bytes and a custody receipt. The controller allocates future numbers above
+existing custody occurrences and the study's `reserved_through` floor.
 
-```sh
-berman recording export --historical --run run-001 --output /private/tmp/run-001.recording.zip
-berman recording verify /private/tmp/run-001.recording.zip
-```
-
-Keep the export's package digest with the migration record. Copy the collection UUID to the guest study and reserve through the highest previously allocated run number, including historical gaps, before commissioning new work there. Importing a package creates no SQLite lifecycle event. Older operation records, historical ZIPs and access receipts remain original evidence.
-
-Use the guest interpreter containing the controller package. This one-time migration example takes `digest` from the trusted export or publication receipt and `bytes` from its byte count. The SSH destination and guest paths are installation settings.
+Use the guest interpreter containing the controller package. This example takes `digest` from the trusted recording receipt and `bytes` from its byte count. The SSH destination and guest paths are installation settings.
 
 ```sh
 ssh -F "$ssh_config" "$guest" \
-  ".local/berman/bin/python -I -m berman.custody --root research/stewart --sha256 $digest --size $bytes" \
+  ".local/berman/bin/python -I -m berman.custody --root research/example --sha256 $digest --size $bytes" \
   < "$recording_zip"
 ```
 
 Only substitute a validated lowercase SHA-256 digest and decimal byte count into the remote command. The importer reads exactly the declared length and checks for EOF and digest agreement. A premature disconnect or an extra byte fails before custody commits. If the acknowledgement is lost, replay the same byte stream with the same digest. For a file already staged in the guest, use `import_recording(study, path, expected_sha256=digest)`. Both entry points return the same recording receipt.
 
-The historical importer accepts Berman's single-disk, comment-free stored or DEFLATE recording ZIPs. Bounds are 544 MiB each for uploaded and expanded bytes, 256 MiB per member, 16 MiB for the manifest, 8 MiB for the central directory and 16,384 members. It checks expansion lengths and member paths before the recording verifier checks exact membership, modes, hashes and retained authority. The original ZIP bytes are preserved. An oversized or unsupported historical package stays with the source study and its original verifier. The receipt identifies bytes accepted by the guest. Establishing their historical origin depends on the provenance of the supplied digest.
+The importer accepts Berman's single-disk, comment-free stored or DEFLATE recording ZIPs. Bounds are 544 MiB each for uploaded and expanded bytes, 256 MiB per member, 16 MiB for the manifest, 8 MiB for the central directory and 16,384 members. It checks expansion lengths and member paths before the recording verifier checks exact membership, modes, hashes and retained authority. The original ZIP bytes are preserved. The receipt identifies bytes accepted by the guest. Establishing their historical origin depends on the provenance of the supplied digest.
 
 ## Reading and analysis
 
@@ -61,6 +57,6 @@ berman recording verify /copies/recording.zip --sha256 "$recording_digest"
 berman archive --path "/copies/$edition_digest.zip"
 ```
 
-The same commands work on another machine with a compatible reader and copies of the artifacts. The split profile requires a reader with split authority support. Historical profiles and previously issued editions retain their existing verification rules. Archive builders identify their source bytes in every new edition.
+The same commands work on another machine with a compatible reader and copies of the artifacts. The split profile requires a reader with split authority support. Archive builders identify their source bytes in every new edition.
 
 Migrate the analysis repository independently onto guest-owned storage, preserving its Git history, local work and private access. Keep it outside the fieldworker packet, capture spool and connected project checkout. An analyst can read the immutable edition from there and cite the collection UUID, run, member path and digest. A worker returns notes through ordinary native staging. Neither role needs a shared macOS home mount or a restored historical checkout path.

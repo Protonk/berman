@@ -1,11 +1,4 @@
-"""Shared file, JSON, hashing and time operations; imports no other Berman module.
-
-now, digest, json_bytes, regular, read_json and atomic reproduce the frozen collector's helpers
-(capture_session.py) statement for statement, so retained bytes, digests and timestamps keep
-their recorded form. test_boundaries.py compares their syntax trees, so even a docstring or a
-reordered keyword argument in those six fails it. keep() compares bytes on retries. Other modules
-call atomic through this module, never bound by name, so interruption tests can patch it.
-"""
+"""Shared file, JSON, digest and time operations for custody and native capture."""
 from datetime import datetime, timezone
 import hashlib
 import json

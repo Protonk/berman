@@ -15,7 +15,6 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
-from types import SimpleNamespace
 from uuid import uuid4
 
 from berman import config, custody, evidence, files, protocol, recipes, schemas
@@ -244,33 +243,23 @@ class Controller:
             if request.get('recipe'):
                 raise ValueError('Choose either a recipe or a plan')
             plan_id = config.identity(plan_id, 'plan')
-            plan = config.Plan(
-                SimpleNamespace(root=self.root, path=lambda p: self.root / p), f'plans/{plan_id}/plan.json'
-            )
+            plan = config.Plan(self.root, f'plans/{plan_id}/plan.json')
             if plan.id != plan_id or plan.connection != connection:
                 raise ValueError('Selected plan belongs to a different connection or identity')
-            rows = []
+            started_steps = []
             for row in db.execute('SELECT state FROM runs ORDER BY number'):
                 prior = json.loads(row[0])
                 claim = prior['decision'].get('plan')
                 if claim and claim['id'] == plan_id and prior['connection'] == connection:
                     if 'launch' not in prior['facts'] or not prior['facts']['launch'].get('started'):
                         raise ValueError(f'Existing commission {prior["run"]} has an unresolved plan step')
-                    rows.append(
-                        {
-                            'run': prior['run'],
-                            'connection': connection,
-                            'started': True,
-                            'record': {'plan': claim, 'step': claim['step']},
-                        }
-                    )
-            step = plan.next_step(rows)
+                    started_steps.append(claim['step'])
+            step = plan.next_step(started_steps)
             selected = step['recipe']
             plan_decision = plan.reservation(step)
         if selected is None:
             raise ValueError('Choose a recipe or a research plan for this connection')
-        store = SimpleNamespace(root=self.root)
-        source = recipes.recipe(store, selected, SimpleNamespace(id=connection))
+        source = recipes.recipe(self.root, selected, connection)
         floor = files.read(self.root / 'collection.json').get('reserved_through', 0)
         imported = (p.name for p in (self.root / 'custody').glob('run-*'))
         floor = max([floor, *(int(run[4:]) for run in imported if evidence.RUN.fullmatch(run))])

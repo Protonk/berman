@@ -6,8 +6,6 @@ import sys
 # pip installs wheels as ordinary files. The executor's preparation and launch
 # receipts fingerprint these exact installed bytes.
 PACKAGE = Path(str(resources.files('berman')))
-FROZEN = '_legacy/capture_session.py'
-FROZEN_SHA256 = 'f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99'
 
 
 def version():

@@ -96,6 +96,42 @@ class ControllerTest(unittest.TestCase):
             self.call(dict(request, collection_id=str(uuid4())))
         self.assertEqual(stable_id(self.ident, 'commission', 'opening'), stable_id(self.ident, 'commission', 'opening'))
 
+    def test_plan_advances_only_after_its_commission_starts(self):
+        files.write(
+            self.root / 'plans/visits/plan.json',
+            {
+                'schema': 'berman.research-plan/1',
+                'id': 'visits',
+                'connection': 'a',
+                'steps': [{'id': name, 'recipe': 'baseline'} for name in ('opening', 'return')],
+            },
+        )
+        self.call(self.commission)
+        request = self.request('commission', connection='a', harness='codex', plan='visits')
+        first = self.call(request)
+        self.assertEqual(self.call(request), first)
+        second = self.request('commission', connection='a', harness='codex', plan='visits')
+        with self.assertRaisesRegex(ValueError, 'unresolved plan step'):
+            self.call(second)
+
+        def start(assigned):
+            observation = dict(assigned, assignment_sha256=files.digest_json(assigned))
+            for command in ('preparation', 'launch'):
+                self.call(
+                    self.request(
+                        command,
+                        run=assigned['run'],
+                        observation=dict(observation, schema=f'berman.{command}/1', started=True),
+                    )
+                )
+
+        start(first['result'])
+        later = self.call(second)
+        self.assertNotEqual(first['run'], later['run'])
+        start(later['result'])
+        with self.assertRaisesRegex(ValueError, 'sequence is complete'):
+            self.call(self.request('commission', connection='a', harness='codex', plan='visits'))
+
     def test_cut_transfer_retry_attribution_and_independent_custody(self):
         a = self.call(self.commission)['result']
         run = a['run']

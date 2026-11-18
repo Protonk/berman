@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from berman import checks
-from berman.capture import claude, collector, hooks
+from berman.capture import claude, codex, hooks
 from berman.files import Decision, digest
 
 
@@ -44,7 +44,7 @@ class ReaderTests(unittest.TestCase):
             ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'PreCompact', 'PostCompact', 'SessionEnd'),
         )
 
-    def test_the_codex_reader_is_the_frozen_collectors(self):
+    def test_codex_reader_bytes_messages_and_malformed_lines(self):
         raw = (
             json.dumps({'type': 'session_meta', 'payload': {'id': 'fixture'}})
             + '\n'
@@ -56,11 +56,11 @@ class ReaderTests(unittest.TestCase):
             )
             + '\nnot json\n'
         ).encode()
-        reader, messages, malformed = collector.capture.render(raw)
+        reader, messages, malformed = codex.render(raw)
         self.assertTrue(reader.startswith(b'CODEX FIELDWORK SESSION: DERIVED READING COPY\n'))
         self.assertIn(b'SOURCE: transcript.jsonl#L2 /payload/content/0/text', reader)
         self.assertEqual((messages, malformed), (['done'], [3]))
-        self.assertEqual(collector.capture.__name__, 'berman._legacy.capture_session')
+        self.assertEqual(digest(reader), '93e6fd703e6d87bc26c2c35f3c8ffac11992e5e27f722c972efd8935d31d2075')
 
 
 class HookRecognitionTests(unittest.TestCase):

@@ -1,4 +1,0 @@
-0 archived runs. Default connection: orchard
-orchard: plan orchard-roles: first unstarted step is accounts-first (recipe work-accounts)
-No outstanding runs.
-A co-located workspace is read-only in this version: fieldwork is commissioned and closed only through the controller and executor (berman remote). Session activity and declared engagement endings are distinct facts, and none is inferred. No files were changed.

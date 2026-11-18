@@ -1,0 +1,22 @@
+# Unreleased changes
+
+Fieldwork runs through the Linux controller and macOS executor. The standalone
+verifier checks the software from any directory. Guest recordings and their
+reading editions can be verified from detached copies.
+
+0.26.3 was the last co-located writer. 0.26.4 was the last release to open
+those workspaces and verify their recordings and editions. Use the retained
+runtime for a historical workspace. This checkout accepts the split profile
+of recording/2, including guest recordings that identify the parent capture
+through its committed pointer. Previously imported native and historical-import
+packages and inventory-based editions require the older reader.
+
+The public workspace commands, workspace verification and export have been
+removed. In a guest study use `berman-research status` and `berman-research verify RUN`.
+New editions derive their reading aids from one guest recording and record
+the new builder identity. Each run or supplement has its own selection pointer.
+A retry reuses its edition. Earlier guest editions remain verifiable in place.
+
+The native Codex renderer now lives in the capture package. An adopting
+installation must qualify its changed executor and review its hooks under
+the installation's trust procedure.

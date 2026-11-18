@@ -1,7 +1,6 @@
 """Guest custody of portable recordings. Lifecycle decisions belong to the controller."""
 
 import argparse
-from dataclasses import replace
 import errno
 import io
 import json
@@ -17,7 +16,6 @@ import zlib
 
 from berman import evidence, files, protocol
 from berman.archive import builder, package
-from berman.archive.select import BERMAN_PREFIX, Build, Edition, selection
 
 # Allow room for authority copies and JSON inventory in addition to native observations.
 MAX_PACKAGE = protocol.TOTAL_LIMIT + 32 * 1024**2
@@ -287,8 +285,15 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
         entries.append({'path': name, 'type': 'directory', 'mode': '0o700'})
         payload[name + '/'] = (b'', stat.S_IFDIR | 0o700)
     entries.sort(key=lambda item: item['path'])
-    refs = dict.fromkeys(('operation', 'migration', 'capture', 'binding', 'closure'))
-    refs.update(controller='evidence/controller.json', ending='evidence/ending.json')
+    saved_receipt = root / _place(run, supplement) / 'receipt.json'
+    if saved_receipt.exists():
+        saved = files.read(saved_receipt)
+        # These entries pin all accepted bytes, including the controller and ending records.
+        # A verified earlier split manifest may identify the same capture through its pointer.
+        if verify_recording(root, saved)['manifest']['entries'] != entries:
+            raise ValueError('Existing recording differs from requested preservation')
+        return saved
+    refs = {'capture': None, 'controller': 'evidence/controller.json', 'ending': 'evidence/ending.json'}
     if supplement is not None:
         refs['supplement'] = 'evidence/supplement.json'
     # With any file of the parent generation missing, the recording makes no claim about it.
@@ -306,7 +311,7 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
             f'Supplement {supplement} to {run}: later observations kept after the first collection froze. '
             'It neither repeats nor replaces that recording.'
         )
-    # Decode only transcripts explicitly attributed by a co-located native capture record.
+    # Decode only transcripts explicitly attributed by a native capture record.
     streams = []
     for name in sorted(blobs):
         if not name.endswith('.jsonl'):
@@ -350,95 +355,16 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
     raw_manifest = protocol.json_bytes(manifest)
     if len(raw_manifest) > MAX_MANIFEST or len(payload) >= MAX_MEMBERS:
         raise ValueError('Recording inventory exceeds custody bound')
-    saved_receipt = root / _place(run, supplement) / 'receipt.json'
-    if saved_receipt.exists():
-        saved = files.read(saved_receipt)
-        if verify_recording(root, saved)['manifest'] != manifest:
-            raise ValueError('Existing recording differs from requested preservation')
-        return saved
     payload[evidence.MANIFEST] = (raw_manifest, stat.S_IFREG | 0o644)
     data = package.make_zip(payload, '')
     return _commit(root, data, files.digest(data))
-
-
-def _selection(run, supplement=None):
-    """A supplement has its own edition pointer, so it never displaces the run's first edition."""
-    request = selection('connections', runs=(run,))
-    if supplement is not None:
-        request['supplement'] = supplement
-    return request
-
-
-def _build(view, archive, manifest):
-    """Project verified file bytes for the existing readers, using recorded metadata in the edition."""
-    run = manifest['run']
-    ident = manifest['collection_id']
-    files.write(view / 'collection.json', {'id': ident})
-    authority = view / 'recordings' / run
-    authority.mkdir(parents=True)
-    (authority / 'manifest.json').write_bytes(archive.read(evidence.MANIFEST))
-    rows = []
-    original = manifest['custody']['inventory']
-    for item in manifest['entries']:
-        name, kind = item['path'], item['type']
-        is_original = name.startswith('runs/')
-        dest = (view if is_original or name == 'runs' else authority) / name
-        if kind == 'file':
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with dest.open('xb') as out:
-                out.write(archive.read(name))
-        elif kind == 'directory':
-            dest.mkdir(exist_ok=True, parents=True)
-        if is_original:
-            target = item.get('target', '')
-            link_bytes = os.fsencode(target)
-            rows.append(
-                dict(
-                    item,
-                    size=item.get('size', len(link_bytes) if kind == 'symlink' else ''),
-                    sha256=item.get('sha256', files.digest(link_bytes) if kind == 'symlink' else ''),
-                    mtime_ns=item.get('mtime_ns', original.get('root_mtime_ns', '') if name == 'runs/' + run else ''),
-                    target=target,
-                )
-            )
-    attr = manifest['attribution']
-    connection = attr['connection']
-    choices = (connection,) if connection else ()
-    details = {
-        'id': connection,
-        'name': connection or 'unattributed',
-        'basis': attr['basis'],
-        'readers': [],
-        'checkouts': [],
-        'harness': 'unknown',
-    }
-    if manifest['profile'] == 'split':
-        details['harness'] = json.loads(archive.read(manifest['evidence']['controller']))['assignment'].get(
-            'harness', 'unknown'
-        )
-    elif manifest['evidence'].get('operation'):
-        operation = json.loads(archive.read(manifest['evidence']['operation']))
-        details['harness'] = (operation.get('harness') or {}).get('id', 'unknown')
-        if operation.get('project'):
-            details['checkouts'] = [operation['project']]
-    return Build(
-        view,
-        Edition('connections', 'BERMAN FIELDWORK', BERMAN_PREFIX, choices),
-        {'runs': [original]},
-        sorted(rows, key=lambda row: row['path']),
-        (run,),
-        {run: details},
-        True,
-        True,
-        _selection(run, (manifest.get('supplement') or {}).get('sequence')),
-    )
 
 
 def publish_edition(root, receipt):
     """Publish one verified custody occurrence as a standard, independently readable edition."""
     root = Path(root)
     data, report = _accepted(root, receipt)
-    request = _selection(receipt['run'], receipt.get('supplement'))
+    request = package.selection(receipt['run'], receipt.get('supplement'))
     with package.publication_lock(root), zipfile.ZipFile(io.BytesIO(data)) as archive:
         pointer = root / package.pointer_path(request)
         if pointer.exists():
@@ -448,17 +374,10 @@ def publish_edition(root, receipt):
                 raise ValueError('Existing edition selects different recording authority')
             result = dict(result, mode='published and verified')
         else:
-            with tempfile.TemporaryDirectory(prefix='.reader-', dir=root / 'custody') as directory:
-                build = _build(Path(directory), archive, report['manifest'])
-                generated, summary = builder.render(build)
-                links = {
-                    f'recordings/{receipt["run"]}/{row["path"]}': os.fsencode(row['target'])
-                    for row in report['manifest']['entries']
-                    if row['type'] == 'symlink'
-                }
-                payload, _ = package.seal(build, generated, summary, retained_links=links)
-                edition = package.make_zip(payload, build.edition.prefix)
-            result = package.publish_locked(replace(build, root=root), edition)
+            manifest = report['manifest']
+            generated, summary = builder.render(manifest, archive.read)
+            edition = package.seal(manifest, archive, generated, summary)
+            result = package.publish_locked(root, request, edition)
         # SQLite can commit its publish fact as soon as this function returns.
         for directory in (pointer.parent, pointer.parent.parent, root / 'archive', root):
             _dirsync(directory)

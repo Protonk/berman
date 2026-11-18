@@ -6,10 +6,6 @@ behavior. A fresh installation still needs native qualification for its actual
 CLI versions and platform: run a designated one-turn assignment and evaluate it
 with `berman remote qualify RUN`. No installation inherits another's trust.
 
-Fieldwork runs only through the controller and executor. This version carries
-no other way to prepare, launch, capture, end, preserve or supplement an
-engagement, and it creates no co-located workspace.
-
 An engagement in a guest study has these limits:
 
 - Observation follows the bound native session, not Berman's process. Codex
@@ -39,23 +35,6 @@ An engagement in a guest study has these limits:
   512 MiB bound can need more memory than a small guest has.
 - An interactive Claude launch shows Claude's own trust prompts for the checkout
   and for each new packet directory before the first turn.
-
-A co-located workspace made by release 0.26.3 or earlier is read-only here:
-
-- Anything unsettled in it has to be closed with the release that opened it.
-  This version reports the work and cannot finish, cancel, migrate or package
-  it. A study with outstanding work keeps that released runtime installed.
-- Authority does not move by itself. Moving a study to guest custody is the
-  researcher's procedure in the [deployment guide](guest-deployment.md#historical-studies):
-  export, import, and reserve every run number already used.
-- Hook trust, native capture and native access of a co-located installation are
-  not checked. Its recorded reviews, support trials and access receipts remain
-  evidence of their own dates and say nothing about this version.
-- `status` reads without locks and never compares an open capture with its
-  native source. A workspace its own release is operating at the same moment can
-  be read mid-operation; read it again when that operation has finished.
-- A run whose records cannot be read is reported as a problem. What it awaits is
-  unknown, so a clean `settled` check requires a clean `workspace` check.
 
 Research plans are optional ordered assignments. Their `commitment` and
 `relationships` fields are annotations; Berman does not enforce cross-project
@@ -87,7 +66,3 @@ Installation needs the runtime dependencies, one of which (`rpds-py`, required
 by `jsonschema`) is a compiled wheel for one platform and Python version. Their
 installed versions are recorded beside the software identity as context. Nothing
 fingerprints them; a study that needs the environment's bytes keeps the wheels.
-
-The tests of the co-located reader build their workspaces from synthetic
-records written as release 0.26.3 wrote them. They show that this version reads
-those shapes; a real workspace is the only evidence of what a real one holds.

@@ -1,13 +1,7 @@
-"""Current guidance agrees with the code: its links resolve, its commands exist and its quoted digest holds.
-
-Reads only the repository's own current guidance documents and _legacy/capture_session.py. It never
-reads beneath runs/ (links there are skipped unopened) or ~/.codex, and runs no command: each
-documented `berman` invocation is checked against the argparse help of berman_cli.main.
-"""
+"""Check links and CLI examples in the current core guidance."""
 from tests.support.paths import REPO
 import contextlib
 import functools
-import hashlib
 import io
 import os
 from pathlib import Path
@@ -20,23 +14,22 @@ from berman import cli
 ROOT = REPO
 # Current guidance and planning entry points; historical reports and preserved records are excluded.
 GUIDANCE = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/limitations.md', 'docs/development.md',
-            'docs/capture.md', 'examples/minimal-study/README.md')
+            'docs/capture.md', 'docs/custody.md', 'docs/guest-deployment.md', 'docs/connector.md',
+            'docs/executor.md', 'docs/releases/unreleased.md', 'examples/minimal-study/README.md')
 COMMANDS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/limitations.md', 'docs/capture.md',
             'examples/minimal-study/README.md')
 # Current procedure names maintained commands; experiment scripts are evidence of their own dates.
 NO_SCRIPTS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/capture.md')
-DIGESTS = ('docs/capture.md', 'docs/development.md')
 FENCE = re.compile(r'^```[^\n]*\n(.*?)^```', re.M | re.S)
 LINK = re.compile(r'\]\(([^)\s]+)\)')
 HEADING = re.compile(r'^#{1,6}[ \t]+(.+?)[ \t]*$', re.M)
 SPAN = re.compile(r'`([^`]+)`')
-COMMAND = re.compile(r'^(?:\./)?berman\s+\S')  # A bare `berman` names the program, not a command.
+COMMAND = re.compile(r'^(?:\./)?berman(?:-research)?\s+\S')  # A bare `berman` names the program, not a command.
 WORD = re.compile(r'[a-z][a-z-]*')
 NESTED = re.compile(r'^positional arguments:\n\s+\{([^}]+)\}', re.M)
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 OPTION_LINE = re.compile(r'^  (-\S[^\n]*?)(?: {2,}|$)', re.M)  # The invocation column of an options entry.
 OPTION = re.compile(r'(?:^|, )(--?[A-Za-z][\w-]*)')
-FROZEN = re.compile(r'capture_session\.py.{0,160}?SHA-256 `?([0-9a-f]{8,64})', re.S)
 SCRIPT = re.compile(r'experiments/\S*?\.py\b')
 
 
@@ -85,7 +78,8 @@ def invocations(name):
             words = shlex.split(candidate, comments=True)
         except ValueError:
             words = candidate.split()
-        found.append((candidate, words[1:]))
+        path = ('remote',) if words[0].endswith('berman-research') else ()
+        found.append((candidate, path, words[1:]))
     return found
 
 
@@ -124,13 +118,13 @@ class GuidanceTest(unittest.TestCase):
     def test_documented_commands_exist(self):
         checked = 0
         for name in COMMANDS:
-            for candidate, tokens in invocations(name):
+            for candidate, path, rest in invocations(name):
                 with self.subTest(document=name, command=candidate):
-                    path, rest = (), list(tokens)
                     while rest and rest[0].startswith('-'):
-                        flag = rest.pop(0).partition('=')[0]
-                        self.assertIn(flag, options(()), f'berman has no option {flag}')
-                        if flag == '--root' and rest:
+                        token = rest.pop(0)
+                        flag = token.partition('=')[0]
+                        self.assertIn(flag, options(path), f'{candidate} has no option {flag}')
+                        if flag == '--config' and '=' not in token:
                             rest.pop(0)
                     while rest and WORD.fullmatch(rest[0]):
                         nested = NESTED.search(usage(path)[1])
@@ -147,25 +141,11 @@ class GuidanceTest(unittest.TestCase):
 
     def test_options_are_matched_exactly(self):
         # Help text mentioning an option, or an option's prefix, is not the option itself.
-        self.assertIn('--record', options(('verify',)))
-        self.assertNotIn('--run', options(('verify',)))
-        self.assertTrue({'--verify', '--freshness', '--path'} <= options(('archive',)))  # Consecutive entries.
-        self.assertNotIn('--fresh', options(('archive',)))
-        self.assertTrue({'--root', '--json'} <= options(()))
-        # The connector's commands are documented and checked through berman remote.
+        self.assertIn('--software', options(('verify',)))
+        self.assertNotIn('--soft', options(('verify',)))
+        self.assertIn('--path', options(('archive',)))
+        self.assertIn('--json', options(()))
         self.assertTrue({'--request', '--connection', '--harness'} <= options(('remote', 'commission')))
-
-    def test_current_guidance_offers_no_command_of_the_retired_writer(self):
-        offered = {tokens[0] for name in COMMANDS for _, tokens in invocations(name) if tokens}
-        self.assertEqual(offered & set(cli.RETIRED), set())
-
-    def test_frozen_collector_digest_matches_guidance(self):
-        digest = hashlib.sha256((ROOT / 'src/berman/_legacy/capture_session.py').read_bytes()).hexdigest()
-        for name in DIGESTS:
-            self.assertTrue(FROZEN.findall(text(name)), f'{name} quotes no frozen-collector digest')
-        for name in (*GUIDANCE, 'docs/capture.md'):
-            for quoted in FROZEN.findall(text(name)):
-                self.assertTrue(digest.startswith(quoted), f'{name} quotes {quoted}; capture_session.py is {digest}')
 
     def test_current_guidance_names_no_experiment_scripts(self):
         for name in NO_SCRIPTS:

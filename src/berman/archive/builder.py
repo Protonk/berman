@@ -1,35 +1,18 @@
-#!/usr/bin/env python3
-"""Build a portable, read-only edition of the inventoried runs (stdlib only)."""
+"""Render one guest recording for reading, using only its verified ZIP members."""
 
-import argparse
 from collections import Counter
 import csv
-import datetime as dt
+from datetime import datetime, timezone
 import io
 import json
-import os
-from pathlib import Path
 import re
-import shlex
-import sys
 import tarfile
+from pathlib import Path
 
-# Stewart's specialized readers are Berman code, selected explicitly for Stewart runs.
-from berman.archive import stewart, streams
-# archive_select fixes an edition's runs, attributions and destination in a Build; this module renders it
-# into fresh Outputs; archive_package assembles, verifies and writes the payload. No state is kept between
-# builds. Selection and packaging names are also re-exported for berman_preserve and the tests.
-from berman.archive.package import (assemble, make_zip, published, publish, seal,
-                                   verify_edition, verify_published, verify_zip)
-from berman.archive.select import (ARCHIVE, BERMAN_PREFIX, CONTEXT_DOCUMENTS, EDITION_DOCUMENTS, PREFIX, SHA, STEWART,
-                            Build, Edition, inventory, load, select, selection)
+from berman import evidence, files
+from berman.archive import package, streams
 
-CONVERSATIONS = ("Codex session transcript", "Claude session transcript")
-# Edition identity names every module that selects, renders or packages it.
-BUILDER = ("builder.py", "stewart.py", "select.py", "package.py", "streams.py")
-
-
-
+BUILDER = ("builder.py", "package.py", "streams.py")
 
 
 class Outputs(dict):
@@ -47,15 +30,6 @@ class Outputs(dict):
         self.put(path, stream.getvalue())
 
 
-def stamp(value):
-    return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
-
-
-def session_kind(build, run):
-    """Label captured transcripts by their recorded harness and format, not the participant's role."""
-    return stream_kind(build, build.session_path(run) + '/transcript.jsonl')
-
-
 class Corpus:
     def __init__(self, name, label):
         self.path = f"review/{name}.txt"
@@ -65,7 +39,7 @@ class Corpus:
 
     def add(self, path, data):
         text = data.decode("utf-8")
-        self.lines += ["=" * 72, f"ORIGINAL: {path}", f"SHA256: {SHA(data)}"]
+        self.lines += ["=" * 72, f"ORIGINAL: {path}", f"SHA256: {files.digest(data)}"]
         start = len(self.lines) + 1
         source_lines = text.splitlines()
         self.lines += [f"L{i:06d} | {line}" for i, line in enumerate(source_lines, 1)]
@@ -80,188 +54,7 @@ class Corpus:
         out.put(self.path, "\n".join(self.lines) + "\n")
 
 
-def commands(build, files):
-    groups = []
-    for run in build.runs:
-        scratch = build.root / "runs" / run / "scratch"
-        paths = sorted([*scratch.glob("*.json"), *(scratch / "commands").glob("*.argv.json"),
-                        *(scratch / "commands").glob("*.command.json"),
-                        *(scratch / "logs").glob("*.json")])
-        for path in paths:
-            obj = json.loads(path.read_text())
-            if not isinstance(obj, dict) or not {"argv", "cwd"} <= obj.keys():
-                continue
-            if not isinstance(obj["argv"], list):
-                raise ValueError(f"Invalid command argv: {path}")
-            meta = path.relative_to(build.root).as_posix()
-            exit_file = ""
-            if path.name.endswith(".argv.json"):
-                stem = path.name[:-len(".argv.json")]
-                time = dt.datetime.strptime(stem, "%Y%m%dT%H%M%S.%fZ").replace(tzinfo=dt.timezone.utc).isoformat().replace("+00:00", "Z")
-                time_source = meta + " (timestamped filename)"
-                time_location = "timestamped filename"
-                exit_file = path.with_name(stem + ".exit").relative_to(build.root).as_posix()
-            elif path.name.endswith(".command.json") and "started" in obj:
-                stem = path.name[:-len(".command.json")]
-                time = obj["started"]
-                time_source = meta + "#/started"
-                time_location = "metadata /started"
-                exit_file = path.with_name(stem + ".exit").relative_to(build.root).as_posix()
-            elif "exit" in obj:
-                suffix = ".command.json" if path.name.endswith(".command.json") else ".json"
-                stem = path.name[:-len(suffix)]
-                time, exit_code = obj.get("time", ""), obj["exit"]
-                time_source = meta + "#/time" if time else "not recorded in command metadata"
-                time_location = "metadata /time" if time else "not recorded"
-                exit_source = meta + "#/exit"
-            else:
-                continue
-            if exit_file:
-                if exit_file not in files:
-                    raise ValueError(f"Missing command exit record: {exit_file}")
-                exit_code = int((build.root / exit_file).read_text().strip())
-                exit_source = exit_file
-            pair = [path.with_name(stem + ext).relative_to(build.root).as_posix() for ext in (".stdout", ".stderr")]
-            for output in pair:
-                if output not in files:
-                    raise ValueError(f"Missing command output: {output}")
-            groups.append(dict(run=run, metadata=meta, stdout=pair[0], stderr=pair[1],
-                               argv=obj["argv"], cwd=obj["cwd"], time=time, exit=exit_code,
-                               time_source=time_source, time_location=time_location,
-                               exit_source=exit_source, exit_file=exit_file))
-    return sorted(groups, key=lambda g: (g["run"], bool(not g["time"]),
-                                        stamp(g["time"]) if g["time"] else dt.datetime.min.replace(tzinfo=dt.timezone.utc),
-                                        g["metadata"]))
-
-
-def evidence_map(build, files, out):
-    rows = []
-    for manifest in sorted(files):
-        if not manifest.endswith("/manifest.json") or not build.stewart_reader(Path(manifest).parts[1]):
-            continue  # Stewart's evidence-export verification applies only to Stewart runs.
-        obj = load(build.root, manifest)
-        if not isinstance(obj, dict) or not str(obj.get("schema", "")).startswith(stewart.EVIDENCE_SCHEMA):
-            continue
-        source = obj["source"]
-        for entry in obj["entries"]:
-            path = (Path(manifest).parent / entry["file"]).as_posix()
-            if path not in files or files[path]["sha256"] != entry["sha256"] or files[path]["size"] != entry["size"]:
-                raise ValueError(f"Export identity check failed: {path}")
-            rows.append({"run": Path(manifest).parts[1], "manifest": manifest,
-                         "audit_id": source["audit_id"], "workspace": source["workspace"],
-                         "source_kind": source["kind"], "source_record": source["record"],
-                         "source_receipt_sha256": source["receipt_sha256"],
-                         "selector": entry["selector"], "path": path,
-                         "size": entry["size"], "sha256": entry["sha256"], "verification": "size and SHA-256 match"})
-    out.table("review/evidence-map.csv", rows, ["run", "manifest", "audit_id", "workspace", "source_kind", "source_record", "source_receipt_sha256", "selector", "path", "size", "sha256", "verification"])
-    return rows
-
-
-def stream_kind(build, path):
-    parts = Path(path).parts
-    run = parts[1] if len(parts) > 1 else ""
-    if path.endswith('.jsonl'):
-        format_name = build.stream(path)['format']
-        if format_name in ('codex-jsonl/1', 'claude-jsonl/1'):
-            return 'Codex session transcript' if format_name == 'codex-jsonl/1' else 'Claude session transcript'
-    return stewart.stream_kind(parts) if build.stewart_reader(run) else ""
-
-
-def decoded(build, path):
-    data = (build.root / path).read_bytes()
-    source = {'collection_id': build.collection_id, 'run': Path(path).parts[1],
-              'source_path': path, 'source_sha256': SHA(data)}
-    descriptor = build.stream(path)
-    records, blocks = streams.decode(data, descriptor['format'], source)
-    for row in records:
-        row.update(format_basis=descriptor['basis'], format_authority=descriptor['authority'])
-    return records, blocks
-
-
-def chronology(build, groups, files, out):
-    rows = []
-    def event(time, kind, path, line, end, detail):
-        rows.append({"time_utc": stamp(time).isoformat().replace("+00:00", "Z"), "recorded_time": time,
-                     "kind": kind, "source_path": path, "line_start": line, "line_end": end, "detail": detail})
-    for g in groups:
-        if not g["time"]:
-            continue  # Untimed command metadata stays indexed without invented dates.
-        event(g["time"], "command invocation start (" + ("timestamped filename" if g["time_location"] == "timestamped filename" else "metadata field") + ")", g["metadata"], 1,
-              len((build.root / g["metadata"]).read_text().splitlines()), shlex.join(g["argv"]))
-    for run in build.runs:
-        path = f"runs/{run}/narrative.md"
-        # Packets in the notes layout supply no narrative placeholder.
-        lines = (build.root / path).read_text().splitlines() if path in files else []
-        markers = [(i, line) for i, line in enumerate(lines) if re.fullmatch(r"\d{4}-\d\d-\d\dT\S+", line)]
-        for pos, (line, time) in enumerate(markers):
-            end = markers[pos + 1][0] if pos + 1 < len(markers) else len(lines)
-            event(time, "manager narrative entry (attributed account)", path, line + 1, end,
-                  " ".join(lines[line + 1:end]).strip())
-        path = f"runs/{run}/git-commands.log"
-        if path in files:
-            for i, line in enumerate((build.root / path).read_text().splitlines(), 1):
-                time, command = line.split(" | ", 1)
-                event(time, "Git command log entry", path, i, i, command)
-        for path in sorted(files):
-            kind = stream_kind(build, path)
-            if not path.startswith(f"runs/{run}/") or not kind:
-                continue
-            if kind in CONVERSATIONS:
-                records, _ = decoded(build, path)
-                for row in records:
-                    if row['decode_status'] not in ('decoded', 'partial') or not row['time']:
-                        continue
-                    try:
-                        event(row['time'], kind, path, row['line'], row['line'], str(row['record_kind']))
-                    except (ValueError, TypeError, AttributeError):
-                        pass  # Original non-date fields remain indexed without invented timestamps.
-                continue
-            for i, line in enumerate((build.root / path).read_bytes().splitlines(), 1):
-                try:
-                    obj = json.loads(line)
-                except (ValueError, UnicodeError):
-                    continue  # The transcript map reports malformed records; originals remain intact.
-                if not isinstance(obj, dict):
-                    continue
-                time = obj.get("timestamp") or obj.get("time")
-                if time:
-                    payload = obj.get('payload', {})
-                    detail = payload.get('type', obj.get('type', obj.get('event', ''))) if isinstance(payload, dict) else obj.get('type', '')
-                    try:
-                        event(time, kind, path, i, i, str(detail))
-                    except (ValueError, TypeError):
-                        pass  # A non-date field is not an event timestamp.
-    rows.sort(key=lambda r: (stamp(r["time_utc"]), r["source_path"], r["line_start"]))
-    out.table("review/chronology.csv", rows, ["time_utc", "recorded_time", "kind", "source_path", "line_start", "line_end", "detail"])
-    return rows
-
-
-def accommodations(build, files, groups, out):
-    rows = []
-    origins = build.origins
-    for path in sorted(files):
-        rel = Path(path)
-        candidate = (len(rel.parts) == 4 and rel.suffix in (".py", ".sh")) or rel.name in ("projection-spec.json", "PROJECTION-SPEC.json", "launch-adaptation.json") or ("/audits/" in path and rel.suffix == ".py")
-        if not candidate:
-            continue
-        descriptions = stewart.DESCRIPTIONS if build.stewart_reader(rel.parts[1]) else {}
-        role, purpose = descriptions.get(rel.name, ("saved launch shell" if rel.suffix == ".sh" else "saved code", "Preserved program text; inspect its source and related records. No necessity or usability verdict is assigned."))
-        invocations = []
-        # Historical argv used the run's recorded original location.
-        origin = origins.get(rel.parts[1])
-        oldpath = origin + path[len("runs/" + rel.parts[1]):] if origin else None
-        for group in groups:
-            if (oldpath and oldpath in group["argv"]) or str(build.root / path) in group["argv"]:
-                invocations.append(group["metadata"])
-        rows.append({"run": rel.parts[1], "path": path, "role": role, "description": purpose,
-                     "basis": "program text or saved specification; classification is navigation only",
-                     "recorded_direct_invocations": " | ".join(invocations),
-                     "invocation_limit": "Only exact argv matches in saved command metadata; this is not a complete execution inventory."})
-    out.table("review/accommodations.csv", rows, ["run", "path", "role", "description", "basis", "recorded_direct_invocations", "invocation_limit"])
-    return rows
-
-
-def transcripts(build, files, out):
+def transcripts(manifest, originals, read, out):
     records, blocks = [], []
     rendered = ["DECODED NATIVE STREAMS", "",
                 "Visible text and tool blocks selected by each stream's declared native format.",
@@ -269,9 +62,27 @@ def transcripts(build, files, out):
                 "Raw inclusion and decoded coverage are separate columns in transcript-map.csv.",
                 "Unknown formats, unsupported records and private content remain in the original files.",
                 "Each block cites the original file digest, physical JSONL line and JSON pointer.", ""]
-    for path in sorted(files):
+    formats = {row['path']: row['format'] for row in manifest['streams']}
+    authority = package.edition_path(manifest['run'], 'recording.json')
+    chronology = []
+    for path in sorted(originals):
         if path.endswith('.jsonl'):
-            source_records, source_blocks = decoded(build, path)
+            source = {'collection_id': manifest['collection_id'], 'run': manifest['run'],
+                      'source_path': path, 'source_sha256': originals[path]['sha256']}
+            fmt = formats.get(path, 'unknown')
+            source_records, source_blocks = streams.decode(read(path), fmt, source)
+            for row in source_records:
+                row.update(format_basis='recording manifest' if path in formats else 'no stream declaration in recording manifest',
+                           format_authority=authority)
+                if row['time'] and row['decode_status'] in ('decoded', 'partial'):
+                    try:
+                        time = datetime.fromisoformat(row['time'].replace('Z', '+00:00'))
+                    except (ValueError, TypeError, AttributeError):
+                        continue
+                    if time.tzinfo is not None:
+                        chronology.append({'time_utc': time.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                                           'recorded_time': row['time'], 'kind': fmt, 'source_path': path,
+                                           'line_start': row['line'], 'line_end': row['line'], 'detail': row['record_kind']})
             records.extend(source_records)
             blocks.extend(source_blocks)
     for item in blocks:
@@ -293,597 +104,135 @@ def transcripts(build, files, out):
             'raw_records': len(records), 'decoded_blocks': len(blocks), 'records_by_status': dict(coverage),
             'meaning': 'Coverage of this decoder selection only; raw inclusion establishes neither decoding nor complete encounter capture.'},
             ensure_ascii=False, indent=2) + "\n")
+    out.table('review/chronology.csv', sorted(chronology, key=lambda r: (r['time_utc'], r['source_path'], r['line_start'])),
+              ['time_utc', 'recorded_time', 'kind', 'source_path', 'line_start', 'line_end', 'detail'])
 
 
-def external_references(build, files, out):
-    rows = []
-    # Home directories come from recorded original locations, not from the current user.
-    included = {entry["path"] for entry in build.entries}
-    homes = sorted({"/".join(Path(r["original_root"]).parts[1:3]) for r in build.layout["runs"]
-                    if r.get("original_root", "").startswith(("/Users/", "/home/"))})
-    pattern = re.compile(r"/(?:" + "|".join([*map(re.escape, homes), "opt/homebrew", "private/tmp", "tmp"]) + r")/[^\s\"'<>`\\]+")
-    checkouts = {}
-    for run in build.runs:
-        for checkout in build.connection(run)["checkouts"]:
-            checkouts.setdefault(checkout, build.connection(run)["name"])
-    for path in sorted(files):
-        if path.endswith(".tar"):
-            continue
-        try:
-            text = (build.root / path).read_text(encoding="utf-8")
-        except UnicodeError:
-            continue
-        for line_no, line in enumerate(text.splitlines(), 1):
-            for original in sorted({m.group(0).rstrip(".,;:)]}") for m in pattern.finditer(line)}):
-                mapped = ""
-                category = "external environment or path"
-                for run in build.layout["runs"]:
-                    old = run.get("original_root")
-                    if not old:
-                        continue
-                    if original == old or original.startswith(old + "/"):
-                        mapped = run["current_root"] + original[len(old):]
-                        category = "relocated fieldwork reference"
-                        break
-                if not mapped:
-                    for checkout, name in checkouts.items():
-                        if original.startswith(checkout + "/"):
-                            category = f"external {name} repository or custody record"
-                            break
-                exists = mapped in included
-                rows.append({"source_path": path, "source_line": line_no, "original_path": original,
-                             "archive_path": mapped, "classification": category,
-                             "target_in_archive": "yes" if exists else "no",
-                             "limit": "Lexical path reference; not an assertion that this path was accessed."})
-    out.table("review/external-references.csv", rows, ["source_path", "source_line", "original_path", "archive_path", "classification", "target_in_archive", "limit"])
-
-
-def runtime_members(build, files, out):
-    rows = []
-    for path in sorted(files):
-        if not path.endswith(".tar"):
-            continue
-        with tarfile.open(build.root / path, "r:") as archive:
-            for member in archive:
-                payload = archive.extractfile(member) if member.isfile() else None
-                rows.append({"archive_path": path, "archive_sha256": files[path]["sha256"],
-                             "member": member.name, "kind": "file" if member.isfile() else "other",
-                             "size": member.size, "sha256": SHA(payload.read()) if payload else "",
-                             "link_target": member.linkname})
-    out.table("review/runtime-members.csv", rows, ["archive_path", "archive_sha256", "member", "kind", "size", "sha256", "link_target"])
-
-
-def context_order(run, files):
-    """Name the collection-time context a run actually supplies, in either recorded layout."""
-    base = f"runs/{run}/context/"
-    present = lambda rel: any(p.startswith(base + rel) for p in files)
-    if present("initial-stewart/") or present("closing-stewart/"):
-        return ["3. context/initial-stewart/ and context/closing-stewart/ for selected project documents before and after the encounter.",
-                "4. context/collection.json and other context receipts for source identities, selection and coverage."]
-    documents = [d for d in ("berman/preparation/initial-project/", "berman/preparation/initial-stewart/", "berman/closing-project/") if present(d)]
-    if not documents:
-        return ["3. No collection-time project context is supplied within this run."]
-    receipts = [r for r in ("berman/COLLECTION.txt", "berman/ending.json", "berman/source-coverage.json") if present(r)]
-    return ["3. " + " and ".join("context/" + d for d in documents) + " for selected project documents at preparation and after the declared ending.",
-            "4. " + ", ".join("context/" + r for r in receipts) + " and context/berman/preparation/ for collection scope, the declared ending, source coverage and preparation receipts."]
-
-
-def split_manifest(build, run):
-    return next((row["manifest"] for row in build.source_manifests
-                 if row["run"] == run and (row["manifest"] or {}).get("profile") == "split"), None)
-
-
-def readers(build, files, groups, evidence, aids, mappings, out):
-    for run in build.runs:
-        historical = build.stewart_reader(run)
-        session = build.session_path(run)
-        metadata_path = f"runs/{run}/run.json"
-        notes_protocol = metadata_path in files and load(build.root, metadata_path).get("recording_protocol") in ("work-accounts/1", "participant-inquiry/1")
-        split = split_manifest(build, run)
-        packet = "packet/" if split else ""
-        note_paths = sorted(p for p in files if p.startswith(f"runs/{run}/{packet}notes/") and p.endswith((".md", ".txt")))
-        narrative_path = f"runs/{run}/narrative.md"
-        lines = [f"{build.connection(run)['name'].upper()} FIELDWORK: {run}", ""]
-        if build.edition.name != "stewart":
-            lines += [f"Connection: {build.connection(run)['id']} (attributed by {build.connection(run)['basis']})", ""]
-        lines += ["This is a navigation aid, not an analysis of the encounter.",
-                  "Original paths begin runs/. Historical absolute paths have not been rewritten.",
-                  "Use review/text-map.csv to locate any original in a readable corpus.", "",
-                  f"Regular files: {sum(p.startswith('runs/' + run + '/') for p in files)}",
-                  f"Standalone command metadata records: {sum(g['run'] == run for g in groups)}",
-                  "This count excludes tool calls recorded inside manager session transcripts." if historical else
-                  "This count excludes tool calls recorded inside session transcripts.", ""]
-        if historical and any(e["run"] == run for e in evidence):
-            lines.append("EVIDENCE EXPORTS (source identities from their existing manifests)")
-            seen = set()
-            for e in evidence:
-                if e["run"] == run and e["manifest"] not in seen:
-                    seen.add(e["manifest"])
-                    lines.append(f"{e['audit_id']} | {e['source_kind']} {e['source_record']} | {e['manifest']}")
-            lines.append("")
-        saved = [f"{a['path']} | {a['role']}" for a in aids if a["run"] == run]
-        if saved:
-            lines += ["SAVED PROGRAMS AND VIEW SPECIFICATIONS", *saved]
-        if split:
-            lines += ["SPLIT FIELDWORK", f"Controller receipts: recordings/{run}/evidence/controller.json",
-                      "packet/ contains the worker-facing material and any returned notes.",
-                      "initial-project/ and final-project/ contain project context when collected.",
-                      "Recorded limitations:", *(split["coverage"]["unknown"] or ["No explicit limitation recorded."]), ""]
-        elif notes_protocol:
-            lines += ["", "READING ORDER", "1. Opening assignment, recording instructions and participant notes, reproduced below with original line numbers.",
-                      f"2. {session}/conversation.txt and review/events.txt for the recorded main conversation and tools.",
-                      *context_order(run, files), "",
-                      f"Participant notes supplied: {len(note_paths)}."]
-            if narrative_path in files:
-                lines.append("narrative.md and scratch/ are collector-layout placeholders; those old recording tasks were not assigned.")
-            lines += ["Participant accounts and collection-time context remain distinct from the session record.", ""]
-        elif historical:
-            lines += stewart.HISTORICAL_READING_ORDER
+def artifact_indexes(originals, read, out):
+    """Index retained tar members and lexical environment paths without following them."""
+    tar_rows, references = [], []
+    path_pattern = re.compile(r"""/(?:opt/homebrew|private/tmp|tmp)/[^\s"'<>\\\x60]+""")
+    for path, row in sorted(originals.items()):
+        data = read(path)
+        if path.endswith('.tar'):
+            try:
+                with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
+                    for entry in archive:
+                        member = archive.extractfile(entry) if entry.isfile() else None
+                        tar_rows.append({'archive_path': path, 'archive_sha256': row['sha256'],
+                            'member': entry.name, 'kind': 'file' if member else 'other', 'size': entry.size,
+                            'sha256': files.digest(member.read()) if member else '', 'link_target': entry.linkname})
+            except tarfile.TarError:
+                continue  # A file named .tar remains part of the recording even if it cannot be indexed.
         else:
-            lines += ["", "READING ORDER", "1. Recording instructions and any narrative, reproduced below with original line numbers.",
-                      "2. review/events.txt, review/commands.txt and review/chronology.csv for interactions and recorded times.",
-                      "Do not treat a missing row as proof that an action did not occur.", ""]
-        conversations = [p for p in sorted(files) if (historical and stewart.is_conversation_export(p, run)) or p in
-                         (session + '/transcript.jsonl', session + '/conversation.txt')]
-        lines += ["INCLUDED MANAGER CONVERSATION FILES" if historical else "INCLUDED SESSION CONVERSATION FILES",
-                  *(conversations or ["No manager conversation file supplied within this run." if historical else
-                                      "No session conversation file supplied within this run."]), ""]
-        associated_root = f"runs/{run}/" + ("associated/" if split else "associated-sessions/")
-        associated = [p for p in sorted(files) if p.startswith(associated_root) and p.endswith('/transcript.jsonl')]
-        if associated:
-            lines += ['ASSOCIATED NATIVE SESSIONS', *associated,
-                      f'{associated_root}sources.json records selection and coverage.',
-                      'These are associated sources; their presence makes no child-completion claim.', '']
-        narrative = (build.root / narrative_path).read_text() if narrative_path in files else None
-        if narrative is not None and not notes_protocol and not re.search(r"^\d{4}-\d\d-\d\dT\S+$", narrative, re.MULTILINE):
-            lines += ["The narrative has no timestamp headings. Its paragraph times are not inferred in chronology.csv.", ""]
-        lines += ["See review/recording-layouts.csv for command timestamp and exit-code provenance.", ""]
-        reading_names = [packet + "ASSIGNMENT.md", packet + "INSTRUCTIONS.md", *[p.removeprefix(f"runs/{run}/") for p in note_paths]] if (split or notes_protocol) else ["INSTRUCTIONS.md", "narrative.md", "git-commands.log"]
-        for name in reading_names:
-            path = f"runs/{run}/{name}"
-            if name == "git-commands.log" and path not in files:
-                lines += ["No separate git-commands.log supplied (optional).", ""]
+            try:
+                lines = data.decode('utf-8').splitlines()
+            except UnicodeError:
                 continue
-            if path not in files:
-                continue
-            lines += ["=" * 72, f"ORIGINAL: {path}"]
-            lines += [f"L{i:06d} | {line}" for i, line in enumerate((build.root / path).read_text().splitlines(), 1)]
-            lines.append("")
-        for path in sorted(files):
-            if historical and stewart.assignment_source(path, run):
-                m = mappings[path]
-                lines.append(f"ASSIGNMENT SOURCE: {path} -> {m['corpus']}:{m['corpus_line_start']}")
-        out.put(f"review/{run}.txt", "\n".join(lines) + "\n")
+            for number, line in enumerate(lines, 1):
+                for ref in sorted({m.group().rstrip('.,;:)]}') for m in path_pattern.finditer(line)}):
+                    references.append({'source_path': path, 'source_line': number, 'original_path': ref,
+                        'archive_path': '', 'classification': 'external environment or path', 'target_in_archive': 'no',
+                        'limit': 'Lexical path reference; not an assertion that this path was accessed.'})
+    out.table('review/runtime-members.csv', tar_rows, ['archive_path', 'archive_sha256', 'member', 'kind', 'size', 'sha256', 'link_target'])
+    out.table('review/external-references.csv', references, ['source_path', 'source_line', 'original_path', 'archive_path', 'classification', 'target_in_archive', 'limit'])
 
 
-def edition_record(build):
-    """Deterministic edition identity: selection, attribution, namespace and builder bytes."""
-    builder = {name: SHA((Path(__file__).parent / name).read_bytes()) for name in BUILDER}
-    return {"schema": "berman.archive-edition/2", "collection_id": build.collection_id,
-            "edition": build.edition.name, "namespace": build.edition.prefix,
-            "connections": list(build.edition.connections),
-            "runs": [{"run": run, "connection": build.connection(run)["id"], "attribution": build.connection(run)["basis"],
-                      "name": build.connection(run)['name'], "harness": build.connection(run)['harness'],
-                      "checkouts": build.connection(run)['checkouts'],
-                      "readers": build.connection(run)["readers"] or ["common"]} for run in build.runs],
-            "builder_sha256": builder,
-            "foundation_sha256": {name: SHA((Path(__file__).parent.parent / name).read_bytes())
-                                  for name in ("evidence.py", "files.py", "snapshots.py")},
-            "meaning": "Selection and readers for this edition. Connection-specific explanations apply only to their own runs."}
-
-
-def render(build):
-    """Every generated reading aid for one edition, as fresh Outputs, and the build summary."""
+def render(manifest, read):
+    """Index the assignment, notes and native streams while retaining every original."""
     out = Outputs()
-    entries = build.entries
-    files = build.files
-    groups = commands(build, files)
-    command_paths = {g[k] for g in groups for k in ("metadata", "stdout", "stderr", "exit_file") if g[k]}
-    canonical = {}
-    for path in sorted(files, key=lambda p: (p not in command_paths, "/evidence/" in p, p)):
-        canonical.setdefault(files[path]["sha256"], path)
-    manifest = []
-    for r in entries:
-        row = {k: r[k] for k in ("path", "type", "mode", "mtime_ns", "size", "sha256", "target")}
-        row["duplicate_of"] = ""
-        if r["type"] == "file" and canonical[r["sha256"]] != r["path"]:
-            row["duplicate_of"] = canonical[r["sha256"]]
-        manifest.append(row)
-    out.table("manifest.csv", manifest, ["path", "type", "mode", "mtime_ns", "size", "sha256", "target", "duplicate_of"])
-    corpora = {n: Corpus(n, build.edition.label) for n in ("commands", "artifacts", "source")}
-    mappings = {}
-    command_rows = []
-    for g in groups:
-        # A shell argument can itself contain newlines; offsets count physical lines.
-        header = [f"INVOCATION: {g['metadata']}", f"RECORDED START: {g['time'] or 'not recorded'} | SOURCE: {g['time_source']}",
-                  f"CWD: {g['cwd']}", f"ARGV (shell display): {shlex.join(g['argv'])}",
-                  f"PROCESS EXIT: {g['exit']} | SOURCE: {g['exit_source']} (no success/failure inference)"]
-        corpora["commands"].lines += "\n".join(header).splitlines() + [""]
-        for key in ("metadata", "stdout", "stderr", "exit_file"):
-            path = g[key]
-            if not path:
-                continue
-            mappings[path] = corpora["commands"].add(path, (build.root / path).read_bytes())
-        command_rows.append({k: g[k] for k in ("run", "time", "time_source", "metadata", "stdout", "stderr", "cwd", "exit", "exit_source", "exit_file")} | {"argv_json": json.dumps(g["argv"], ensure_ascii=False)})
-    out.table("review/command-index.csv", command_rows, ["run", "time", "time_source", "metadata", "stdout", "stderr", "cwd", "exit", "exit_source", "exit_file", "argv_json"])
-    layout_rows = []
-    for run in build.runs:
-        selected = [g for g in groups if g["run"] == run]
-        narrative = (build.root / f"runs/{run}/narrative.md").read_text() if f"runs/{run}/narrative.md" in files else ""
-        metadata_path = f"runs/{run}/run.json"
-        protocol = load(build.root, metadata_path).get("recording_protocol", "historical narrative/scratch") if metadata_path in files else "historical narrative/scratch"
-        split = split_manifest(build, run)
-        if split:
-            protocol = "berman.connector/1"
-        notes = f"runs/{run}/" + ("packet/notes/" if split else "notes/")
-        layout_rows.append({"run": run, "saved_invocations": len(selected),
-                            "recording_protocol": protocol,
-                            "participant_notes": " | ".join(sorted(p for p in files if p.startswith(notes) and p.endswith((".md", ".txt")))),
-                            "metadata_patterns": " | ".join(sorted({"scratch/commands/<UTC timestamp>.argv.json" if g["metadata"].endswith(".argv.json") else "scratch/commands/<sequence>-<label>.command.json" if "/scratch/commands/" in g["metadata"] else "scratch/logs/<sequence>-<label>.json" if "/scratch/logs/" in g["metadata"] else "scratch/<name>" + (".command.json" if g["metadata"].endswith(".command.json") else ".json") for g in selected})),
-                            "time_location": " | ".join(sorted({g["time_location"] for g in selected})),
-                            "exit_location": " | ".join(sorted({"separate .exit file" if g["exit_file"] else "metadata /exit" for g in selected})),
-                            "narrative_timestamp_headings": ("not requested (placeholder)" if f"runs/{run}/narrative.md" in files else "not requested (no placeholder)") if protocol in ("work-accounts/1", "participant-inquiry/1") else ("yes" if re.search(r"^\d{4}-\d\d-\d\dT\S+$", narrative, re.MULTILINE) else "no"),
-                            "git_command_log": "supplied" if f"runs/{run}/git-commands.log" in files else "not supplied (optional)",
-                            "captured_session": build.session_path(run) + "/transcript.jsonl" if build.session_path(run) + "/transcript.jsonl" in files else "",
-                            "recording_helper": " | ".join(p for p in (f"runs/{run}/scratch/manage.py", f"runs/{run}/scratch/record-command.py") if p in files),
-                            "supplied_context": stewart.RUN_NOTES.get(run, "") if build.stewart_reader(run) else "",
-                            "scope": "Saved invocations count standalone command metadata only; transcript tool calls are indexed separately. Layout description only; no usability or causal conclusion."})
-    out.table("review/recording-layouts.csv", layout_rows, ["run", "recording_protocol", "participant_notes", "saved_invocations", "metadata_patterns", "time_location", "exit_location", "narrative_timestamp_headings", "git_command_log", "captured_session", "recording_helper", "supplied_context", "scope"])
-    for path in sorted(set(canonical.values())):
-        if path in mappings:
-            continue
-        data = (build.root / path).read_bytes()
-        try:
-            if path.endswith(".tar") or b"\0" in data:
-                raise UnicodeError("Binary payload")
-            data.decode("utf-8")
-        except UnicodeError:
-            mappings[path] = {"corpus": "review/runtime-members.csv" if path.endswith(".tar") else "raw binary only", "corpus_line_start": "", "corpus_line_end": "", "source_lines": ""}
-            continue
-        source = bool(re.match(r"^runs/[^/]+/scratch/(?:manager(?:-[0-9]+)?|manager-repo)/", path)) and "/audits/" not in path and "/.git/" not in path and not path.endswith("/.git")
-        name = "source" if source else "artifacts"
-        mappings[path] = corpora[name].add(path, data)
-    text_rows = []
-    for path in sorted(files):
-        canonical_path = canonical[files[path]["sha256"]]
-        m = mappings.get(path, mappings[canonical_path])
-        mappings[path] = m
-        text_rows.append({"original_path": path, "rendered_original": path if path in command_paths else canonical_path,
-                          "sha256": files[path]["sha256"], **m})
-    out.table("review/text-map.csv", text_rows, ["original_path", "rendered_original", "sha256", "corpus", "corpus_line_start", "corpus_line_end", "source_lines"])
-    for c in corpora.values():
-        c.finish(out)
-    evidence = evidence_map(build, files, out)
-    events = chronology(build, groups, files, out)
-    aids = accommodations(build, files, groups, out)
-    transcripts(build, files, out)
-    external_references(build, files, out)
-    runtime_members(build, files, out)
-    readers(build, files, groups, evidence, aids, mappings, out)
-    counts = Counter(r["type"] for r in entries)
-    out.put("review/EDITION.json", json.dumps(edition_record(build), ensure_ascii=False, indent=2) + "\n")
-    if build.edition.name != "stewart":
-        out.put("ARCHIVE-GUIDE.txt", connections_guide(build, counts, groups, events, evidence))
-    else:
-        out.put("ARCHIVE-GUIDE.txt", stewart_guide(build, counts, groups, events, evidence))
-    return out, finish_outputs(build, out, text_rows, counts, groups, evidence)
+    run = manifest['run']
+    base = f'runs/{run}/'
+    entries = [row for row in manifest['entries'] if row['path'] == base[:-1] or row['path'].startswith(base)]
+    originals = {row['path']: row for row in entries if row['type'] == 'file'}
+    counts = Counter(row['type'] for row in entries)
+    controller = json.loads(read(manifest['evidence']['controller']))
+    connection = controller['connection']
+    notes = sorted(p for p in originals if p.startswith(base + 'packet/notes/') and p.endswith(('.md', '.txt')))
+    reader = [f'{connection.upper()} FIELDWORK: {run}', '',
+              f'Controller receipts: recordings/{run}/evidence/controller.json',
+              'Recorded limitations:', *(manifest['coverage']['unknown'] or ['No explicit limitation recorded.']), '']
+    capture, _ = evidence.primary_capture(manifest, controller, read)
+    conversations = []
+    transcript = ''
+    if capture:
+        folder = capture.rsplit('/', 1)[0]
+        transcript = folder + '/transcript.jsonl'
+        conversations.extend(p for p in (transcript, folder + '/conversation.txt') if p in originals)
+    out.table('review/recording-layouts.csv', [{
+        'run': run,
+        'recording_protocol': 'berman.connector/1',
+        'participant_notes': ' | '.join(notes),
+        'captured_session': transcript,
+    }], ['run', 'recording_protocol', 'participant_notes', 'captured_session'])
+    conversations.extend(sorted(p for p in originals if p.startswith(base + 'associated/') and p.endswith('/transcript.jsonl')))
+    reader += ['Session files:', *(conversations or ['No session transcript supplied.']), '']
+    for path in [base + 'packet/ASSIGNMENT.md', base + 'packet/INSTRUCTIONS.md', *notes]:
+        if path in originals:
+            reader.append('ORIGINAL: ' + path)
+            try:
+                lines = read(path).decode('utf-8').splitlines()
+            except UnicodeError:
+                reader.append('See the original bytes for this non-UTF-8 member.')
+            else:
+                reader.extend(f'L{i:06d} | {line}' for i, line in enumerate(lines, 1))
+            reader.append('')
+    out.put(f'review/{run}.txt', '\n'.join(reader) + '\n')
 
+    # Equal bytes may share a rendered copy. Every occurrence keeps its own inventory row.
+    corpus = Corpus('artifacts', 'BERMAN FIELDWORK')
+    canonical, mapped, rows = {}, {}, []
+    for path, row in sorted(originals.items()):
+        digest = row['sha256']
+        first = canonical.setdefault(digest, path)
+        if first == path:
+            data = read(path)
+            try:
+                if b'\0' in data:
+                    raise UnicodeError
+                mapped[first] = corpus.add(path, data)
+            except UnicodeError:
+                mapped[first] = {'corpus': 'raw binary only', 'corpus_line_start': '', 'corpus_line_end': '', 'source_lines': ''}
+        rows.append({'original_path': path, 'rendered_original': first, 'sha256': digest, **mapped[first]})
+    corpus.finish(out)
+    out.table('review/text-map.csv', rows, ['original_path','rendered_original','sha256','corpus','corpus_line_start','corpus_line_end','source_lines'])
+    fields = ['path','type','mode','mtime_ns','size','sha256','target']
+    inventory = []
+    for row in entries:
+        item = {key: row.get(key, '') for key in fields}
+        if row['type'] == 'symlink':
+            target = read(row['path'])
+            item.update(sha256=files.digest(target), size=len(target))
+        first = canonical.get(row.get('sha256'))
+        item['duplicate_of'] = first if row['type'] == 'file' and first != row['path'] else ''
+        inventory.append(item)
+    out.table('manifest.csv', inventory, [*fields, 'duplicate_of'])
+    artifact_indexes(originals, read, out)
+    transcripts(manifest, originals, read, out)
+    folder = Path(__file__).parent
+    identity = {'schema': 'berman.archive-edition/2', 'collection_id': manifest['collection_id'],
+                'edition': 'connections', 'namespace': package.PREFIX, 'connections': [connection],
+                'runs': [{'run': run, 'connection': connection, 'attribution': manifest['attribution']['basis'],
+                          'name': connection, 'harness': controller['assignment']['harness'], 'checkouts': [], 'readers': ['common']}],
+                'builder_sha256': {name: files.digest((folder / name).read_bytes()) for name in BUILDER},
+                'foundation_sha256': {name: files.digest((folder.parent / name).read_bytes()) for name in ('evidence.py', 'files.py')}}
+    out.put('review/EDITION.json', json.dumps(identity, ensure_ascii=False, indent=2) + '\n')
+    out.put('ARCHIVE-GUIDE.txt', f"""BERMAN FIELDWORK
+Collection {manifest['collection_id']}, connection {connection}, {run}
 
-def stewart_guide(build, counts, groups, events, evidence):
-    return f"""STEWART ANALYSIS ARCHIVE GUIDE
+Begin with review/{run}.txt for the assignment, participant notes, session paths
+and recorded coverage. Original files are under {base}. The controller receipts
+are under recordings/{run}/evidence/.
 
-Included runs: {', '.join(build.runs)}
+review/recording-layouts.csv lists the participant notes and primary transcript.
+review/events.txt and review/decoded-blocks.jsonl cite the underlying transcript
+lines. review/transcript-map.csv and review/decoded-coverage.json describe which
+records the native decoders interpreted. review/chronology.csv indexes their
+recorded times. review/text-map.csv locates originals in review/artifacts.txt.
+review/runtime-members.csv indexes tar members. review/external-references.csv
+lists lexical references to external environment paths.
 
-This generated guide describes the preservation and reading edition of
-{len(build.runs)} recorded runs. README.md introduces the investigation and links its
-research framing. framing/working_in_a_berman_archive.md guides analytical work
-with the material. Developing inquiry and findings have a place in inquiry/.
-The source for this guide and the reading aids is berman.archive.builder.
-
-FIND MATERIAL
-  {', '.join('review/' + run + '.txt' for run in build.runs)}:
-    instructions, narrative or participant notes, any supplied Git log,
-    assignment-source locations, evidence identities and saved-program list.
-  review/command-index.csv and review/commands.txt: {len(groups)} standalone command records,
-    recorded argv/cwd/start/exit plus full original metadata, stdout and stderr.
-    Unrecorded timestamps remain blank and do not enter chronology.csv.
-  review/chronology.csv: {len(events)} explicitly timestamped records, with source
-    attribution. An invocation timestamp is its start, not its completion.
-  review/evidence-map.csv: {len(evidence)} exported selections, all verified against
-    their existing manifests. Reports remain attributed auditor statements.
-  review/accommodations.csv: saved scripts and view specifications, described
-    for navigation without judging whether they were necessary.
-  review/recording-layouts.csv: each run's command layout, timestamp location,
-    exit-code location, optional Git log, captured manager session and presence
-    or absence of narrative timestamp headings. Command counts exclude tool
-    calls indexed separately from session transcripts.
-  review/text-map.csv: every regular original mapped to a readable corpus or
-    binary-member inventory. Identical content is rendered once where useful;
-    every original occurrence stays in runs/ and manifest.csv.
-  review/source.txt: retained code, tests and repository documentation.
-  review/artifacts.txt: remaining UTF-8 artifacts, including raw JSONL streams.
-  review/events.txt and review/decoded-blocks.jsonl: decoded visible messages
-    and tool interactions, with source digest, physical line and JSON pointer.
-  review/transcript-map.csv: raw inclusion and decoded coverage, separately.
-  review/decoded-coverage.json: decoded, partial, unsupported and unselected counts.
-  review/runtime-members.csv: tar members, read without extracting or executing.
-  review/external-references.csv: lexical path references and relocation mapping.
-  review/EDITION.json: this edition's run selection, connection attribution,
-    namespace and builder identity.
-
-TRANSFORMATIONS AND THEIR SOURCES
-  The indexes and reading copies are new objects made from preserved material.
-  Their selections and classifications are decisions embodied in the builder.
-  The packaged builder and checksums identify the implementation for this
-  edition; they do not establish which tool version produced an earlier run.
-
-  Text corpora normalize line endings and add source paths, SHA-256 hashes and
-  L-number markers. Binary files remain in runs/; tar member inventories are
-  read without extraction or execution. No saved program is executed to build
-  the archive. Program descriptions in accommodations.csv are navigation notes
-  maintained in the builder, not observations supplied by those programs.
-
-  Identical file bytes may be rendered once. text-map.csv maps each original
-  occurrence to its rendered location. This reduces duplication in a reader;
-  it does not merge the circumstances in which those copies occurred. Every
-  original occurrence remains in runs/ and manifest.csv.
-
-  Manager-event readers select visible user/assistant messages and tool calls
-  and results from response_item records, plus task_complete.error fields
-  explicitly labelled as harness task errors. Auditor-event readers select text,
-  tool_use, tool_result and final result blocks from the supplied streams.
-  Other fields, including reasoning, system metadata and signatures, remain
-  in the raw records. Rendered blocks cite JSONL lines and JSON pointers.
-
-  Chronology uses explicitly recorded timestamps. Untimed command records
-  remain in the command index with blank times. File numbering and modification
-  times are not substituted for event times. Lexical path references do not
-  establish access, and exact argv matches are not a full execution inventory.
-
-PRESERVATION AND RELOCATION
-  {', '.join('runs/' + run for run in build.runs)} are the original directories moved from
-  ~/Desktop/Experiments/stewart-fieldwork/. Their file bytes, modes, directory
-  modes and symlink targets were checked before and after the move.
-  source-layout.json records that check, original locations, empty directories,
-  exact Git pointer contents, and any external worktree-registration repair.
-  Original instructions and embedded absolute paths retain historical spelling.
-
-  Current original inventory: {counts['file']} regular files, {counts['symlink']}
-  symlinks and {counts['directory']} directory entries (including run roots).
-  manifest.csv covers original entries only. checksums.sha256 covers regular
-  archive payload files other than itself. Symlink targets are hashed as their
-  filesystem-encoded target bytes in manifest.csv. Hashes identify packaged
-  bytes and do not establish historical completeness or correctness of claims.
-  Original modification times are recorded in manifest.csv as mtime_ns.
-  ZIP member timestamps use a fixed date for reproducibility, not event dating.
-  New migration inventories also record and check nanosecond mtimes; legacy
-  inventories retain their earlier checks. Git checkout or ordinary ZIP
-  extraction can reset filesystem times, so it is not a metadata-preserving
-  reconstruction for rerunning local inventory checks. The recorded metadata
-  remains available in the package; reading its records requires no repair.
-
-  Earlier scratch manager worktrees link to the external sibling Stewart
-  repository. Run 005 also includes standalone Git directories inside scratch.
-  All original .git files and directories, symlinks and empty directories are
-  preserved in the ZIP. Internal Git administration is never repaired during
-  archiving; recorded absolute paths retain their historical spelling. The
-  analysis repository's outer .git directory is excluded. The ZIP preserves
-  evidence and does not reconstruct missing external custody records.
-
-COVERAGE AND ATTRIBUTION
-  These notes describe the collected runs; the list at the top identifies
-  which runs are included in this edition. Coverage differs by encounter.
-  The ad hoc sol-manager2 conversation exports were removed by the user before
-  the initial archive; copies exist elsewhere. They are not silently reconstructed.
-  Run 003 supplies sol-manager3.jsonl and sol-manager3.md; both are preserved.
-  Its three saved auditor streams are separately identified, not merged into
-  a single purported session. Other JSONL records include experiment ledgers.
-  Runs 001-003 recording instructions required a Git log, narrative and scratch,
-  but did not prescribe scratch completeness. Later packets may omit the
-  separate Git log; capture and indexing do not require it. Runs 001 and 003 acknowledge
-  Git logging omissions. Run 003's narrative has no timestamp headings; its
-  paragraphs receive no invented times. The indexes describe available material.
-  Run numbers, audit IDs and collection/attempt IDs are separate identities.
-  For example, run-001 contains files named run-002.*; names are not run labels.
-  Runs 001-002 use metadata fields in .json or .command.json. Run 003 uses
-  timestamped commands/*.argv.json plus separate .exit files. The command
-  index explicitly cites the source of each timestamp and exit value. These
-  formats are presented together while originals retain their different layouts.
-  Run 004 supplies a finalized hook capture in session/ (raw transcript, text
-  reader and capture metadata). Its manager worktree is scratch/manager-004/.
-  No standalone argv/time/exit command metadata was supplied for run 004;
-  manager tool calls and results are available in review/events.txt.
-  Its auditor.stdout.json is a single harness result, not a streamed tool log.
-  Run 005 supplies a finalized manager hook capture and three auditor JSONL
-  streams. Its scratch/logs/<sequence>-<label>.json records contain argv, cwd
-  and exit but no timestamps. They are indexed with blank times; file sequence
-  and filesystem modification times are not promoted to event timestamps.
-  The standalone manager clone and nested trial Git repositories are preserved
-  byte for byte, including their original absolute worktree pointers.
-  Run 006 supplies a finalized manager hook capture. Its sequence-labelled
-  scratch/commands/*.command.json records use a /started timestamp and separate
-  .exit files. Top-level scratch metadata also records argv, cwd and exit
-  without timestamps; those invocations are indexed with blank times.
-  Nonzero process exits are not automatically failures.
-  Manager notes, auditor reports, external watcher events and Stewart outputs
-  remain distinct sources. Duplicate copies are not independent observations.
-
-LOCAL INVESTIGATION
-  Local investigators can search the complete corpora or runs/ directly.
-  BERMAN.md describes the current workflow; SESSION-CAPTURE.txt describes
-  capture records, the session/ layout and low-level recovery.
-  Recorded stream descriptors select native readers. Missing format authority
-  stays unknown. Raw files remain included even when a reader cannot decode them.
-
-  A ZIP includes the current README, framing/working_in_a_berman_archive.md and
-  the accompanying research framing documents in framing/,
-  inquiry/README.md, riker/RIKER.md and riker/THREAD-ONRAMP-TEMPLATE.md.
-  checksums.sha256 identifies their exact bytes alongside the rest of the
-  payload. These documents accompany the edition and are not part of the
-  original run inventory. Historical instructions
-  inside runs/ retain the context in which they were recorded.
-
-  The support-audit report, remediation record and five-run handoff are included.
-  Historical audit probes are recoverable from Git and are no longer packaged.
-  experiments/fieldworker-support-2026-10-22/README.md describes the separate
-  native support trials. Their raw records are excluded from this research ZIP.
-  These are dated support-process accounts, not interpretations of Stewart use.
-
-  inquiry/2026-10-22-riker-design-judgment.md is an explicitly selected
-  contribution accompanying the guidance it informed. Its worked example is
-  hypothetical, not an observation from the archived runs. The retired first
-  five-run ZIP in Git retains its earlier edition, before this contribution.
-
-  Other inquiry files are not automatically selected by the builder. An
-  analytic selection shared separately can describe its question, sources,
-  contributors and transformations without changing the original run material.
-  Retired per-run reading ZIPs remain recoverable from Git with their original
-  packaged guidance; MAINTENANCE.md describes the retirement and recovery route.
-
-PUBLISH, VERIFY AND CHECK FRESHNESS
-  berman archive
-  berman archive --verify
-  berman archive --run {build.runs[-1]}
-  berman archive --run {build.runs[-1]} --verify
-  berman archive --freshness
-  --run selects a separate publication. Repeat --run to select multiple runs.
-  The standard-library builder validates the relocation inventory, verifies
-  export identities, regenerates indexes deterministically and checks every
-  ZIP member's bytes, Unix type/mode, symlink target and complete membership.
-  It never executes archived code, invokes Git, or writes beneath runs/.
-  archive/editions/<sha256>.zip is the complete immutable portable copy.
-  edition-manifest.json pins every member, source occurrence and reader input.
-  All review/ paths in this guide are inside that ZIP; publishing leaves older
-  editions and working-tree reading aids untouched. Verification checks this
-  publication without consulting current source files or rerendering it.
-  --freshness separately compares selected current inputs and reader identity.
-"""
-
-
-def connections_guide(build, counts, groups, events, evidence):
-    by_connection = {}
-    for run in build.runs:
-        by_connection.setdefault((build.connection(run)["id"], build.connection(run)["name"]), []).append(run)
-    listing = "\n".join(f"  {ident} ({name}): {', '.join(runs)}" for (ident, name), runs in by_connection.items())
-    specialized = []
-    for (ident, name), runs in by_connection.items():
-        if build.stewart_reader(runs[0]):
-            specialized.append(f"  {name} runs use Stewart's specialized readers: evidence-map.csv for its\n"
-                               "    evidence-export packages, events.txt for declared native streams, and\n"
-                               "    accommodations.csv descriptions of historical recording programs. The\n"
-                               "    Stewart edition's ARCHIVE-GUIDE.txt describes those runs' coverage.")
-        else:
-            specialized.append(f"  {name}: no specialized readers or coverage notes are recorded. Its runs are\n"
-                               "    indexed by the common readers only; describe them from their own materials.")
-    return f"""BERMAN CROSS-PROJECT ARCHIVE GUIDE
-
-Edition: {build.edition.name}; namespace {build.edition.prefix}
-Included runs, by connection:
-{listing}
-
-This generated guide describes a reading edition selected by connection.
-review/EDITION.json records each run's connection and the record that
-establishes it. README.md and BERMAN.md describe the research workspace.
-Connection-specific explanations apply only to their own connection's runs.
-
-COMMON READERS
-  review/<run>.txt: assignment, instructions, notes, captured conversation files
-    and the collection-time context each run actually supplies.
-  review/command-index.csv and review/commands.txt: {len(groups)} standalone command records.
-  review/chronology.csv: {len(events)} explicitly timestamped records with source attribution.
-  review/events.txt: visible messages and tool interactions decoded from
-    captured transcripts according to their declared native format.
-  review/decoded-blocks.jsonl: the same blocks, with source hashes, physical lines,
-    JSON pointers and native roles. Native roles do not establish human actors.
-  review/decoded-coverage.json and review/transcript-map.csv distinguish raw
-    inclusion from decoded, partial, unsupported and deliberately unselected records.
-  review/transcript-map.csv, review/text-map.csv, review/recording-layouts.csv,
-  review/runtime-members.csv and review/external-references.csv.
-  Unknown artifacts remain preserved in runs/ and mapped in review/text-map.csv.
-
-CONNECTION-SPECIFIC READERS
-{chr(10).join(specialized)}
-
-PRESERVATION
-  Run directories keep their recorded bytes, modes and symlink targets. The
-  packaged source-layout.json lists the selected runs' original locations;
-  historical absolute paths retain their spelling and external references are
-  mapped through those recorded origins. Current original inventory for this
-  selection: {counts['file']} regular files, {counts['symlink']} symlinks and
-  {counts['directory']} directory entries. checksums.sha256 covers regular payload
-  files other than itself. No archived program is executed to build the edition.
-
-PUBLISH, VERIFY AND CHECK FRESHNESS
-  berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)}
-  berman archive --edition connections {' '.join('--connection ' + c for c in build.edition.connections)} --verify
-  berman archive --freshness
-  archive/editions/<sha256>.zip is this edition's immutable portable copy.
-  edition-manifest.json pins all members, selected inputs and collection identity.
-  The review/ paths above are inside that ZIP. Publishing leaves old editions and
-  working-tree aids untouched. --verify checks published bytes without current
-  sources or rerendering; --freshness explicitly compares the current selection.
-"""
-
-
-def finish_outputs(build, out, text_rows, counts, groups, evidence):
-    # Reading aids must preserve all mapped text and every corpus character.
-    reading_lines = {path: out[path].decode("utf-8").splitlines()
-                     for path in {row["corpus"] for row in text_rows} if path in out}
-    for row in text_rows:
-        corpus = row["corpus"]
-        if corpus not in out or not isinstance(row["corpus_line_start"], int):
-            continue
-        source = (build.root / row["original_path"]).read_bytes().decode("utf-8").splitlines()
-        lines = reading_lines[corpus]
-        start = row["corpus_line_start"] - 1
-        expected = [f"L{i:06d} | {line}" for i, line in enumerate(source, 1)]
-        if lines[start:start + len(source)] != expected:
-            raise ValueError(f"Reading edition text differs: {row['original_path']}")
-    return {"original_files": counts["file"], "symlinks": counts["symlink"],
-            "directories": counts["directory"], "command_groups": len(groups),
-            "verified_export_entries": len(evidence)}
-
-
-def edition(build, verify=False, freshness=False):
-    """Publish an immutable edition, verify a publication, or explicitly compare inputs."""
-    if verify and not freshness:
-        return verify_published(build.root, build.selection)
-    generated, summary = render(build)
-    payload, manifest = seal(build, generated, summary)
-    # Custody checks remain strict on the original workspace; portable verification is separate.
-    inventory(build.root, build.runs)
-    if freshness:
-        prior, result = published(build.root, build.selection)
-        return dict(result, freshness='current' if prior['inputs'] == manifest['inputs'] else 'stale',
-                    mode='freshness checked')
-    return publish(build, payload)
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path.cwd(), help="Fieldwork workspace containing source-layout.json")
-    parser.add_argument("--verify", action="store_true", help="Verify the published edition without rebuilding or inspecting current inputs")
-    parser.add_argument("--freshness", action="store_true", help="Compare the publication's pinned inputs with the current selection; write nothing")
-    parser.add_argument("--path", type=Path, help="Verify a standalone immutable reading edition ZIP")
-    parser.add_argument("--run", action="append", help="Build a separate ZIP containing only this run (repeatable); leave cumulative reading aids unchanged")
-    parser.add_argument("--edition", choices=("stewart", "connections"),
-                        help="connections (default): generic edition; stewart: explicit historical compatibility edition")
-    parser.add_argument("--connection", action="append", default=[], help="connections edition: include this connection's runs (repeatable)")
-    args = parser.parse_args(argv)
-    root = args.root.expanduser().resolve()
-    edition_name = args.edition or 'connections'
-    if args.path:
-        if args.freshness or args.connection or args.run or args.edition:
-            parser.error('--path cannot be combined with freshness or selection options')
-        result = verify_edition(args.path.expanduser().resolve())
-    elif args.verify and not args.freshness:
-        result = verify_published(root, selection(edition_name, args.connection, args.run or []))
-    else:
-        build = select(root, edition_name, args.connection, args.run or [])
-        result = edition(build, args.verify, args.freshness)
-    result.update(python=sys.executable, python_version=sys.version.split()[0])
-    print(json.dumps(result, indent=2))
-
-
-if __name__ == "__main__":
-    main()
+edition-manifest.json pins the recording, members and reader identity.
+Verify a detached copy with berman archive --path FILE.
+""")
+    return out, {'original_files': counts['file'], 'directories': counts['directory'], 'symlinks': counts['symlink']}

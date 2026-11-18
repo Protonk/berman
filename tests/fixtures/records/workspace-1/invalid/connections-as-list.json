@@ -1,8 +1,0 @@
-{
-  "schema": "berman.workspace/1",
-  "packet_root": "/synthetic/packets",
-  "codex_home": "/synthetic/codex",
-  "python": "/usr/bin/python3",
-  "codex": "/synthetic/bin/codex",
-  "connections": []
-}

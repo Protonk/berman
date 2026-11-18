@@ -1,9 +1,4 @@
-"""Assemble, compress and verify an edition's payload; write it into or compare it with the tree.
-
-The ZIP codec preserves bytes, Unix modes, symlink targets and directory entries under a
-namespace; berman_preserve packages single recordings with it. Nothing here keeps state
-between builds.
-"""
+"""Package guest reading editions and verify them from their retained members."""
 from contextlib import contextmanager
 import fcntl
 import time
@@ -18,76 +13,15 @@ import tempfile
 import uuid
 import zipfile
 
-from berman.archive.select import PREFIX, SHA
+from berman import evidence, files
+
+PREFIX = "berman-analysis/"
 
 MANIFEST = 'edition-manifest.json'
 SCHEMA = 'berman.reading-edition/2'
 
 
-def assemble(build, generated, *, retained_links=None):
-    """Every ZIP member as {path: (bytes, mode)}; checksums.sha256 covers this payload only."""
-    root = build.root
-    payload = {}
-    for entry in build.entries:
-        path = entry["path"]
-        mode = int(entry["mode"], 0)
-        if entry["type"] == "directory":
-            payload[path + "/"] = (b"", stat.S_IFDIR | mode)
-        elif entry["type"] == "symlink":
-            payload[path] = (os.fsencode(entry["target"]), stat.S_IFLNK | mode)
-        else:
-            data = (root / path).read_bytes()
-            if SHA(data) != entry['sha256']:
-                raise ValueError(f'Original evidence changed during assembly: {path}')
-            payload[path] = (data, stat.S_IFREG | mode)
-    support = list(build.documents)
-    if build.edition.name == 'stewart':
-        support = ["AGENTS.md", ".gitignore", *build.documents]
-        support += [p.relative_to(root).as_posix() for p in sorted((root / "tools").glob("*.py"))]
-        support += [name for name in ("berman", "berman.json", "BERMAN.md", "MAINTENANCE.md") if (root / name).is_file() and name not in support]
-        for folder in ("recipes", "connections", "plans"):
-            support += [p.relative_to(root).as_posix() for p in sorted((root / folder).rglob("*")) if p.is_file()]
-        support += [p.relative_to(root).as_posix() for p in sorted((root / "hooks/verification").glob("*.json"))]
-        support += [p.relative_to(root).as_posix() for p in sorted((root / "tools/development_launchers").glob("*.py"))]
-        support += [p.relative_to(root).as_posix() for p in sorted((root / "hooks").glob("*.json"))]
-    for path in support:
-        payload[path] = ((root / path).read_bytes(), stat.S_IFREG | stat.S_IMODE((root / path).stat().st_mode))
-    # The packaged index is a view of selected authority, not a live mutable index file.
-    payload['source-layout.json'] = ((json.dumps(build.layout, ensure_ascii=False, indent=2) + '\n').encode(), stat.S_IFREG | 0o644)
-    for item in build.source_manifests:
-        if item['basis'] == 'recording manifest':
-            data = (root / item['path']).read_bytes()
-            if SHA(data) != item['sha256']:
-                raise ValueError(f'Recording manifest changed during assembly: {item["path"]}')
-            payload[item['path']] = (data, stat.S_IFREG | 0o644)
-            for entry in item['manifest']['entries']:
-                if entry['path'] == 'runs':
-                    container = (b'', stat.S_IFDIR | int(entry['mode'], 0))
-                    if 'runs/' in payload and payload['runs/'] != container:
-                        raise ValueError('Recording manifests disagree on their common namespace directory')
-                    payload['runs/'] = container
-                    continue
-                if entry['path'].startswith('runs/'):
-                    continue
-                path = f"recordings/{item['run']}/" + entry['path']
-                mode = int(entry['mode'], 0)
-                if entry['type'] == 'directory':
-                    payload[path + '/'] = (b'', stat.S_IFDIR | mode)
-                elif entry['type'] == 'symlink':
-                    link = retained_links[path] if retained_links is not None else os.fsencode(os.readlink(root / path))
-                    payload[path] = (link, stat.S_IFLNK | mode)
-                else:
-                    payload[path] = ((root / path).read_bytes(), stat.S_IFREG | mode)
-    for path, data in generated.items():
-        payload[path] = (data, stat.S_IFREG | 0o644)
-    lines = [f"{SHA(data)}  {path}" for path, (data, mode) in sorted(payload.items()) if stat.S_ISREG(mode)]
-    payload["checksums.sha256"] = (("\n".join(lines) + "\n").encode("utf-8"), stat.S_IFREG | 0o644)
-    return payload
-
-
-def make_zip(payload, prefix=None):
-    """The namespace is an edition setting; Stewart-compatible editions keep stewart-analysis/."""
-    prefix = PREFIX if prefix is None else prefix
+def make_zip(payload, prefix):
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path, (data, mode) in sorted(payload.items()):
@@ -101,47 +35,57 @@ def make_zip(payload, prefix=None):
     return stream.getvalue()
 
 
-def verify_zip(data, payload, prefix=None):
-    prefix = PREFIX if prefix is None else prefix
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        expected = {prefix + path for path in payload}
-        if len(archive.infolist()) != len(expected) or set(archive.namelist()) != expected:
-            raise ValueError("ZIP membership does not match the payload")
-        for path, (content, mode) in payload.items():
-            info = archive.getinfo(prefix + path)
-            if archive.read(info) != content or info.external_attr >> 16 != mode:
-                raise ValueError(f"ZIP bytes or mode differ: {path}")
-
-
 def json_bytes(value):
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n').encode()
 
 
 def member(path, data, mode):
     kind = 'directory' if stat.S_ISDIR(mode) else 'symlink' if stat.S_ISLNK(mode) else 'file'
-    return {'path': path, 'type': kind, 'mode': mode, 'size': len(data), 'sha256': SHA(data)}
+    return {'path': path, 'type': kind, 'mode': mode, 'size': len(data), 'sha256': files.digest(data)}
 
 
-def seal(build, generated, summary, *, retained_links=None):
-    """Bind source occurrences and all edition members without a self-referential digest."""
-    payload = assemble(build, generated, retained_links=retained_links)
+def selection(run, supplement=None):
+    request = {'edition': 'connections', 'connections': [], 'runs': [run]}
+    if supplement is not None:
+        request['supplement'] = supplement
+    return request
+
+
+def edition_path(run, name):
+    """Where a member of a recording appears in its reading edition."""
+    if name == evidence.MANIFEST:
+        return f'recordings/{run}/manifest.json'
+    if name.startswith('runs/'):
+        return name
+    return f'recordings/{run}/{name}'
+
+
+def seal(recording, archive, generated, summary):
+    """Copy every verified member directly from its recording and pin the new edition."""
+    run = recording['run']
+    payload = {edition_path(run, i.filename): (archive.read(i), i.external_attr >> 16) for i in archive.infolist()}
+    manifest_path = edition_path(run, evidence.MANIFEST)
+    source = {'run': run, 'basis': 'recording manifest', 'path': manifest_path, 'sha256': files.digest(payload[manifest_path][0])}
+    layout = {'runs': [recording['custody']['inventory']]}
+    payload['source-layout.json'] = (json_bytes(layout), stat.S_IFREG | 0o644)
+    for path, data in generated.items():
+        payload[path] = (data, stat.S_IFREG | 0o644)
+    checksums = [f'{files.digest(data)}  {path}' for path, (data, mode) in sorted(payload.items()) if stat.S_ISREG(mode)]
+    payload['checksums.sha256'] = (('\n'.join(checksums) + '\n').encode(), stat.S_IFREG | 0o644)
     members = [member(path, data, mode) for path, (data, mode) in sorted(payload.items())]
     originals = [item for item in members if item['path'].startswith('runs/') and item['path'] != 'runs/']
-    source_paths = {item['path'] for item in build.source_manifests if item['basis'] == 'recording manifest'}
-    documents = [item for item in members if item['path'] not in generated
-                 and item['path'] not in source_paths
-                 and item['path'] not in ('source-layout.json', 'checksums.sha256')
-                 and not item['path'].startswith(('runs/', 'recordings/'))]
-    inputs = {'originals': originals, 'documents': documents,
-              'recordings': [{k: v for k, v in item.items() if k != 'manifest'} for item in build.source_manifests],
-              'streams': [{'path': path, **build.stream(path)} for path in sorted(build.files) if path.endswith('.jsonl')],
+    declared = {s['path']: s['format'] for s in recording['streams']}
+    streams = [{'path': r['path'], 'format': declared.get(r['path'], 'unknown'), 'authority': manifest_path,
+                'basis': 'recording manifest' if r['path'] in declared else 'no stream declaration in recording manifest'}
+               for r in originals if r['type'] == 'file' and r['path'].endswith('.jsonl')]
+    inputs = {'originals': originals, 'documents': [], 'recordings': [source], 'streams': streams,
               'reader': json.loads(generated['review/EDITION.json'])}
-    manifest = {'schema': SCHEMA, 'collection_id': build.collection_id, 'namespace': build.edition.prefix,
-                'selection': build.selection, 'runs': list(build.runs), 'inputs': inputs,
-                'members': members, 'generated': sorted(generated), 'containers': ['runs/'] if 'runs/' in payload else [], 'summary': summary,
-                'meaning': 'Pinned reading edition. Native evidence and reader coverage are distinct; publication declares no engagement ending.'}
+    manifest = {'schema': SCHEMA, 'collection_id': recording['collection_id'], 'namespace': PREFIX,
+                'selection': selection(run, (recording.get('supplement') or {}).get('sequence')), 'runs': [run],
+                'inputs': inputs, 'members': members, 'generated': sorted(generated),
+                'containers': ['runs/'] if 'runs/' in payload else [], 'summary': summary}
     payload[MANIFEST] = (json_bytes(manifest), stat.S_IFREG | 0o644)
-    return payload, manifest
+    return make_zip(payload, PREFIX)
 
 
 def relative(name, directory=False):
@@ -154,32 +98,27 @@ def relative(name, directory=False):
 
 def inspect_edition(data, expected_sha256=None):
     """Verify a publication from its own contract, without sources or the current builder."""
-    digest = SHA(data)
+    digest = files.digest(data)
     if expected_sha256 is not None and digest != expected_sha256:
         raise ValueError('Reading edition ZIP digest differs from its published identity')
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             names = archive.namelist()
-            candidates = [name for name in names if name == MANIFEST or name.endswith('/' + MANIFEST)]
-            if len(candidates) != 1 or len(names) != len(set(names)):
-                raise ValueError('Reading edition needs one manifest and unique ZIP members')
-            manifest_name = candidates[0]
+            manifest_name = PREFIX + MANIFEST
+            if manifest_name not in names or len(names) != len(set(names)):
+                raise ValueError('Reading edition needs its manifest and unique ZIP members')
             manifest = json.loads(archive.read(manifest_name))
             if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
                 raise ValueError('Unsupported reading edition schema')
             uuid.UUID(manifest['collection_id'])
             runs = manifest['runs']
-            if (not isinstance(runs, list) or not runs or not all(isinstance(run, str) and re.fullmatch(r'run-[0-9]{3,6}', run) for run in runs)
-                    or len(runs) != len(set(runs))):
-                raise ValueError('Invalid reading edition run identities')
+            if (not isinstance(runs, list) or len(runs) != 1 or not isinstance(runs[0], str)
+                    or not evidence.RUN.fullmatch(runs[0])):
+                raise ValueError('Guest reading edition requires one run')
             if not isinstance(manifest['summary'], dict) or any(type(value) is not int or value < 0 for value in manifest['summary'].values()):
                 raise ValueError('Invalid reading edition summary')
             prefix = manifest['namespace']
-            if prefix:
-                relative(prefix, directory=True)
-                if not prefix.endswith('/'):
-                    raise ValueError('Reading edition namespace must end with a slash')
-            if prefix + MANIFEST != manifest_name:
+            if prefix != PREFIX:
                 raise ValueError('Reading edition manifest namespace differs')
             if archive.getinfo(manifest_name).external_attr >> 16 != stat.S_IFREG | 0o644:
                 raise ValueError('Reading edition manifest mode differs')
@@ -200,7 +139,7 @@ def inspect_edition(data, expected_sha256=None):
                 info = archive.getinfo(prefix + path)
                 raw = archive.read(info)
                 if (info.external_attr >> 16 != mode or type(row['size']) is not int
-                        or len(raw) != row['size'] or SHA(raw) != row['sha256']):
+                        or len(raw) != row['size'] or files.digest(raw) != row['sha256']):
                     raise ValueError(f'Reading edition member bytes or mode differ: {path}')
                 by_path[path] = row
             if set(names) != {prefix + name for name in by_path} | {manifest_name}:
@@ -216,47 +155,46 @@ def inspect_edition(data, expected_sha256=None):
             inventory = {entry['run']: entry for entry in layout['runs']}
             if set(inventory) != set(runs) or len(inventory) != len(layout['runs']):
                 raise ValueError('Reading edition run membership differs from its inventory')
-            authorities = set()
-            for item in inputs['recordings']:
-                if item['basis'] == 'recording manifest':
-                    raw = archive.read(prefix + item['path'])
-                    source = json.loads(raw)
-                    if (source.get('schema') != 'berman.recording/2'
-                            or source.get('collection_id') != manifest['collection_id'] or source.get('run') != item['run']):
-                        raise ValueError('Reading edition recording authority differs')
-                    from berman import evidence
-                    evidence.validate(source)
-                    recording_paths = {entry['path'] + ('/' if entry['type'] == 'directory' else '')
-                                       for entry in source['entries']}
-                    def recording_path(name, manifest_path=item['path'], run=item['run']):
-                        if name == evidence.MANIFEST:
-                            return manifest_path
-                        return name if name.startswith('runs/') else f'recordings/{run}/' + name
-                    modes = {name: by_path[recording_path(name)]['mode'] for name in recording_paths}
-                    modes[evidence.MANIFEST] = by_path[item['path']]['mode']
-                    evidence.verify_members(source, modes, lambda name: archive.read(prefix + recording_path(name)))
-                    authorities.add(item['path'])
-                    authorities.update(recording_path(name) for name in recording_paths if not name.startswith('runs/'))
-                elif item['basis'] == 'historical inventory entry':
-                    raw = json.dumps(inventory[item['run']], ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
-                else:
-                    raise ValueError('Unknown reading edition input authority')
-                if SHA(raw) != item['sha256']:
-                    raise ValueError(f'Reading edition recording input differs: {item["run"]}')
-            if {item['run'] for item in inputs['recordings']} != set(runs) or len(inputs['recordings']) != len(runs):
-                raise ValueError('Reading edition recording authorities do not cover its runs')
+            run = runs[0]
+            sources = inputs['recordings']
+            if len(sources) != 1 or sources[0]['run'] != run:
+                raise ValueError('Reading edition needs one recording for its run')
+            item = sources[0]
+            if item['basis'] != 'recording manifest':
+                raise ValueError('Reading edition requires a split recording manifest')
+            if item['path'] != edition_path(item['run'], evidence.MANIFEST):
+                raise ValueError('Reading edition source manifest has a different path')
+            raw = archive.read(prefix + item['path'])
+            source = json.loads(raw)
+            if (source.get('schema') != 'berman.recording/2'
+                    or source.get('collection_id') != manifest['collection_id'] or source.get('run') != item['run']):
+                raise ValueError('Reading edition recording authority differs')
+            evidence.validate(source)
+            recording_paths = {entry['path'] + ('/' if entry['type'] == 'directory' else '')
+                               for entry in source['entries']}
+            modes = {name: by_path[edition_path(item['run'], name)]['mode'] for name in recording_paths}
+            modes[evidence.MANIFEST] = by_path[item['path']]['mode']
+            evidence.verify_members(source, modes, lambda name: archive.read(prefix + edition_path(run, name)))
+            authorities = {item['path']}
+            authorities.update(edition_path(item['run'], name) for name in recording_paths if not name.startswith('runs/'))
+            if (manifest['selection'] != selection(source['run'], (source.get('supplement') or {}).get('sequence'))
+                    or inventory[source['run']] != source['custody']['inventory']
+                    or {p for p in recording_paths if p.startswith('runs/') and p != 'runs/'} != {row['path'] for row in inputs['originals']}):
+                raise ValueError('Reading edition inventory or selection differs from its recording')
+            if files.digest(raw) != item['sha256']:
+                raise ValueError(f'Reading edition recording input differs: {item["run"]}')
             groups = [{row['path'] for row in inputs[kind]} for kind in ('originals', 'documents')]
             if manifest['containers'] not in ([], ['runs/']):
                 raise ValueError('Invalid reading edition namespace containers')
             groups += [authorities, set(manifest['generated']), set(manifest['containers']), {'source-layout.json', 'checksums.sha256'}]
             if set.union(*groups) != set(by_path) or sum(len(group) for group in groups) != len(by_path):
                 raise ValueError('Reading edition inputs and generated outputs do not partition its members')
-            for stream in inputs['streams']:
-                if stream['path'] not in by_path or stream['format'] not in ('codex-jsonl/1', 'claude-jsonl/1', 'unknown'):
-                    raise ValueError('Invalid reading edition stream declaration')
-            stream_paths = [stream['path'] for stream in inputs['streams']]
-            if len(stream_paths) != len(set(stream_paths)) or set(stream_paths) != {path for path in groups[0] if path.endswith('.jsonl')}:
-                raise ValueError('Reading edition stream coverage differs from its original JSONL files')
+            declared = {stream['path']: stream['format'] for stream in source['streams']}
+            streams = {stream['path']: stream['format'] for stream in inputs['streams']}
+            expected = {path: declared.get(path, 'unknown') for path in groups[0]
+                        if by_path[path]['type'] == 'file' and path.endswith('.jsonl')}
+            if len(streams) != len(inputs['streams']) or streams != expected:
+                raise ValueError('Reading edition streams differ from its recording manifest')
             reader = json.loads(archive.read(prefix + 'review/EDITION.json'))
             if inputs['reader'] != reader or reader.get('collection_id') != manifest['collection_id']:
                 raise ValueError('Reading edition reader input differs')
@@ -276,7 +214,7 @@ def verify_edition(path, expected_sha256=None):
 
 
 def pointer_path(selection):
-    return 'archive/editions/selections/' + SHA(json_bytes(selection)) + '.json'
+    return 'archive/editions/selections/' + files.digest(json_bytes(selection)) + '.json'
 
 
 def published(root, selection):
@@ -290,18 +228,13 @@ def published(root, selection):
     if pointer.get('path') != f'archive/editions/{digest}.zip':
         raise ValueError('Invalid published reading edition location')
     manifest, result = inspect_edition((Path(root) / pointer['path']).read_bytes(), digest)
-    from berman.evidence import collection
-    if manifest['collection_id'] != collection(root) or manifest['selection'] != selection:
+    if manifest['collection_id'] != evidence.collection(root) or manifest['selection'] != selection:
         raise ValueError('Published reading edition belongs to another collection or selection')
     return manifest, dict(result, archive_path=pointer['path'], selection_pointer=pointer_path(selection))
 
 
-def verify_published(root, selection):
-    return published(root, selection)[1]
-
-
-def atomic(root, name, data, immutable=False):
-    """Publish complete bytes; an interrupted write never occupies a final immutable name."""
+def install(root, name, data):
+    """Install complete immutable bytes, or verify an identical prior installation."""
     relative(name)
     root = Path(root)
     target = root / name
@@ -316,14 +249,11 @@ def atomic(root, name, data, immutable=False):
             stream.flush()
             os.fsync(stream.fileno())
         stage.chmod(0o644)
-        if immutable:
-            try:
-                os.link(stage, target)
-            except FileExistsError:
-                if not target.is_file() or target.read_bytes() != data:
-                    raise ValueError(f'Existing immutable edition differs: {name}') from None
-        else:
-            os.replace(stage, target)
+        try:
+            os.link(stage, target)
+        except FileExistsError:
+            if not target.is_file() or target.read_bytes() != data:
+                raise ValueError(f'Existing immutable edition differs: {name}') from None
     finally:
         stage.unlink(missing_ok=True)
 
@@ -348,42 +278,16 @@ def publication_lock(root):
         os.close(fd)
 
 
-def publish(build, payload):
-    data = make_zip(payload, build.edition.prefix)
-    with publication_lock(build.root):
-        return publish_locked(build, data)
-
-
-def publish_locked(build, data):
-    _, result = inspect_edition(data)
+def publish_locked(root, request, data):
+    manifest, result = inspect_edition(data)
+    if manifest['selection'] != request or manifest['collection_id'] != evidence.collection(root):
+        raise ValueError('Reading edition belongs to a different collection or selection')
     digest = result['archive_sha256']
     path = f'archive/editions/{digest}.zip'
-    atomic(build.root, path, data, immutable=True)
+    install(root, path, data)
     # Verify disk bytes before making this publication the selected one.
-    verify_edition(build.root / path, digest)
-    selected_pointer = build.root / pointer_path(build.selection)
-    old = json.loads(selected_pointer.read_bytes()) if selected_pointer.exists() else {}
-    previous = old.get('previous') if old.get('sha256') == digest else ({k: old[k] for k in ('path', 'sha256')} if old else None)
-    retiring = list(old.get('retiring', []))
-    retired = old.get('previous') if old.get('sha256') != digest else None
-    if retired and retired != previous and retired not in retiring:
-        retiring.append(retired)
-    pointer = {'schema': 'berman.edition-selection/1', 'selection': build.selection, 'path': path, 'sha256': digest,
-               'previous': previous, 'retiring': retiring}
-    atomic(build.root, pointer_path(build.selection), json_bytes(pointer))
-    references = set()
-    for p in selected_pointer.parent.glob('*.json'):
-        value = json.loads(p.read_bytes())
-        references.add(value.get('path'))
-        references.add((value.get('previous') or {}).get('path'))
-    for retired in retiring:
-        if retired.get('path') != f'archive/editions/{retired.get("sha256")}.zip':
-            raise ValueError('Invalid edition retirement path')
-        if retired['path'] not in references:
-            target = build.root / retired['path']
-            if target.exists():
-                verify_edition(target, retired['sha256'])
-                target.unlink()
-    pointer['retiring'] = []
-    atomic(build.root, pointer_path(build.selection), json_bytes(pointer))
-    return dict(result, mode='published and verified', archive_path=path, selection_pointer=pointer_path(build.selection))
+    verify_edition(root / path, digest)
+    pointer = {'schema': 'berman.edition-selection/1', 'selection': request, 'path': path,
+               'sha256': digest, 'previous': None, 'retiring': []}
+    install(root, pointer_path(request), json_bytes(pointer))
+    return dict(result, mode='published and verified', archive_path=path, selection_pointer=pointer_path(request))

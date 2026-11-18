@@ -5,11 +5,13 @@ debris, an inventory reads without touching what it reads, and a package is a de
 function of its payload that verification can tell from any other.
 """
 
+import io
 import os
 from pathlib import Path
 import stat
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 
 from hypothesis import given
@@ -118,26 +120,18 @@ class InventoryTests(unittest.TestCase):
 
 class PackageTests(unittest.TestCase):
     @budget(60)
-    @given(trees, st.sampled_from((0o644, 0o600, 0o755)), st.data())
-    def test_a_package_is_deterministic_and_verification_tells_it_from_any_other(self, tree, mode, data):
+    @given(trees, st.sampled_from((0o644, 0o600, 0o755)))
+    def test_a_package_deterministically_preserves_every_member_and_mode(self, tree, mode):
         payload = {name: (content, stat.S_IFREG | mode) for name, content in tree.items()}
         payload['notes/'] = (b'', stat.S_IFDIR | 0o755)
         payload['notes/link'] = (os.fsencode('../elsewhere'), stat.S_IFLNK | 0o777)
-        zipped = package.make_zip(payload, 'berman-analysis/')
-        self.assertEqual(package.make_zip(dict(reversed(list(payload.items()))), 'berman-analysis/'), zipped)
-        package.verify_zip(zipped, payload, 'berman-analysis/')
-        victim = data.draw(st.sampled_from(sorted(tree)))
-        content, kind = payload[victim]
-        for name, changed in (
-            ('bytes', dict(payload, **{victim: (content + b'+', kind)})),
-            ('mode', dict(payload, **{victim: (content, kind ^ 0o001)})),
-            ('missing member', {k: v for k, v in payload.items() if k != victim}),
-            ('extra member', dict(payload, **{'added-later.txt': (b'later', stat.S_IFREG | 0o644)})),
-        ):
-            with self.assertRaises(ValueError, msg=name):
-                package.verify_zip(zipped, changed, 'berman-analysis/')
-        with self.assertRaises(ValueError):
-            package.verify_zip(zipped, payload, 'stewart-analysis/')
+        zipped = package.make_zip(payload, package.PREFIX)
+        self.assertEqual(package.make_zip(dict(reversed(list(payload.items()))), package.PREFIX), zipped)
+        with zipfile.ZipFile(io.BytesIO(zipped)) as archive:
+            self.assertEqual(sorted(archive.namelist()), sorted(package.PREFIX + name for name in payload))
+            for name, (data, mode) in payload.items():
+                info = archive.getinfo(package.PREFIX + name)
+                self.assertEqual((archive.read(info), info.external_attr >> 16), (data, mode))
 
 
 if __name__ == '__main__':

@@ -12,21 +12,17 @@ import builtins
 import io
 import json
 import os
-from pathlib import Path
 import pty
 import re
 import select
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
 from berman import cli, presentation
 from berman.presentation import plain, terminal
 from tests.support.paths import REPO
-from tests.support import legacy
-from tests.support.workspace import git_repository, workspace
 
 FIXTURES = REPO / 'tests/fixtures/presentation'
 CASES = {path.stem: json.loads(path.read_text()) for path in sorted(FIXTURES.glob('*.json'))}
@@ -101,7 +97,7 @@ class PlainTests(unittest.TestCase):
         self.assertEqual(out.getvalue(), plain.verification(result) + '\n')
 
     def test_plain_text_matches_the_deliberate_redirected_output_contract(self):
-        self.assertEqual(len(CASES), 6)
+        self.assertEqual(len(CASES), 2)
         self.assertEqual({kind(name) for name in CASES}, set(presentation.KINDS))
         for name, result in CASES.items():
             with self.subTest(case=name):
@@ -148,79 +144,6 @@ class PlainTests(unittest.TestCase):
 
 
 class TerminalTests(unittest.TestCase):
-    def test_assignment_origin_is_reported_without_inventing_a_historical_origin(self):
-        result = CASES['status-busy']
-        for rendered in (plain.status(result), shown('status', result)):
-            for origin in ('direct', 'plan', 'not recorded'):
-                self.assertIn('origin: ' + origin, rendered)
-            self.assertIn('Assignment: work-accounts; origin: not recorded', rendered)
-
-    def test_no_plan_is_ordinary_and_broken_plans_are_reported_separately(self):
-        result = CASES['status-optional-plans']
-        for rendered in (plain.status(result), shown('status', result)):
-            self.assertIn('orchard: no research plan selected', rendered)
-            self.assertIn('broken: selected plan needs attention: Research plan is missing:', rendered)
-            self.assertIn('exhausted: plan complete-plan: every step was started', rendered)
-            self.assertNotIn('None', rendered)
-            self.assertNotIn('berman new', rendered)
-
-    def test_unsettled_work_is_listed_with_the_release_that_has_to_close_it(self):
-        result = CASES['status-busy']
-        for rendered in (plain.status(result), shown('status', result)):
-            listed = rendered[rendered.index('Unsettled:') :]
-            for run in ('run-003', 'run-004', 'run-005', 'run-006', 'run-900101'):
-                self.assertIn(f'{run}: ', listed)
-            self.assertIn('abc.json: a combined request to end run-004 and prepare run-008 never completed', listed)
-            self.assertEqual(listed.count('It has to be closed with the release that opened it'), 6)
-            # A run at rest without an ending or a package, and a run nobody can read, are not called unsettled.
-            self.assertNotIn('run-002: ', listed)
-            self.assertNotIn('run-007: ', listed)
-            self.assertIn('read-only in this version', listed)
-        quiet = plain.status(CASES['status-quiet'])
-        self.assertNotIn('Unsettled:', quiet)
-        self.assertIn('No outstanding runs.', quiet)
-
-    def test_a_real_status_result_renders_in_both_forms(self):
-        from berman import files, records
-
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary).resolve()
-            root, project = base / 'study', base / 'project'
-            (base / 'codex').mkdir()
-            workspace(root, base, project, documents=['README.md'])
-            git_repository(project, {'README.md': 'Synthetic project\n'})
-            config = files.read(root / 'berman.json')
-            config['connections']['stewart'].pop('plan')
-            files.write(root / 'berman.json', config)
-            store = records.Store(root)
-            run = legacy.prepare(store, recipe='work-accounts')
-            status = records.status(store)
-            for rendered in (plain.status(status), shown('status', status)):
-                self.assertIn('stewart: no research plan selected', rendered)
-                self.assertIn(f'{run} (stewart): ready; not yet started', rendered)
-                self.assertIn('Assignment: work-accounts; origin: direct', rendered)
-                self.assertIn(f'{run}: its prepared packet was never started or retired.', rendered)
-                self.assertIn('(Berman 0.26.3)', rendered)
-            config['connections']['stewart']['plan'] = 'plans/missing/plan.json'
-            files.write(root / 'berman.json', config)
-            status = records.status(records.Store(root))
-            for rendered in (plain.status(status), shown('status', status)):
-                self.assertIn('stewart: selected plan needs attention:', rendered)
-                self.assertIn(f'{run} (stewart): ready; not yet started', rendered)
-
-    def test_narrow_terminals_retain_every_fact_value_and_evidence(self):
-        result = json.loads(json.dumps(CASES['status-busy']))
-        for row in result['runs']:
-            for name in terminal.FACTS:
-                row['lifecycle'][name] = {'value': None, 'unknown': [f'/evidence/{name}/' + 'abcdef' * 30]}
-        for width in (20, 40, 80):
-            with self.subTest(width=width):
-                displayed = ''.join(shown('status', result, width=width).split())
-                for name in terminal.FACTS:
-                    self.assertIn(name, displayed)
-                    self.assertIn(f'/evidence/{name}/' + 'abcdef' * 30, displayed)
-                self.assertIn('unknown', displayed)
-
     def test_every_word_of_the_plain_text_is_shown(self):
         for name, result in CASES.items():
             with self.subTest(case=name):
@@ -255,36 +178,11 @@ class TerminalTests(unittest.TestCase):
                 self.assertEqual('(optional)' in line, not check['required'])
         text = shown('verification', result)
         self.assertIn('Berman verification: FAILED', text)
-        self.assertIn('Failed: recorded-hashes, workspace', text)
-        self.assertIn('Not run: archive', text)
-        self.assertIn('Not established: settled', text)
-
-    def test_an_unknown_fact_is_shown_as_unknown_with_its_reason_never_as_no(self):
-        result = CASES['status-busy']
-        text = shown('status', result)
-        blocks = {block.split()[0]: block for block in text.split('\n\n') if block.startswith('run-')}
-        damaged, ready, declared = blocks['run-007'], blocks['run-006'], blocks['run-003']
-
-        def fact(block, name):
-            return next(line.split(None, 2) for line in block.splitlines() if line.split()[:1] == [name])
-
-        for name in ('registered', 'ending', 'packaged'):
-            with self.subTest(fact=name):
-                self.assertEqual(fact(damaged, name)[1], 'unknown')
-                self.assertIn('Invalid operation record', fact(damaged, name)[2])
-                self.assertEqual(fact(ready, name)[1], 'no')
-        self.assertEqual(fact(declared, 'ending')[1], 'yes')
-        self.assertIn('declared 2026-11-13T01:00:00.000000Z', fact(declared, 'ending')[2])
-        self.assertEqual(fact(declared, 'packaged')[1], 'no')
-        self.assertEqual(fact(declared, 'finalized')[1], 'yes')
-        # A closed capture beside an undeclared ending: both on the screen, neither implying the other.
-        frozen = blocks['run-005']
-        self.assertEqual((fact(frozen, 'capture')[1], fact(frozen, 'ending')[1]), ('closed', 'no'))
-        self.assertIn('not an ending', frozen)
+        self.assertIn('Failed: dependencies, schemas', text)
 
     def test_next_steps_are_printed_whole_however_narrow_the_terminal(self):
         steps = [check['next'] for check in CASES['verification-failed']['checks'].values() if check.get('next')]
-        self.assertGreaterEqual(len(steps), 4)
+        self.assertGreaterEqual(len(steps), 2)
         verification = shown('verification', CASES['verification-failed'], width=50).splitlines()
         for step in steps:
             self.assertTrue(any(line.strip() == 'next: ' + step for line in verification), step)
@@ -293,10 +191,7 @@ class TerminalTests(unittest.TestCase):
 
     def test_recorded_text_is_shown_literally(self):
         text = shown('verification', CASES['verification-failed'], color_system='standard')
-        self.assertIn('[bold]also-gone[/bold].txt', text)
-        self.assertIn(
-            'Meadow [draft]', shown('status', dict(CASES['status-busy'], default_connection='Meadow [draft]'))
-        )
+        self.assertIn('[bold]missing[/bold]', text)
         hostile = json.loads(json.dumps(CASES['verification-software']))
         hostile['checks']['installation']['summary'] = (
             'clear \x1b[2J\x1b[31m bell \x07 back \x08 :smile: [red]x[/red] nul \x00'
@@ -316,7 +211,8 @@ class TerminalTests(unittest.TestCase):
         terminal.render('verification', CASES['verification-failed'], target)
         stream.flush()
         text = raw.getvalue().decode('ascii')
-        for word, _, fallback, _ in terminal.STATUS.values():
+        for state in ('passed', 'failed'):
+            word, _, fallback, _ = terminal.STATUS[state]
             self.assertIn(f'{fallback} {word}', text)
 
 
@@ -361,7 +257,9 @@ class CommandLineTests(unittest.TestCase):
     def test_refusals_keep_their_exit_code_and_stream_on_a_terminal(self):
         for fresh, setting in ((io.StringIO, {}), (Terminal, {}), (Terminal, PLAIN)):
             with self.subTest(stream=fresh.__name__, setting=setting):
-                code, out, err = self.run_cli('--root', str(REPO / 'tests'), 'status', stream=fresh(), **setting)
+                code, out, err = self.run_cli(
+                    'recording', 'verify', str(REPO / 'tests/missing.zip'), stream=fresh(), **setting
+                )
                 self.assertEqual((code, out), (2, ''))
                 self.assertTrue(err.startswith('Berman needs attention: '), err)
                 self.assertNotIn(ESCAPE, err)
@@ -385,24 +283,8 @@ class CommandLineTests(unittest.TestCase):
                     code, out, err = self.run_cli('verify', '--software', stream=fresh(), **setting)
                     self.assertEqual((code, err), (1, ''))
                     # Rich itself still imports, so a terminal gets its rendering.
-                    self.assertIn('Packaged schema berman.workspace/1 cannot be used', out)
+                    self.assertIn('Packaged schema berman.connection/1 cannot be used', out)
                     self.assertIn('jsonschema: ', out)
-                    with tempfile.TemporaryDirectory() as temporary:
-                        base = Path(temporary).resolve()
-                        (base / 'codex').mkdir()
-                        workspace(base / 'berman', base, base / 'stewart', documents=['README.md'])
-                        git_repository(base / 'stewart', {'README.md': 'Project context\n'})
-                        root = str(base / 'berman')
-                        code, out, err = self.run_cli('--root', root, 'status', stream=fresh(), **setting)
-                        self.assertEqual((code, out), (2, ''))
-                        self.assertIn(
-                            'Berman needs attention: Records cannot be checked: jsonschema does not import', err
-                        )
-                        code, out, err = self.run_cli(
-                            '--root', root, 'verify', '--skip', 'archive', stream=fresh(), **setting
-                        )
-                        self.assertEqual((code, err), (1, ''))
-                        self.assertIn('The workspace does not load with this code: Records cannot be checked', out)
                 schemas.validator.cache_clear()
 
 
@@ -451,7 +333,7 @@ class PseudoTerminalTests(unittest.TestCase):
         self.assertEqual((code, err), (0, ''))
         self.assertIn(ESCAPE, text)
         self.assertIn('✔ passed', text)
-        for name in ('installation', 'dependencies', 'frozen-collector', 'schemas'):
+        for name in ('installation', 'dependencies', 'schemas'):
             self.assertIn(name, text)
         # Asked for plain text, or unable to show styled text, a terminal receives what a pipe receives.
         code, text, err = self.run_on_terminal('verify', '--software', **PLAIN)
@@ -462,40 +344,3 @@ class PseudoTerminalTests(unittest.TestCase):
         self.assertEqual((code, err), (0, ''))
         self.assertNotIn(ESCAPE, text)
         self.assertEqual(json.loads(text)['verdict'], 'passed')
-
-    def test_status_on_a_real_terminal_reads_the_workspace_and_changes_nothing(self):
-        from berman import files
-        from berman.records import Store
-
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary).resolve()
-            root, project = base / 'study\twith-tab', base / 'project'
-            (base / 'codex').mkdir()
-            workspace(root, base, project, documents=['README.md'])
-            git_repository(project, {'README.md': 'Synthetic project\n'})
-            store = Store(root)
-            run = legacy.prepare(store)
-            path = store.folder(run) / 'operation.json'
-            record = files.read(path)
-            record['documents'] = 'invalid'
-            files.write(path, record)
-            before = path.read_bytes(), path.stat().st_mtime_ns
-            code, displayed, error = self.run_on_terminal('--root', str(root), 'status', NO_COLOR='1')
-            self.assertEqual((code, error), (0, ''))
-            displayed = re.sub(r'\x1b\[[0-9;]*m', '', displayed)
-            self.assertIn(f'{run} (stewart): starting state unknown', displayed)
-            self.assertIn('read-only in this version', ' '.join(displayed.split()))
-            direct = subprocess.run(
-                [sys.executable, '-m', 'berman', '--root', str(root), 'status'], capture_output=True, text=True
-            )
-            self.assertEqual((direct.returncode, direct.stderr), (0, ''))
-            self.assertIn(f'{run} (stewart): starting state unknown', direct.stdout)
-            # The recorded path's tab reaches a pipe as it is, and a terminal as a visible escape.
-            self.assertIn('study\twith-tab', direct.stdout)
-            self.assertIn('study\\twith-tab', displayed)
-            self.assertNotIn('\t', displayed)
-            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
-
-
-if __name__ == '__main__':
-    unittest.main()

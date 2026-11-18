@@ -12,13 +12,6 @@
       "summary": "Synthetic.",
       "details": {},
       "meaning": "Synthetic."
-    },
-    "frozen-collector": {
-      "status": "passed",
-      "required": true,
-      "summary": "Synthetic.",
-      "details": {},
-      "meaning": "Synthetic."
     }
   },
   "failed": "none",

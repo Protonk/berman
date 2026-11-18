@@ -13,12 +13,19 @@
       "details": {},
       "meaning": "Installed package metadata and runtime resources can be read; no study is loaded."
     },
-    "frozen-collector": {
+    "dependencies": {
+      "summary": "Synthetic pass for dependencies",
       "status": "passed",
       "required": true,
-      "summary": "Synthetic pass for frozen-collector",
       "details": {},
-      "meaning": "The installed historical collector retains its frozen bytes."
+      "meaning": "Active runtime requirements, including transitive versions and Python constraints, are satisfied, and the dependency modules Berman uses import. Their versions are environment facts: nothing fingerprints them and no qualification rests on them."
+    },
+    "schemas": {
+      "summary": "Synthetic pass for schemas",
+      "status": "passed",
+      "required": true,
+      "details": {},
+      "meaning": "The packaged record schemas are present, well formed and named for their own record families."
     }
   },
   "failed": [],
@@ -26,9 +33,9 @@
   "not_established": [],
   "not_covered": [
     "Developer regression tests (run separately from the source checkout).",
-    "Workspace records, preserved evidence and reading editions.",
+    "Guest study records, preserved recordings and reading editions.",
     "Native harness execution, hook trust and native capture."
   ],
   "record": null,
-  "meaning": "Software checks only. No workspace or native installation was verified."
+  "meaning": "Checks the installed software, its dependencies and its packaged schemas."
 }

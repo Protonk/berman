@@ -1,57 +1,96 @@
 {
-  "schema": "berman.recording/2",
-  "collection_id": "7fafc98c-11e2-4acd-9035-408d9199fddd",
-  "run": "run-001",
-  "profile": "historical-import",
-  "recorded_at_utc": "2026-11-13T00:00:00Z",
-  "meaning": "Membership and retained evidence observed at publication; no historical event is inferred.",
-  "entries": [
-    {
-      "path": "runs",
-      "type": "directory",
-      "mode": "0o755"
-    },
-    {
-      "path": "runs/run-001",
-      "type": "directory",
-      "mode": "0o700"
-    },
-    {
-      "path": "evidence",
-      "type": "directory",
-      "mode": "0o755"
-    }
-  ],
-  "evidence": {
-    "operation": null,
-    "migration": null,
-    "ending": null,
-    "capture": null,
-    "binding": null,
-    "closure": null
-  },
-  "streams": [],
   "attribution": {
-    "connection": null,
-    "basis": "unattributed",
-    "evidence": null
+    "basis": "retained controller assignment",
+    "connection": "project",
+    "evidence": "evidence/controller.json"
   },
+  "collection_id": "7fafc98c-11e2-4acd-9035-408d9199fddd",
   "coverage": {
     "unknown": [
-      "No historical operation evidence retained",
-      "No historical migration evidence retained",
-      "No historical ending evidence retained",
-      "No historical capture evidence retained",
-      "No historical binding evidence retained",
-      "No historical closure evidence retained"
+      "Missing parent transcript"
     ]
   },
   "custody": {
     "inventory": {
-      "run": "run-001",
-      "current_root": "runs/run-001",
-      "entries": []
+      "current_root": "runs/run-013",
+      "entries": [
+        {
+          "mode": "0o700",
+          "path": "packet",
+          "type": "directory"
+        },
+        {
+          "mode": "0o700",
+          "path": "packet/notes",
+          "type": "directory"
+        },
+        {
+          "mode": "0o600",
+          "path": "packet/notes/work.md",
+          "sha256": "a32a0c8365063323ae074abf477f58a4b08cdb0243f946bc7b626c7fcc544091",
+          "size": 73,
+          "type": "file"
+        }
+      ],
+      "run": "run-013"
     },
-    "meaning": "Original filesystem metadata; materializations have their own mtimes."
-  }
+    "meaning": "Accepted native file bytes. Modes describe the portable package."
+  },
+  "entries": [
+    {
+      "mode": "0o700",
+      "path": "evidence",
+      "type": "directory"
+    },
+    {
+      "mode": "0o600",
+      "path": "evidence/controller.json",
+      "sha256": "ad19aa1afa8a03ccc16cab2eda2422a8e3c463b217c444cb059f6e2ca6803927",
+      "size": 1681,
+      "type": "file"
+    },
+    {
+      "mode": "0o600",
+      "path": "evidence/ending.json",
+      "sha256": "6481f9ad18a1e3e6adc79973d709526c9a1b91f4dfc7ab5ef8c8fa79adf48ba4",
+      "size": 148,
+      "type": "file"
+    },
+    {
+      "mode": "0o700",
+      "path": "runs",
+      "type": "directory"
+    },
+    {
+      "mode": "0o700",
+      "path": "runs/run-013",
+      "type": "directory"
+    },
+    {
+      "mode": "0o700",
+      "path": "runs/run-013/packet",
+      "type": "directory"
+    },
+    {
+      "mode": "0o700",
+      "path": "runs/run-013/packet/notes",
+      "type": "directory"
+    },
+    {
+      "mode": "0o600",
+      "path": "runs/run-013/packet/notes/work.md",
+      "sha256": "a32a0c8365063323ae074abf477f58a4b08cdb0243f946bc7b626c7fcc544091",
+      "size": 73,
+      "type": "file"
+    }
+  ],
+  "evidence": {
+    "capture": null,
+    "controller": "evidence/controller.json",
+    "ending": "evidence/ending.json"
+  },
+  "profile": "split",
+  "run": "run-013",
+  "schema": "berman.recording/2",
+  "streams": []
 }

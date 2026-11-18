@@ -1,114 +1,50 @@
 {
   "schema": "berman.verification/1",
+  "scope": "software",
   "verdict": "failed",
   "checked_at_utc": "2026-11-13T00:00:00.000000Z",
-  "root": "/synthetic/study",
+  "root": null,
   "code": "/synthetic/site-packages/berman",
-  "python": "/usr/bin/python3",
-  "python_version": "Python 3.14.9",
   "checks": {
-    "frozen-collector": {
+    "installation": {
       "status": "passed",
       "required": true,
-      "summary": "Frozen collector SHA-256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; expected ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-      "details": {
-        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-      },
-      "meaning": "The installed historical collector retains its frozen bytes."
-    },
-    "recorded-hashes": {
-      "status": "failed",
-      "required": true,
-      "summary": "14 of 120 recorded hashes do not hold",
-      "next": "Restore the recorded bytes from Git; preserved evidence is never edited",
-      "details": {
-        "hashes": 120,
-        "mismatched": [
-          "experiments/a/file-0.txt",
-          "experiments/a/file-1.txt",
-          "experiments/a/file-2.txt",
-          "experiments/a/file-3.txt",
-          "experiments/a/file-4.txt",
-          "experiments/a/file-5.txt",
-          "experiments/a/file-6.txt",
-          "experiments/a/file-7.txt",
-          "experiments/a/file-8.txt",
-          "experiments/a/file-9.txt",
-          "experiments/a/file-10.txt",
-          "experiments/a/file-11.txt"
-        ],
-        "missing": [
-          "experiments/b/gone.txt",
-          "experiments/b/[bold]also-gone[/bold].txt"
-        ]
-      },
-      "meaning": "Files listed in experiments/*/checksums.json, experiments/*/experiment-checksums.sha256 and inquiry/*/MANIFEST.json keep their recorded bytes."
-    },
-    "workspace": {
-      "status": "failed",
-      "required": true,
-      "summary": "berman status reports 2 problem(s)",
-      "next": "berman status",
-      "details": {
-        "outstanding_runs": [
-          "run-004"
-        ],
-        "problems": [
-          "orchard: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")",
-          "support trial: run-900102: never written"
-        ],
-        "plans": {
-          "orchard": {
-            "plan": "orchard-roles",
-            "next_step": "inquiry-after-accounts",
-            "next_recipe": "participant-inquiry"
-          }
-        }
-      },
-      "meaning": "This co-located workspace's berman.json, catalogue and connections load with this code, and berman status reports no problem: none in the workspace, on a listed run, on a support trial, in a combined request or in a selected plan. Plan sequence conflicts are problems; a plan with steps left is not."
-    },
-    "settled": {
-      "status": "not-established",
-      "required": true,
-      "summary": "2 unsettled; this version reads a co-located workspace and closes nothing in it",
-      "next": "Close each with the Berman release that opened it and keep that runtime installed until none remain; this version commissions and closes fieldwork only through the controller and executor (docs/usage.md)",
-      "details": {
-        "unsettled": [
-          "run-004: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
-          "run-900101: support trial experiments/trial-a was left at phase launching. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork."
-        ]
-      },
-      "meaning": "Nothing in this co-located workspace awaits the release that opened it: no reserved, prepared or open engagement, no declared ending whose preservation, migration, packaging or reading publication is unfinished, no pending combined request and no open support trial. This version reads such work and never settles it; a run at rest without an ending or a package stays as recorded."
-    },
-    "archive": {
-      "status": "not-run",
-      "required": true,
-      "summary": "Skipped with --skip",
-      "next": "berman verify without --skip archive",
+      "summary": "Synthetic pass for installation",
       "details": {},
-      "meaning": "Generated reading aids and the cumulative archive match their inputs. verify never rebuilds them."
+      "meaning": "Installed package metadata and runtime resources can be read; no study is loaded."
+    },
+    "dependencies": {
+      "summary": "Synthetic failure for dependencies",
+      "status": "failed",
+      "required": true,
+      "details": {
+        "missing": [
+          "[bold]missing[/bold]"
+        ]
+      },
+      "meaning": "Active runtime requirements, including transitive versions and Python constraints, are satisfied, and the dependency modules Berman uses import. Their versions are environment facts: nothing fingerprints them and no qualification rests on them.",
+      "next": "Reinstall the package with its dependencies"
+    },
+    "schemas": {
+      "summary": "Synthetic failure for schemas",
+      "status": "failed",
+      "required": true,
+      "details": {},
+      "meaning": "The packaged record schemas are present, well formed and named for their own record families.",
+      "next": "Reinstall the package with its dependencies"
     }
   },
   "failed": [
-    "recorded-hashes",
-    "workspace"
+    "dependencies",
+    "schemas"
   ],
-  "not_run": [
-    "archive"
-  ],
-  "not_established": [
-    "settled"
-  ],
+  "not_run": [],
+  "not_established": [],
   "not_covered": [
     "Developer regression tests (run separately from the source checkout).",
-    "Hook trust, native capture and native access. This version operates no harness in a co-located workspace; the executor qualifies each launch from its own evidence (berman remote qualify RUN).",
-    "Fieldwork commissioned through the controller. Its recording and edition are verified in the guest study (berman remote verify RUN)."
+    "Guest study records, preserved recordings and reading editions.",
+    "Native harness execution, hook trust and native capture."
   ],
-  "record": {
-    "directory": "/synthetic/study/experiments/check",
-    "files": [
-      "verification.json"
-    ]
-  },
-  "meaning": "Each check is a separate fact; passed requires every required check. The co-located workspace was read: nothing was rebuilt, closed or launched."
+  "record": null,
+  "meaning": "Checks the installed software, its dependencies and its packaged schemas."
 }

@@ -15,7 +15,7 @@ import sys
 
 from berman.presentation import plain
 
-KINDS = ('status', 'verification')
+KINDS = ('verification',)
 CHOICE = 'BERMAN_OUTPUT'  # Set to 'plain' to keep the plain text on an interactive terminal.
 
 

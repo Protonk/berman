@@ -6,17 +6,10 @@ silently misread. A field the code reads as a path, iterates or indexes must hav
 type that reading needs, and a record must have the fields that loading it reads. A field the
 code converts, such as a timeout or a step identity, is accepted in every form the conversion
 takes. A field Berman only stores or prints is not constrained, and null is read as absent.
-So a record that version 0.4 loaded still loads, unless it only loaded by being misread: a
-list given as text was read character by character.
+A schema describes one supported record family. The controller and portable readers also
+check agreement between records, custody receipts, inventories and observed bytes.
 
-A schema does not say whether a record describes a state the workflow can be in. Phases,
-purposes, adapter names, run and session identities, agreement between records and filesystem
-safety belong to the Python that makes those decisions, in wording those modules already own.
-
-Validation only reads. It fills no default, coerces no type and returns the value it was
-given, so reading a preserved record cannot change it. A record that fails is invalid data,
-which stays distinct from a record that is absent, from an operation that is incomplete (its
-record is valid at every step) and from a fact nobody recorded (an optional field left out).
+Validation returns the value it was given. Missing data and invalid data remain distinct.
 
 Any release may deliberately tighten validation, with documented adoption
 consequences and regression tests. Historical facts never change meaning silently; use a new
@@ -35,12 +28,9 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 SUPPORTED = (
-    'berman.workspace/1',
     'berman.connection/1',
     'berman.recipe/2',
     'berman.research-plan/1',
-    'berman.run-catalogue/1',
-    'berman.operation/1',
     'berman.software/1',
     'berman.verification/1',
     'berman.recording/2',

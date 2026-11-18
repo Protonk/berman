@@ -35,27 +35,22 @@ include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+namespaces = false
 
 [tool.setuptools.package-data]
 berman = ["schemas/*.json"]
 
 
-# Ruff. Lint applies to everything but the frozen collector. The formatter
+# Ruff. Lint applies to the package and tests. The formatter
 # governs new files only: docs/development.md explains the exemptions.
 [tool.ruff]
 target-version = "py314"
 line-length = 120
 src = ["src"]
-extend-exclude = ["src/berman/_legacy/capture_session.py"]
+
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B"]
-
-[tool.ruff.lint.per-file-ignores]
-# Byte-sensitive files. Each finding here is style, and fixing it would change
-# bytes that edition identities name.
-"src/berman/archive/builder.py" = ["B007", "E731", "F401"]
-"src/berman/archive/select.py" = ["E731"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -63,8 +58,6 @@ exclude = [
     # Byte-sensitive: never a formatter target (tests/unit/test_architecture.py checks this list).
     "src/berman/archive/builder.py",
     "src/berman/archive/package.py",
-    "src/berman/archive/select.py",
-    "src/berman/archive/stewart.py",
     "src/berman/archive/streams.py",
     # Written before the formatter. Remove a file from this list when formatting it.
     "src/berman/__main__.py",
@@ -73,8 +66,6 @@ exclude = [
     "src/berman/files.py",
     "src/berman/installation.py",
     "src/berman/recipes.py",
-    "tests/compatibility/test_build_archive.py",
-    "tests/compatibility/test_capture_session.py",
     "tests/support/paths.py",
     "tests/unit/test_boundaries.py",
     "tests/unit/test_guidance.py",
@@ -88,17 +79,17 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: command line, connector, orchestration, operations, records, definitions, capture, foundations"
+name = "Layers: command line, connector, orchestration, operations, protocol, definitions, capture, foundations"
 type = "layers"
 layers = [
     "berman.__main__",
     "berman.cli",
     "berman.connector",
     "berman.controller : berman.executor : berman.verify",
-    "berman.custody : berman.sources : berman.recordings : berman.recipes : berman.workspace : berman.checks",
-    "berman.protocol : berman.records",
-    "berman.config | berman.lifecycle",
-    "berman.capture : berman._legacy",
+    "berman.custody : berman.sources : berman.recipes : berman.checks",
+    "berman.protocol",
+    "berman.config",
+    "berman.capture",
     "berman.evidence : berman.snapshots : berman.archive",
     "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation",
 ]
@@ -114,7 +105,6 @@ type = "forbidden"
 source_modules = [
     "berman.executor.capture",
     "berman.capture",
-    "berman._legacy",
     "berman.sources",
     "berman.snapshots",
     "berman.protocol",
@@ -138,40 +128,6 @@ broken_contract_guidance = """
 A reading edition is deterministic and its builder's bytes are its identity.
 Presentation and validation libraries stay out of selection, rendering and
 packaging."""
-
-[[tool.importlinter.contracts]]
-id = "lifecycle"
-name = "Lifecycle facts are evaluated without filesystem or process access"
-type = "forbidden"
-source_modules = ["berman.lifecycle"]
-forbidden_modules = [
-    "berman.files",
-    "berman.installation",
-    "berman.archive",
-    "fcntl",
-    "os",
-    "shutil",
-    "subprocess",
-    "tempfile",
-    "jsonschema",
-    "rich",
-    "packaging",
-]
-# Run and session identity patterns come from the single loaded frozen collector.
-ignore_imports = ["berman.lifecycle -> berman._legacy.api"]
-broken_contract_guidance = """
-berman.lifecycle decides what the evidence establishes; it does not gather it.
-Discovery (berman.records) reads files and passes what it observed in."""
-
-[[tool.importlinter.contracts]]
-id = "frozen"
-name = "Only the collector loads the frozen capture_session module"
-type = "protected"
-protected_modules = ["berman._legacy.capture_session"]
-allowed_importers = ["berman.capture.collector"]
-broken_contract_guidance = """
-Other modules take RUN and SESSION from berman._legacy.api, so one process
-never executes the frozen file twice."""
 
 [[tool.importlinter.contracts]]
 id = "presentation"

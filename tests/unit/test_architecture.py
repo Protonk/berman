@@ -23,7 +23,7 @@ import unittest
 
 import berman
 from berman.archive import builder
-from berman.installation import FROZEN, PACKAGE
+from berman.installation import PACKAGE
 from tests.support.paths import REPO
 
 CONFIG = REPO / 'pyproject.toml'
@@ -31,10 +31,9 @@ SETTINGS = tomllib.loads(CONFIG.read_text())
 CONTRACTS = {c['id']: c for c in SETTINGS['tool']['importlinter']['contracts']}
 # (contract id, module to change, import to append). Each must break the named contract.
 VIOLATIONS = (
-    ('layers', 'records.py', 'from berman import verify'),
-    ('layers', 'config.py', 'from berman import lifecycle'),
-    ('layers', 'capture/claude.py', 'from berman import records'),
-    ('layers', 'archive/select.py', 'from berman import records'),
+    ('layers', 'config.py', 'from berman import controller'),
+    ('layers', 'capture/claude.py', 'from berman import controller'),
+    ('layers', 'archive/builder.py', 'from berman import controller'),
     ('layers', 'files.py', 'from berman import installation'),
     ('layers', 'schemas/__init__.py', 'from berman import files'),
     ('layers', 'checks.py', 'from berman import verify'),
@@ -47,18 +46,15 @@ VIOLATIONS = (
     ('hooks', 'executor/capture.py', 'from berman import recipes'),  # Indirectly, two modules away.
     ('archive', 'archive/package.py', 'import rich.console'),
     ('archive', 'archive/package.py', 'import packaging'),
-    ('lifecycle', 'lifecycle.py', 'import subprocess'),
-    ('lifecycle', 'lifecycle.py', 'from berman import files'),
-    ('frozen', 'config.py', 'from berman._legacy import capture_session'),
     ('presentation', 'verify.py', 'from berman.presentation import plain'),
-    ('presentation', 'records.py', 'from berman import presentation'),
-    ('layers', 'presentation/plain.py', 'from berman import lifecycle'),
+    ('presentation', 'controller.py', 'from berman import presentation'),
+    ('layers', 'presentation/plain.py', 'from berman import controller'),
     ('layers', 'presentation/terminal.py', 'from berman import verify'),
-    ('confined', 'records.py', 'import rich'),
+    ('confined', 'controller.py', 'import rich'),
     ('confined', 'presentation/plain.py', 'import rich'),
     ('confined', 'cli.py', 'from rich.console import Console'),
     ('confined', 'verify.py', 'import jsonschema'),
-    ('confined', 'workspace.py', 'import packaging'),
+    ('confined', 'cli.py', 'import packaging'),
 )
 RUNNER = """
 import sys
@@ -152,7 +148,7 @@ class StandardLibraryTests(unittest.TestCase):
         # The contracts name the packages Berman depends on; this refuses every other one too.
         files = hook_path()
         self.assertIn('executor/capture.py', files)
-        self.assertIn(FROZEN, files)
+        self.assertIn('capture/codex.py', files)
         for relative in files:
             with self.subTest(file=relative):
                 self.assertLessEqual(top_level_imports(PACKAGE / relative), set(sys.stdlib_module_names) | {'berman'})
@@ -171,16 +167,15 @@ class StandardLibraryTests(unittest.TestCase):
 class FormatterTests(unittest.TestCase):
     def test_byte_sensitive_files_are_never_formatter_targets(self):
         ruff = SETTINGS['tool']['ruff']
-        self.assertIn('src/berman/' + FROZEN, ruff['extend-exclude'])
         exempt = set(ruff['format']['exclude'])
-        for relative in sorted(BYTE_SENSITIVE - {FROZEN}):
+        for relative in sorted(BYTE_SENSITIVE):
             with self.subTest(file=relative):
                 self.assertTrue((PACKAGE / relative).is_file())
                 self.assertIn('src/berman/' + relative, exempt)
 
     def test_exemptions_name_existing_files(self):
         ruff = SETTINGS['tool']['ruff']
-        for name in [*ruff['format']['exclude'], *ruff['extend-exclude'], *ruff['lint']['per-file-ignores']]:
+        for name in [*ruff['format']['exclude'], *ruff['lint'].get('per-file-ignores', {})]:
             with self.subTest(file=name):
                 self.assertTrue((REPO / name).is_file(), f'{name} is exempted but does not exist')
 

@@ -1,7 +1,7 @@
 """Renderings for an interactive terminal, with Rich. The only module that imports it.
 
 The same results as `plain`, laid out so that an operator can tell at a glance what passed, what
-failed, what was never run, what is known and what is not, and what is unsettled.
+failed and what the software verification covered.
 
 Two rules hold throughout:
 
@@ -17,7 +17,6 @@ import unicodedata
 
 from rich.console import Console
 from rich.padding import Padding
-from rich.table import Table
 from rich.text import Text
 
 from berman.presentation import plain
@@ -30,8 +29,7 @@ STATUS = {
     'not-established': (plain.LABELS['not-established'], '?', '?', 'yellow'),
 }
 VERDICT = {'passed': 'bold green', 'failed': 'bold red', 'incomplete': 'bold yellow'}
-FACTS = ('registered', 'capture', 'finalized', 'ending', 'migration', 'packaged')
-HEADING, ATTENTION, CAUTION, QUIET = 'bold', 'bold red', 'yellow', 'dim'
+HEADING, QUIET = 'bold', 'dim'
 HIDDEN = ('Cc', 'Cf', 'Cs', 'Co', 'Cn', 'Zl', 'Zp')  # Unicode categories never passed through to a terminal.
 
 
@@ -106,81 +104,9 @@ def verification(screen, result):
     screen.line(('Never checked by berman verify:', HEADING))
     for item in result['not_covered']:
         screen.line(item, depth=2)
-    if result['record']:
-        screen.line('Recorded in ', (result['record']['directory'], HEADING))
 
 
-def fact_value(value):
-    """(word, style) for one lifecycle fact: established, established as absent, or unknown."""
-    if value is None:
-        return 'unknown', 'bold yellow'
-    if value is True:
-        return 'yes', 'green'
-    if value is False:
-        return 'no', None
-    return str(value), 'cyan'
-
-
-def facts(row):
-    """Each lifecycle fact with what establishes it, or why it is unknown."""
-    table = Table(box=None, padding=(0, 2, 0, 0), show_header=True, header_style=QUIET, pad_edge=False)
-    table.add_column('fact', overflow='fold')
-    table.add_column('value', overflow='fold')
-    table.add_column('evidence, or why it is unknown', overflow='fold')
-    for name in FACTS:
-        fact = row['lifecycle'][name]
-        word, style = fact_value(fact['value'])
-        basis = fact['evidence'] if fact['value'] is not None else fact.get('unknown', [])
-        table.add_row(text(name), text((word, style)), text('; '.join(basis)))
-    return table
-
-
-def status(screen, result):
-    screen.line(f'{result["archived"]} archived runs. Default connection: ', (result['default_connection'], HEADING))
-    for problem in result['workspace_problems']:
-        screen.line(('Workspace needs attention: ', ATTENTION), problem)
-    for name, row in result['connections'].items():
-        screen.line((name, HEADING), ': ', (plain.plan(row), CAUTION if row.get('plan_error') else None))
-        for problem in row['problems']:
-            screen.line(('needs attention: ', ATTENTION), problem, depth=2)
-    for row in result['pending_requests']:
-        screen.line((plain.request(row), CAUTION))
-    if not result['runs']:
-        screen.line('No outstanding runs.')
-    for row in result['runs']:
-        screen.gap()
-        screen.line((row['run'], HEADING), f' ({row["connection"]}): ', row['summary'])
-        screen.line(plain.assignment(row), depth=2)
-        if row['last_capture']:
-            screen.line(f'Last capture at {row["last_capture"]}', depth=2)
-        if screen.console.width < 70:
-            for name in FACTS:
-                fact = row['lifecycle'][name]
-                screen.line(name, ': ', fact_value(fact['value']), depth=2)
-                basis = fact['evidence'] if fact['value'] is not None else fact.get('unknown', [])
-                for item in basis:
-                    screen.line(item, depth=4)
-        else:
-            screen.console.print(indented(facts(row), 2))
-        for line in row['lifecycle']['disagreements']:
-            screen.line((line, CAUTION), depth=2)
-        for line in row['problems']:
-            screen.line((line, ATTENTION), depth=2)
-    for row in result['support_trials']:
-        screen.gap()
-        screen.line((row['run'], HEADING), plain.trial(row).removeprefix(row['run']))
-        for problem in row['problems']:
-            screen.line((problem, ATTENTION), depth=2)
-    if result['unsettled']:
-        screen.gap()
-        screen.line(('Unsettled:', 'bold yellow'))
-        for item in result['unsettled']:
-            screen.line(item, depth=2)
-    screen.gap()
-    screen.line((result['meaning'], QUIET))
-
-
-RENDERERS = {'status': status, 'verification': verification}
+RENDERERS = {'verification': verification}
 
 
 def render(kind, result, target):

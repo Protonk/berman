@@ -25,19 +25,7 @@ SHA = re.compile(r'[0-9a-f]{64}\Z')
 
 def collection(root):
     """The explicit portable identity, never inferred from a workstation path or name."""
-    root = Path(root)
-    values = []
-    for name, key in (('collection.json', 'id'), ('berman.json', 'collection_id')):
-        path = root / name
-        if path.exists():
-            value = files.read(path).get(key)
-            if value is not None:
-                values.append(str(uuid.UUID(value)))
-    if not values:
-        raise ValueError('No collection identity: record collection.json with the agreed collection UUID before export')
-    if len(set(values)) != 1:
-        raise ValueError('collection.json and berman.json name different collections')
-    return values[0]
+    return str(uuid.UUID(files.read(Path(root) / 'collection.json')['id']))
 
 
 def relative(value):
@@ -62,8 +50,8 @@ def validate(manifest):
     uuid.UUID(manifest['collection_id'])
     if not isinstance(manifest.get('run'), str) or not RUN.fullmatch(manifest['run']):
         raise ValueError('Invalid recording run identity')
-    if manifest.get('profile') not in ('native', 'historical-import', 'split'):
-        raise ValueError('Recording needs a supported recording profile')
+    if manifest.get('profile') != 'split':
+        raise ValueError(f"Unsupported recording profile {manifest.get('profile')!r}; expected split")
     if not isinstance(manifest.get('entries'), list) or not manifest['entries']:
         raise ValueError('Recording has no inventoried members')
     seen = {}
@@ -100,8 +88,7 @@ def validate(manifest):
     evidence = manifest.get('evidence')
     if not isinstance(evidence, dict):
         raise ValueError('Recording needs explicit evidence references')
-    for fact in ('ending', 'capture', 'operation', 'migration', 'binding', 'closure'):
-        ref = evidence.get(fact)
+    for fact, ref in evidence.items():
         if ref is not None and (not isinstance(ref, str) or ref not in seen or seen[ref]['type'] != 'file'):
             raise ValueError(f'Recording {fact} refers to missing evidence')
     coverage = manifest.get('coverage')
@@ -109,19 +96,11 @@ def validate(manifest):
         raise ValueError('Recording needs an explicit coverage report')
     if not all(isinstance(value, str) and value for value in coverage['unknown']):
         raise ValueError('Invalid coverage limitation')
-    if manifest['profile'] == 'native' and any(
-        evidence.get(key) is None for key in ('ending', 'capture', 'operation', 'migration', 'binding', 'closure')
-    ):
-        raise ValueError('A new recording requires capture, binding, closure, ending, operation and migration evidence')
-    if manifest['profile'] == 'split':
-        ref = evidence.get('controller')
-        if ref != 'evidence/controller.json' or ref not in seen or seen[ref]['type'] != 'file':
-            raise ValueError('Split recording requires retained controller evidence')
-        if evidence.get('ending') != 'evidence/ending.json':
-            raise ValueError('Split recording requires retained ending evidence')
-    for fact in ('ending', 'capture', 'operation', 'migration', 'binding', 'closure'):
-        if manifest['profile'] != 'split' and evidence.get(fact) is None and not any(fact in value for value in coverage['unknown']):
-            raise ValueError(f'Missing {fact} evidence must be named in coverage.unknown')
+    ref = evidence.get('controller')
+    if ref != 'evidence/controller.json' or ref not in seen or seen[ref]['type'] != 'file':
+        raise ValueError('Split recording requires retained controller evidence')
+    if evidence.get('ending') != 'evidence/ending.json':
+        raise ValueError('Split recording requires retained ending evidence')
     for stream in manifest.get('streams', []):
         if (
             stream['path'] not in seen
@@ -316,77 +295,43 @@ def committed_capture(run, read):
     return ref, capture
 
 
-def check_authority(manifest, read, snapshot_bytes=True):
-    """Check the retained assertions, without replacing them with a manifest boolean."""
+def primary_capture(manifest, controller, read):
+    """Return the primary generation established by this collection, including early split pointers."""
+    capture_ref = manifest['evidence'].get('capture')
+    capture = json.loads(read(capture_ref)) if capture_ref else None
+    parent_gap = any(path.startswith('session/') for path in split_absent(manifest, controller))
+    if split_part(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
+        ref, capture = committed_capture(manifest['run'], read)
+        if capture_ref is not None and capture_ref != ref:
+            raise ValueError('Split manifest and native pointer select different captures')
+        capture_ref = ref
+    return capture_ref, capture
+
+
+def check_authority(manifest, read):
+    """Check the facts named in the manifest against the retained records and transcript bytes."""
     refs = manifest['evidence']
-
-    def load(key):
-        return json.loads(read(refs[key])) if refs.get(key) else None
-
-    ending, operation, capture = load('ending'), load('operation'), load('capture')
-    for key in refs:
-        if refs[key] is not None and not isinstance(load(key), dict):
+    records = {key: json.loads(read(ref)) for key, ref in refs.items() if ref is not None}
+    for key, record in records.items():
+        if not isinstance(record, dict):
             raise ValueError(f'Retained {key} must be an object')
-    capture_ref = refs.get('capture')
-    if manifest['profile'] == 'split':
-        controller = load('controller')
-        parent_gap = any(path.startswith('session/') for path in split_absent(manifest, controller))
-        if split_part(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
-            # Early split manifests identify the primary generation only through the
-            # retained host pointer. Explicit and implicit references must agree.
-            ref, capture = committed_capture(manifest['run'], read)
-            if capture_ref is not None and capture_ref != ref:
-                raise ValueError('Split manifest and native pointer select different captures')
-            capture_ref = ref
-        check_split_authority(manifest, controller, ending, capture, read)
-    if ending is not None:
-        if not isinstance(ending, dict) or not ending.get('reason') or not ending.get('declared_at_utc'):
-            raise ValueError('Retained ending is not a declaration')
-        if operation is not None and operation.get('ending') != ending:
-            raise ValueError('Retained operation and ending disagree')
-    if operation is not None and operation.get('run') != manifest['run']:
-        raise ValueError('Retained operation names another run')
+    ending, controller = records['ending'], records['controller']
+    capture_ref, capture = primary_capture(manifest, controller, read)
+    check_split_authority(manifest, controller, ending, capture, read)
+    if not ending.get('reason') or not ending.get('declared_at_utc'):
+        raise ValueError('Retained ending is not a declaration')
     if capture is not None and capture.get('run') != manifest['run']:
         raise ValueError('Retained capture names another run')
     if capture is not None:
         folder = PurePosixPath(capture_ref).parent
-        if snapshot_bytes:
-            raw = read(str(folder / 'transcript.jsonl'))
-            if len(raw) != capture['saved_bytes'] or files.digest(raw) != capture['sha256']:
-                raise ValueError('Retained capture and transcript bytes disagree')
-            if capture.get('reader_sha256') and files.digest(read(str(folder / 'conversation.txt'))) != capture['reader_sha256']:
-                raise ValueError('Retained capture and reader disagree')
-            history = read(str(folder / 'captures.jsonl')).splitlines()
-            if not history or json.loads(history[-1]) != capture:
-                raise ValueError('Retained capture and history disagree')
-        binding, closure = load('binding'), load('closure')
-        if binding is not None and (
-            binding.get('run') != manifest['run'] or binding.get('session_id') != capture['session_id']
-        ):
-            raise ValueError('Retained binding and capture disagree')
-        if closure is not None:
-            if closure.get('capture_sha256') != capture['sha256']:
-                raise ValueError('Retained closure and capture disagree')
-            if closure.get('generation') and closure['generation'] != files.digest_json(capture):
-                raise ValueError('Retained closure and capture generation disagree')
-            for key in ('run', 'session_id', 'saved_bytes'):
-                if key in closure and closure[key] != capture[key]:
-                    raise ValueError(f'Retained closure and capture {key} disagree')
-    attribution = manifest.get('attribution', {})
-    if (
-        operation is not None
-        and operation.get('connection')
-        and attribution.get('connection') != operation['connection']['id']
-    ):
-        raise ValueError('Retained operation and connection attribution disagree')
-    ref = attribution.get('evidence')
-    if ref and attribution.get('basis') == 'retained catalogue row':
-        row = json.loads(read(ref))['record']
-        if row.get('run') != manifest['run'] or row.get('connection') != attribution['connection']:
-            raise ValueError('Retained catalogue and attribution disagree')
-    if ref and attribution.get('basis') == 'retained packet metadata':
-        if json.loads(read(ref)).get('connection') != attribution['connection']:
-            raise ValueError('Retained packet metadata and attribution disagree')
+        raw = read(str(folder / 'transcript.jsonl'))
+        if len(raw) != capture['saved_bytes'] or files.digest(raw) != capture['sha256']:
+            raise ValueError('Retained capture and transcript bytes disagree')
+        if capture.get('reader_sha256') and files.digest(read(str(folder / 'conversation.txt'))) != capture['reader_sha256']:
+            raise ValueError('Retained capture and reader disagree')
+        history = read(str(folder / 'captures.jsonl')).splitlines()
+        if not history or json.loads(history[-1]) != capture:
+            raise ValueError('Retained capture and history disagree')
 
 
 def verify_package(path, expected_sha256=None):
@@ -416,13 +361,13 @@ def inspect_package(data, expected_sha256=None):
         'coverage': manifest['coverage'],
         'collection_id': manifest['collection_id'],
         'run': manifest['run'],
-        'meaning': 'Recorded members and evidence agree. Integrity does not imply complete capture or an ending.',
+        'meaning': 'The recorded members agree with the controller receipts and ending. Coverage lists recorded gaps.',
     }
 
 
 def verify_directory(root):
     root = Path(root)
-    manifest = files.read(root / MANIFEST)
+    manifest = validate(files.read(root / MANIFEST))
     members = {}
     for row in files.inventory(root):
         name = row['path'] + ('/' if row['type'] == 'directory' else '')
@@ -475,7 +420,13 @@ def materialize(source, destination, expected_sha256=None):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(archive.read(info))
             for item in links:
-                (stage / item['path']).symlink_to(item['target'])
+                link = stage / item['path']
+                link.symlink_to(item['target'])
+                permissions = int(item['mode'], 0)
+                if stat.S_IMODE(link.lstat().st_mode) != permissions:
+                    if os.chmod not in os.supports_follow_symlinks:
+                        raise ValueError(f"Cannot materialize recorded link permissions: {item['path']}")
+                    link.chmod(permissions, follow_symlinks=False)
             for item in links:
                 resolved = (stage / item['path']).resolve(strict=True)
                 if not resolved.is_relative_to(stage):

@@ -20,7 +20,7 @@ import sys
 import tempfile
 import uuid
 
-from berman.installation import PACKAGE, FROZEN, FROZEN_SHA256
+from berman.installation import PACKAGE
 
 PROTOCOL = 'berman.connector/1'
 STUDY = 'smoke-study'
@@ -61,12 +61,13 @@ def smoke(example, base):
     assert software['verdict'] == 'passed' and software['not_run'] == []
     # The wheel carries its record schemas, and pip installed what it declares.
     assert {name: check['status'] for name, check in software['checks'].items()} == dict.fromkeys(
-        ('installation', 'dependencies', 'frozen-collector', 'schemas'), 'passed'
+        ('installation', 'dependencies', 'schemas'), 'passed'
     ), software['checks']
     identity = software['checks']['installation']['details']['software']
     environment = identity['environment']
     assert environment['dependencies']['jsonschema'] and environment['dependencies']['rich'], environment
-    assert identity['files_sha256'][FROZEN] == FROZEN_SHA256
+    assert 'capture/codex.py' in identity['files_sha256']
+    assert not any(name.startswith('_legacy/') for name in identity['files_sha256'])
     # A hook process loads the standard library and Berman's own modules, and nothing third-party.
     loaded = subprocess.run(
         [sys.executable, '-I', '-B', '-c', HOOK_MODULES], cwd=unrelated, text=True, capture_output=True
@@ -76,10 +77,6 @@ def smoke(example, base):
     assert 'commission' in invoke('--help', program='berman-research').stdout
     assert 'commission' in invoke('remote', '--help').stdout
     assert 'codex-hooks' in invoke('executor', '--help').stdout
-    # The co-located writer is gone, and says where fieldwork now runs.
-    refused = invoke('new', '--recipe', 'baseline', expected=2).stderr
-    assert 'only through the controller and executor' in refused, refused
-
     collection = str(uuid.uuid4())
     (study / 'collection.json').write_text(
         json.dumps({'schema': 'berman.collection/1', 'id': collection, 'name': 'Wheel smoke'})
@@ -152,7 +149,6 @@ def smoke(example, base):
         'version': identity['version'],
         'package': str(PACKAGE),
         'source_sha256': identity['source_sha256'],
-        'frozen_sha256': hashlib.sha256((PACKAGE / FROZEN).read_bytes()).hexdigest(),
         'software_verification': software['verdict'],
         'python': environment['python'],
         'dependencies': environment['dependencies'],

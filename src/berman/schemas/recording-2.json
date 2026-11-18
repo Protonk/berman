@@ -25,11 +25,7 @@
       "pattern": "^run-[0-9]{3,6}$"
     },
     "profile": {
-      "enum": [
-        "native",
-        "historical-import",
-        "split"
-      ]
+      "const": "split"
     },
     "entries": {
       "type": "array",
@@ -74,31 +70,15 @@
     "evidence": {
       "type": "object",
       "required": [
-        "operation",
-        "migration",
         "ending",
-        "capture",
-        "binding",
-        "closure"
+        "controller"
       ],
       "properties": {
-        "operation": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "migration": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "ending": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "const": "evidence/ending.json"
+        },
+        "controller": {
+          "const": "evidence/controller.json"
         },
         "capture": {
           "type": [
@@ -106,17 +86,8 @@
             "null"
           ]
         },
-        "binding": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "closure": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "supplement": {
+          "type": "string"
         }
       }
     },
