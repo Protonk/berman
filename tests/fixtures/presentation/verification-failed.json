@@ -53,64 +53,32 @@
         "outstanding_runs": [
           "run-004"
         ],
-        "next_recipe": {
-          "orchard": "participant-inquiry"
-        },
-        "operations_in_progress": [],
         "problems": [
           "orchard: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")",
           "support trial: run-900102: never written"
-        ]
+        ],
+        "plans": {
+          "orchard": {
+            "plan": "orchard-roles",
+            "next_step": "inquiry-after-accounts",
+            "next_recipe": "participant-inquiry"
+          }
+        }
       },
-      "meaning": "This workspace's berman.json, catalogue, connections and plans load with this code, and berman status reports no problem: none in the workspace, on an outstanding run (one with no connection blocks every connection) or on a support trial. Each connection's next step is listed, not judged, even when its plan refuses one."
+      "meaning": "This co-located workspace's berman.json, catalogue and connections load with this code, and berman status reports no problem: none in the workspace, on a listed run, on a support trial, in a combined request or in a selected plan. Plan sequence conflicts are problems; a plan with steps left is not."
     },
-    "hook-trust:berman-codex": {
+    "settled": {
       "status": "not-established",
       "required": true,
-      "summary": "The berman-codex collector implementation changed after its verification; renewed verification is required",
-      "next": "With the researcher's approval, review /hooks in the actual Codex CLI, then record it with berman capture record-trust --evidence FILE --attest",
+      "summary": "2 unsettled; this version reads a co-located workspace and closes nothing in it",
+      "next": "Close each with the Berman release that opened it and keep that runtime installed until none remain; this version commissions and closes fieldwork only through the controller and executor (docs/usage.md)",
       "details": {
-        "changed_implementation": [
-          "capture/router.py",
-          "capture/runtime.py"
-        ],
-        "basis": "hooks/verification/berman-codex.json",
-        "used_by": [
-          "orchard"
-        ],
-        "kept_qualified": true
-      },
-      "meaning": "The installed hooks match a definition reviewed in the actual CLI for these implementation bytes (Codex), or the per-launch template, in-session bytes, helpers and settings policy match the qualified support trial (Claude, which needs no review). verify reads that record; it never performs the review or the trial."
-    },
-    "native-capture:berman-codex": {
-      "status": "not-established",
-      "required": true,
-      "summary": "Depends on hook-trust:berman-codex",
-      "next": "A native support trial for berman-codex",
-      "details": {
-        "basis": "hooks/verification/berman-codex.json"
-      },
-      "meaning": "A native session captured its required events with these implementation bytes. Trust alone does not show this."
-    },
-    "hook-trust:berman-claude": {
-      "status": "passed",
-      "required": false,
-      "summary": "Per-launch hook template, in-session bytes, helpers and settings policy match the qualified support trial; warning: Claude CLI changed since qualification",
-      "details": {
-        "changed_implementation": [],
-        "warnings": [
-          "Claude CLI changed since qualification"
+        "unsettled": [
+          "run-004: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
+          "run-900101: support trial experiments/trial-a was left at phase launching. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork."
         ]
       },
-      "meaning": "The installed hooks match a definition reviewed in the actual CLI for these implementation bytes (Codex), or the per-launch template, in-session bytes, helpers and settings policy match the qualified support trial (Claude, which needs no review). verify reads that record; it never performs the review or the trial."
-    },
-    "native-capture:berman-claude": {
-      "status": "not-established",
-      "required": false,
-      "summary": "Trust recorded; no native capture demonstrated for these implementation bytes",
-      "next": "A native support trial for berman-claude",
-      "details": {},
-      "meaning": "A native session captured its required events with these implementation bytes. Trust alone does not show this."
+      "meaning": "Nothing in this co-located workspace awaits the release that opened it: no reserved, prepared or open engagement, no declared ending whose preservation, migration, packaging or reading publication is unfinished, no pending combined request and no open support trial. This version reads such work and never settles it; a run at rest without an ending or a package stays as recorded."
     },
     "archive": {
       "status": "not-run",
@@ -119,14 +87,6 @@
       "next": "berman verify without --skip archive",
       "details": {},
       "meaning": "Generated reading aids and the cumulative archive match their inputs. verify never rebuilds them."
-    },
-    "native-access": {
-      "status": "not-run",
-      "required": true,
-      "summary": "Not selected",
-      "next": "berman verify --native-access",
-      "details": {},
-      "meaning": "Host tools exercised the checkout and packet, and Codex rendered the launch policy."
     }
   },
   "failed": [
@@ -134,18 +94,15 @@
     "workspace"
   ],
   "not_run": [
-    "archive",
-    "native-access"
+    "archive"
   ],
   "not_established": [
-    "hook-trust:berman-codex",
-    "native-capture:berman-codex",
-    "native-capture:berman-claude"
+    "settled"
   ],
   "not_covered": [
     "Developer regression tests (run separately from the source checkout).",
-    "The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).",
-    "A native support trial; verify reports only a recorded successful capture."
+    "Hook trust, native capture and native access. This version operates no harness in a co-located workspace; the executor qualifies each launch from its own evidence (berman remote qualify RUN).",
+    "Fieldwork commissioned through the controller. Its recording and edition are verified in the guest study (berman remote verify RUN)."
   ],
   "record": {
     "directory": "/synthetic/study/experiments/check",
@@ -153,5 +110,5 @@
       "verification.json"
     ]
   },
-  "meaning": "Each check is a separate fact; passed requires every required check. Nothing was rebuilt, reviewed or launched."
+  "meaning": "Each check is a separate fact; passed requires every required check. The co-located workspace was read: nothing was rebuilt, closed or launched."
 }

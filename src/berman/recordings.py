@@ -1,8 +1,9 @@
-"""Read-only audit of preserved originals, lifecycle authority and recording ZIPs.
+"""Read-only audit of a co-located workspace's preserved runs, and their export as portable recordings.
 
-No locks, collector commands, Git calls or writes. An old run without contemporary ending
-or package evidence is unknown, never retrospectively declared complete. Inventory checks
-honor the fields actually recorded by historical writers, including optional mtimes.
+No locks, Git calls or writes to the workspace. An old run without contemporary ending or package
+evidence is unknown, never retrospectively declared complete. Inventory checks honor the fields
+actually recorded by historical writers, including optional mtimes. An export is a new file outside
+the workspace; it is how a preserved run reaches guest custody (docs/guest-deployment.md).
 """
 
 from pathlib import Path
@@ -11,14 +12,12 @@ import os
 import stat
 import zipfile
 import zlib
-import shutil
 import tempfile
 
 from berman import evidence, files, snapshots
 from berman._legacy.api import RUN
 from berman.archive import builder
 from berman.lifecycle import declared, journal_phase
-from berman.preserve import namespace, recording_payload
 from berman.records import capture_metadata
 
 ERRORS = (
@@ -32,6 +31,39 @@ ERRORS = (
     zipfile.BadZipFile,
     zlib.error,
 )
+
+
+def namespace(store, record):
+    """The member prefix of a recording ZIP made before berman.recording/2: Stewart's, or Berman's."""
+    connection = ((record or {}).get('connection') or {}).get('id')
+    if connection is None or connection == store.legacy_connection:
+        return builder.PREFIX
+    return 'berman-analysis/'
+
+
+def recording_payload(root, entry):
+    """The exact contents of a recording ZIP made before berman.recording/2, for read-only verification."""
+    run = entry['run']
+    payload = {}
+    for item in entry['entries']:
+        name = 'runs/' + run + '/' + item['path']
+        mode = int(item['mode'], 0)
+        if item['type'] == 'directory':
+            payload[name + '/'] = (b'', stat.S_IFDIR | mode)
+        elif item['type'] == 'symlink':
+            payload[name] = (os.fsencode(item['target']), stat.S_IFLNK | mode)
+        else:
+            data = (root / item['path']).read_bytes()
+            if files.digest(data) != item['sha256']:
+                raise files.Decision(f'{run}: differs from its inventory: {name}')
+            payload[name] = (data, stat.S_IFREG | mode)
+    payload['recording-inventory.json'] = (files.json_bytes(entry), stat.S_IFREG | 0o644)
+    payload['RECORDING.txt'] = (
+        b'Berman recording package. Contains the preserved packet and its migration inventory.\n'
+        b'Full reading editions are built separately with archive/builder.py.\n',
+        stat.S_IFREG | 0o644,
+    )
+    return payload
 
 
 def inventory(root, entry):
@@ -316,7 +348,9 @@ def build_manifest(store, run, stage, historical=False, collection_id=None):
     inventory(source, entry)
     record = store.record(run)
     if not historical and (record is None or not declared(record)):
-        raise ValueError('New recording publication requires an explicit ending declaration')
+        raise ValueError(
+            'This run has no explicit ending declaration; export it with --historical, which records that absence'
+        )
     authority = stage / 'evidence'
     authority.mkdir()
     refs = dict.fromkeys(('operation', 'migration', 'ending', 'capture', 'binding', 'closure'))
@@ -450,47 +484,3 @@ def export(store, run, destination, historical=False, collection_id=None):
         inventory(store.root / 'runs' / run, manifest['custody']['inventory'])
         os.link(candidate, destination)  # A competing export cannot replace an earlier publication.
     return dict(result, path=str(destination))
-
-
-def publish(store, run, historical=False):
-    """Retain immutable authority beside originals, then publish its self-contained package."""
-    path = manifest_path(store.root, run)
-    if path.exists():
-        manifest = evidence.validate(files.read(path))
-        if manifest['collection_id'] != evidence.collection(store.root) or manifest['run'] != run:
-            raise ValueError('Recording manifest belongs to another collection or run')
-    else:
-        path.parent.parent.mkdir(exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix='.' + run + '-', dir=path.parent.parent))
-        try:
-            manifest = build_manifest(store, run, stage, historical)
-            manifest_members(store.root, manifest, authority_root=stage)
-            stage.rename(path.parent)
-        finally:
-            if stage.exists():
-                shutil.rmtree(stage)
-    inventory(store.root / 'runs' / run, manifest['custody']['inventory'])
-    payload = manifest_members(store.root, manifest)
-    data = builder.make_zip(payload, '')
-    destination = store.root / 'archive/recordings' / (run + '.recording-v2.zip')
-    files.keep(destination, data)
-    result = evidence.verify_package(destination)
-    digest = result['package_sha256']
-    files.keep(destination.with_suffix('.zip.sha256'), f'{digest}  {destination.name}\n'.encode())
-    publication = {
-        'path': str(destination),
-        'relative_path': destination.relative_to(store.root).as_posix(),
-        'schema': evidence.SCHEMA,
-        'sha256': digest,
-        'bytes': len(data),
-        'members': len(payload),
-        'namespace': '',
-        'manifest': path.relative_to(store.root).as_posix(),
-        'manifest_sha256': evidence.identity(manifest),
-        'coverage': manifest['coverage'],
-    }
-    files.keep(
-        path.parent / 'publication.json',
-        files.json_bytes({key: value for key, value in publication.items() if key != 'path'}),
-    )
-    return publication

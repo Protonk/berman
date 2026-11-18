@@ -8,13 +8,9 @@
       "session": "session-1",
       "ending_declared": false,
       "started": true,
-      "prepared_unstarted": false,
       "record": "/synthetic/study/operations/run-002",
-      "capture_consistent": null,
       "last_capture": null,
-      "warnings": [],
       "problems": [],
-      "operation_in_progress": false,
       "summary": "capture closed by finalized.json (frozen; not an ending); no engagement ending declared; migration indexed; no recording package",
       "unknown": [],
       "lifecycle": {
@@ -33,9 +29,7 @@
           "closed_by": [
             "finalized.json"
           ],
-          "last_event": null,
-          "consistent": null,
-          "turn_pending": null
+          "last_event": null
         },
         "finalized": {
           "value": true,
@@ -67,7 +61,9 @@
         "unknown": []
       },
       "recipe": "work-accounts",
-      "assignment_origin": null
+      "assignment_origin": null,
+      "unsettled": null,
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-003",
@@ -77,13 +73,9 @@
       "session": "session-1",
       "ending_declared": true,
       "started": true,
-      "prepared_unstarted": false,
       "record": "/synthetic/study/operations/run-003",
-      "capture_consistent": null,
       "last_capture": null,
-      "warnings": [],
       "problems": [],
-      "operation_in_progress": false,
       "summary": "capture closed by finalized.json (frozen; not an ending); ending declared; migration moved-and-verified; recording package pending",
       "unknown": [],
       "lifecycle": {
@@ -102,9 +94,7 @@
           "closed_by": [
             "finalized.json"
           ],
-          "last_event": null,
-          "consistent": null,
-          "turn_pending": null
+          "last_event": null
         },
         "finalized": {
           "value": true,
@@ -135,7 +125,9 @@
         "unknown": []
       },
       "recipe": "work-accounts",
-      "assignment_origin": "plan"
+      "assignment_origin": "plan",
+      "unsettled": "its migration was begun and not completed",
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-004",
@@ -145,15 +137,9 @@
       "session": "session-1",
       "ending_declared": false,
       "started": true,
-      "prepared_unstarted": false,
       "record": "/synthetic/study/operations/run-004",
-      "capture_consistent": true,
       "last_capture": "2026-11-13T00:30:00.000000Z",
-      "warnings": [
-        "Transcript grew after the last snapshot."
-      ],
       "problems": [],
-      "operation_in_progress": false,
       "summary": "session registered; capture open after Stop; no engagement ending declared",
       "unknown": [],
       "lifecycle": {
@@ -171,9 +157,7 @@
             "last capture event Stop"
           ],
           "closed_by": [],
-          "last_event": "Stop",
-          "consistent": true,
-          "turn_pending": null
+          "last_event": "Stop"
         },
         "finalized": {
           "value": false,
@@ -203,7 +187,9 @@
         "unknown": []
       },
       "recipe": "work-accounts",
-      "assignment_origin": null
+      "assignment_origin": null,
+      "unsettled": "its engagement is open: the packet is still in the packet root with no declared ending",
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-005",
@@ -213,13 +199,9 @@
       "session": "session-1",
       "ending_declared": false,
       "started": true,
-      "prepared_unstarted": false,
       "record": "/synthetic/study/operations/run-005",
-      "capture_consistent": true,
       "last_capture": "2026-11-13T00:40:00.000000Z",
-      "warnings": [],
       "problems": [],
-      "operation_in_progress": false,
       "summary": "capture closed by finalized.json (frozen; not an ending); no engagement ending declared",
       "unknown": [],
       "lifecycle": {
@@ -238,9 +220,7 @@
           "closed_by": [
             "finalized.json"
           ],
-          "last_event": "SessionEnd",
-          "consistent": true,
-          "turn_pending": null
+          "last_event": "SessionEnd"
         },
         "finalized": {
           "value": true,
@@ -270,7 +250,9 @@
         "unknown": []
       },
       "recipe": "work-accounts",
-      "assignment_origin": "plan"
+      "assignment_origin": "plan",
+      "unsettled": "its engagement is open: the packet is still in the packet root with no declared ending",
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-006",
@@ -280,13 +262,9 @@
       "session": null,
       "ending_declared": false,
       "started": false,
-      "prepared_unstarted": true,
       "record": "/synthetic/study/operations/run-006",
-      "capture_consistent": null,
       "last_capture": null,
-      "warnings": [],
       "problems": [],
-      "operation_in_progress": true,
       "summary": "ready; not yet started",
       "unknown": [],
       "lifecycle": {
@@ -302,9 +280,7 @@
             "no registered session"
           ],
           "closed_by": [],
-          "last_event": null,
-          "consistent": null,
-          "turn_pending": null
+          "last_event": null
         },
         "finalized": {
           "value": false,
@@ -334,7 +310,9 @@
         "unknown": []
       },
       "recipe": "work-accounts",
-      "assignment_origin": "direct"
+      "assignment_origin": "direct",
+      "unsettled": "its prepared packet was never started or retired",
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-007",
@@ -344,15 +322,11 @@
       "session": null,
       "ending_declared": false,
       "started": null,
-      "prepared_unstarted": false,
       "record": null,
-      "capture_consistent": null,
       "last_capture": null,
-      "warnings": [],
       "problems": [
         "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
       ],
-      "operation_in_progress": false,
       "summary": "starting state unknown; ending unknown; unknown: registered, capture, finalized, ending, packaged",
       "unknown": [
         "registered",
@@ -374,8 +348,6 @@
           "evidence": [],
           "closed_by": [],
           "last_event": null,
-          "consistent": null,
-          "turn_pending": null,
           "unknown": [
             "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
           ]
@@ -417,10 +389,13 @@
         ]
       },
       "recipe": null,
-      "assignment_origin": null
+      "assignment_origin": null,
+      "unsettled": null,
+      "opened_with": null
     }
   ],
   "archived": 3,
+  "historical_runs": [],
   "workspace_problems": [
     "Unattributed damaged session registry /synthetic/codex/berman-capture/x.json: Expecting value: line 1 column 1 (char 0)"
   ],
@@ -428,37 +403,34 @@
   "connections": {
     "orchard": {
       "name": "Orchard",
-      "plan": "orchard-roles",
-      "next_recipe": "participant-inquiry",
-      "capture": "berman-codex",
       "checkout": "/synthetic/orchard",
-      "pending_requests": [
-        "/synthetic/study/operations/new-requests/abc.json"
-      ],
-      "blocked_by": [],
-      "operation_in_progress": false,
+      "plan": "orchard-roles",
+      "next_step": "inquiry-after-accounts",
+      "next_recipe": "participant-inquiry",
+      "plan_note": null,
       "plan_error": null,
-      "next_note": null
+      "problems": []
     },
     "meadow": {
       "name": "Meadow [draft]",
-      "plan": null,
-      "next_recipe": null,
-      "capture": "berman-claude",
       "checkout": "/synthetic/meadow",
-      "pending_requests": [],
-      "blocked_by": [
-        "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
-      ],
-      "operation_in_progress": true,
+      "plan": null,
+      "next_step": null,
+      "next_recipe": null,
+      "plan_note": null,
       "plan_error": null,
-      "next_note": "Choose a recipe with berman new --recipe NAME"
+      "problems": [
+        "Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string (\"README.md\")"
+      ]
     }
   },
-  "next_recipe": "participant-inquiry",
-  "operations_in_progress": [
-    "connection meadow",
-    "run-006"
+  "pending_requests": [
+    {
+      "path": "/synthetic/study/operations/new-requests/abc.json",
+      "previous_run": "run-004",
+      "result_run": "run-008",
+      "connection": "orchard"
+    }
   ],
   "support_trials": [
     {
@@ -466,21 +438,27 @@
       "adapter": "berman-codex",
       "phase": "launching",
       "evidence": "experiments/trial-a",
-      "capture_state": "open",
-      "next": "berman support-trial collect --evidence experiments/trial-a, after the single reply and a normal exit",
-      "problems": []
+      "problems": [],
+      "opened_with": "0.26.3"
     },
     {
       "run": "run-900102",
       "adapter": "berman-claude",
       "phase": null,
       "evidence": "experiments/trial-b",
-      "capture_state": null,
-      "next": null,
       "problems": [
         "run-900102: its marker names experiments/trial-b/trial.json, which was never written"
-      ]
+      ],
+      "opened_with": "0.26.3"
     }
   ],
-  "meaning": "Session activity and declared engagement endings are distinct. No files were changed."
+  "unsettled": [
+    "run-003: its migration was begun and not completed. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
+    "run-004: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
+    "run-005: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
+    "run-006: its prepared packet was never started or retired. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.",
+    "/synthetic/study/operations/new-requests/abc.json: a combined request to end run-004 and prepare run-008 never completed. It has to be closed with the release that opened it; this version does not close co-located fieldwork.",
+    "run-900101: support trial experiments/trial-a was left at phase launching. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork."
+  ],
+  "meaning": "A co-located workspace is read-only in this version: fieldwork is commissioned and closed only through the controller and executor (berman remote). Session activity and declared engagement endings are distinct facts, and none is inferred. No files were changed."
 }

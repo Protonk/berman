@@ -6,27 +6,27 @@ import shutil
 import struct
 import zipfile
 
-from berman import files, preserve, recordings, recovery, snapshots, verify
+from berman import files, recordings, snapshots, verify
 from berman.archive import builder
 from tests.integration.test_records import RecordTests
-from tests.integration.test_interruptions import state
-from tests.support.sessions import start
+from tests.support import legacy
+from tests.support.workspace import state
 
 
 class RecordingAuditTests(RecordTests):
     def setUp(self):
         super().setUp()
-        self.workflow.new()
-        start(self.store, 'run-001', end=True)
-        result = self.workflow.finish('Explicit synthetic ending', 'run-001')
+        legacy.prepare(self.store)
+        legacy.start(self.store, 'run-001', end=True)
+        result = legacy.finish(self.store, 'run-001', reading=False)
         # Exercise the bounded historical reader with a 0.4.2-format package.
         original_package = Path(result['package']['path'])
         original_package.unlink()
         original_package.with_suffix('.zip.sha256').unlink()
         shutil.rmtree(self.root / 'recordings')
         entry = files.read(self.root / 'source-layout.json')['runs'][0]
-        payload = preserve.recording_payload(self.root / 'runs/run-001', entry)
-        prefix = preserve.namespace(self.store, self.store.record('run-001'))
+        payload = recordings.recording_payload(self.root / 'runs/run-001', entry)
+        prefix = recordings.namespace(self.store, self.store.record('run-001'))
         self.package = self.root / 'archive/recordings/run-001.zip'
         data = builder.make_zip(payload, prefix)
         self.package.write_bytes(data)
@@ -139,7 +139,7 @@ class RecordingAuditTests(RecordTests):
         (self.store.folder('run-001') / 'operation.json').unlink()
         (self.root / 'migrations/run-001.json').unlink()
         (self.preserved / 'context/berman/ending.json').unlink()
-        entry = recovery.migration_entry(self.preserved, 'run-001', self.preserved)
+        entry = legacy.migration_entry(self.preserved, 'run-001')
         files.write(self.root / 'source-layout.json', {'runs': [entry]})
         result = self.audit()
         row = result['checks']['recordings']
@@ -156,8 +156,8 @@ class RecordingAuditTests(RecordTests):
 
 class CaptureEvidenceTests(RecordTests):
     def test_false_json_capture_metadata_is_damage_and_reading_never_repairs_it(self):
-        self.workflow.new()
-        start(self.store, 'run-001')
+        legacy.prepare(self.store)
+        legacy.start(self.store, 'run-001')
         path = snapshots.resolve(self.store.field / 'run-001/session') / 'capture.json'
         for value in ([], None, {}, False, 0, ['nonempty'], {'run': 'run-001'}):
             with self.subTest(value=value):
@@ -171,68 +171,27 @@ class CaptureEvidenceTests(RecordTests):
                 self.assertNotIn('without a snapshot yet', row['summary'])
                 self.assertEqual((state(self.store.field), state(self.root)), before)
         path.unlink()
-        row = self.workflow.status()['runs'][0]
+        row = self.status()['runs'][0]
         self.assertIn('missing capture metadata', str(row['problems']))
         self.assertIn('capture', row['unknown'])
 
 
-class RecoveryCustodyTests(RecordTests):
-    def test_changed_recovered_material_refuses_retry_without_replacing_it(self):
-        self.workflow.new()
-        source = self.store.folder('run-001') / '.capture-orphan'
-        source.write_bytes(b'Original abandoned write')
-        receipt = recovery.quarantine(self.root, 'run-001', [source], 'Synthetic interrupted write')[0]
-        material = Path(receipt).parent / 'material'
-        material.write_bytes(b'Damaged retained material')
-        before = state(material.parent)
-        with self.assertRaisesRegex(files.Decision, 'differs from its receipt'):
-            recovery.generated_residue(self.store, 'run-001')
-        self.assertEqual(state(material.parent), before)
-
-    def test_recovery_refuses_both_inventoried_active_and_preserved_material(self):
-        self.workflow.new()
-        source = self.store.field / 'run-001/.capture-unknown'
-        source.write_bytes(b'Already inventoried original')
-        files.write(self.root / 'migrations/run-001.json', {'entry': 'boundary exists'})
-        before = state(self.store.field)
-        with self.assertRaisesRegex(files.Decision, 'after migration inventory'):
-            recovery.quarantine(self.root, 'run-001', [source], 'must not happen')
-        self.assertEqual(state(self.store.field), before)
-        (self.root / 'migrations/run-001.json').unlink()
-        preserved = self.root / 'runs/run-001'
-        preserved.mkdir(parents=True)
-        original = preserved / '.capture-original'
-        original.write_bytes(b'Preserved original')
-        before = state(preserved)
-        with self.assertRaisesRegex(files.Decision, 'from preserved runs'):
-            recovery.quarantine(self.root, 'run-001', [original], 'must not happen')
-        self.assertEqual(state(preserved), before)
-
-    def test_participant_and_selected_project_files_are_not_temporary_writer_material(self):
-        selected = self.project / '.capture-selected'
-        selected.write_text('Selected project document\n')
-        self.edit('connections/stewart/connection.json', documents=['README.md', '.capture-selected'])
-        self.load()
-        self.workflow.new()
+class TemporaryLookingNamesTests(RecordTests):
+    def test_participant_files_named_like_writer_temporaries_are_preserved_members(self):
+        # A fieldworker's note may carry the prefix the old writer used for its own atomic writes.
+        legacy.prepare(self.store)
         note = self.store.field / 'run-001/notes/.capture-participant'
         note.write_text('Participant notes\n')
-        # A genuine abandoned atomic write beside the operation record is retained separately.
-        orphan = self.store.folder('run-001') / '.capture-abandoned'
-        orphan.write_bytes(b'Unpublished operation bytes')
-        start(self.store, 'run-001')
-        result = self.workflow.finish('Explicit synthetic ending', 'run-001')
+        legacy.start(self.store, 'run-001', end=True)
+        result = legacy.finish(self.store, 'run-001', reading=False)
         root = self.root / 'runs/run-001'
-        self.assertEqual((root / 'notes/.capture-participant').read_text(), 'Participant notes\n')
-        self.assertEqual((root / 'context/berman/closing-project/.capture-selected').read_text(), selected.read_text())
-        self.assertEqual(
-            (root / 'context/berman/preparation/initial-project/.capture-selected').read_text(), selected.read_text()
-        )
-        self.assertTrue(result['recovered_writes'])
-        material = [Path(path).parent / 'material' for path in result['recovered_writes']]
-        self.assertTrue(any(path.read_bytes() == b'Unpublished operation bytes' for path in material if path.is_file()))
+        before = state(root)
+        self.assertEqual(verify.recording_check(self.store)['status'], 'passed')
         with zipfile.ZipFile(result['package']['path']) as archive:
             self.assertTrue(any(name.endswith('/notes/.capture-participant') for name in archive.namelist()))
-        before = state(root)
-        self.workflow.finish('Repeated explicit ending', 'run-001')
+        exported = self.base / 'exported.zip'
+        code, _, error = self.command('recording', 'export', '--run', 'run-001', '--output', str(exported))
+        self.assertEqual((code, error), (0, ''))
+        with zipfile.ZipFile(exported) as archive:
+            self.assertEqual(archive.read('runs/run-001/notes/.capture-participant'), b'Participant notes\n')
         self.assertEqual(state(root), before)
-        self.assertEqual(verify.recording_check(self.store)['status'], 'passed')

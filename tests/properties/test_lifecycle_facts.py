@@ -15,11 +15,9 @@ from berman.lifecycle import (
     INFERRED_ENDING,
     PHASES,
     assess,
-    authorized,
     declared,
     describe,
-    open_engagement,
-    unused,
+    unsettled,
 )
 from tests.support.properties import budget
 
@@ -39,16 +37,9 @@ records = st.none() | st.fixed_dictionaries(
         'previous_ending_interpretations': st.lists(inferences, max_size=1),
     },
 )
-statuses = st.none() | st.fixed_dictionaries(
-    {},
-    optional={
-        'capture': st.none()
-        | st.fixed_dictionaries(
-            {'event': st.sampled_from(('UserPromptSubmit', 'Stop', 'SessionEnd', 'manual-finalize', 'manual-refresh'))}
-        ),
-        'snapshot_consistent': st.none() | st.booleans(),
-        'prompt_without_terminal_callback': st.none() | st.booleans(),
-    },
+# The last capture metadata an active packet holds, as far as the facts read it.
+captures = st.none() | st.fixed_dictionaries(
+    {'event': st.sampled_from(('UserPromptSubmit', 'Stop', 'SessionEnd', 'manual-finalize', 'manual-refresh'))}
 )
 # What a packet and its surroundings can show about a session, a closure or a migration.
 observed = st.fixed_dictionaries(
@@ -58,7 +49,7 @@ observed = st.fixed_dictionaries(
         'replacements': st.lists(words, max_size=2),
         'closed_by': st.sampled_from(([], ['finalized.json'], ['ended.json'], ['finalized.json', 'ended.json'])),
         'session_material': st.booleans(),
-        'capture': statuses,
+        'capture': captures,
         'journal': st.sampled_from((None, 'inventoried', 'moved-and-verified', 'indexed', 'damaged')),
         'indexed': st.booleans(),
     }
@@ -135,7 +126,7 @@ class FactTests(unittest.TestCase):
                 'replacements': [],
                 'closed_by': ['finalized.json', 'ended.json'],
                 'session_material': True,
-                'capture': {'capture': {'event': 'SessionEnd'}, 'snapshot_consistent': True},
+                'capture': {'event': 'SessionEnd'},
                 'journal': 'indexed',
                 'indexed': True,
                 'location': 'archived',
@@ -152,7 +143,7 @@ class FactTests(unittest.TestCase):
         self.assertEqual(ending is True, declared(record))
         if not declared(record):
             # No callback, closure, finalization, migration or package makes one.
-            self.assertNotEqual(authorized(current), 'preserve')
+            self.assertNotIn('ending is declared', unsettled(current) or '')
             self.assertNotIn('ending declared', parts(current['lifecycle'], (record or {}).get('phase') or 'active'))
         if current['lifecycle']['capture']['value'] == 'closed':
             text = describe(current['lifecycle'], (record or {}).get('phase') or 'active')
@@ -190,17 +181,32 @@ class FactTests(unittest.TestCase):
 
     @budget(400)
     @given(readings())
-    def test_an_unknown_start_is_neither_unused_nor_open(self, reading):
+    def test_an_unknown_start_is_never_called_unused_and_a_problem_states_no_reason(self, reading):
         current = row(*reading)
-        self.assertFalse(unused(current) and open_engagement(current))
-        if current['started'] is None:
-            # Unknown is not "no session": such a run is neither launched or retired, nor finished.
-            self.assertFalse(unused(current))
-            self.assertFalse(open_engagement(current))
-        if unused(current):
+        reason = unsettled(current)
+        if current['problems'] or current['started'] is None:
+            # Unknown is not "no session", and what a damaged run awaits is not guessed.
+            self.assertIsNone(reason)
+        if reason and 'never started' in reason:
             self.assertIs(current['started'], False)
-        if open_engagement(current):
+        if reason and reason.startswith('its engagement is open'):
             self.assertIs(current['started'], True)
+
+    @budget(400)
+    @given(readings())
+    def test_a_run_at_rest_in_the_archive_awaits_nothing_whatever_history_left_out(self, reading):
+        record, evidence = reading
+        current = row(record, evidence)
+        at_rest = (
+            evidence['location'] == 'archived'
+            and not current['migration_pending']
+            and not (record or {}).get('migration_authority')
+            and (record or {}).get('phase') != 'cancelling'
+            and not (declared(record) and record.get('phase') != 'archived')
+        )
+        if at_rest:
+            # No ending, no package and no closure are absences, never work this version calls outstanding.
+            self.assertIsNone(unsettled(current))
 
 
 if __name__ == '__main__':

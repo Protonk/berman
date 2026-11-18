@@ -64,11 +64,6 @@
     "package must be an object or null, not a string (\"/synthetic/study/archive/recordings/...)",
     "retained_open_runs must be an array or null, not a string (\"run-000\")"
   ],
-  "new-request-1/invalid/fields.json": [
-    "finish_reason must be a string, not null",
-    "previous_preserved must be an object or null, not an array",
-    "step is required"
-  ],
   "software-1/invalid/digests.json": [
     "environment.dependencies is required",
     "files_sha256.cli.py must be a SHA-256 digest in lowercase hexadecimal, not a string (\"abc\")"
@@ -83,9 +78,6 @@
     "not_covered is required",
     "record.files is required"
   ],
-  "recovered-write-1/invalid/file.json": [
-    "source is required"
-  ],
   "recording-2/invalid/schema.json": [
     "schema must be \"berman.recording/2\", not a string (\"berman.wrong/1\")"
   ],
@@ -94,9 +86,6 @@
   ],
   "reading-edition-2/invalid/schema.json": [
     "schema must be \"berman.reading-edition/2\", not a string (\"berman.wrong/1\")"
-  ],
-  "new-request-2/invalid/target.json": [
-    "result_run must be a string, not null"
   ],
   "operation-1/invalid/assignment-origin.json": [
     "assignment_origin must be one of \"direct\", \"plan\", null, not a string (\"inferred\")"

@@ -26,7 +26,8 @@
   "not_established": [],
   "not_covered": [
     "Developer regression tests (run separately from the source checkout).",
-    "Workspace records, preserved evidence and reading editions."
+    "Workspace records, preserved evidence and reading editions.",
+    "Native harness execution, hook trust and native capture."
   ],
   "record": null,
   "meaning": "Software checks only. No workspace or native installation was verified."

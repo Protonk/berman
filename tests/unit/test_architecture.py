@@ -3,7 +3,7 @@
 A contract that cannot fail proves nothing. Every contract in pyproject.toml is paired with at
 least one violation: the package is copied, one import is appended to one module, and that
 contract, by id, must break. The remaining tests cover properties the contract language has no
-form for: that every module has a layer, that hooks and copied scripts import the standard
+form for: that every module has a layer, that the executor's hook routing imports the standard
 library and nothing else, that every third-party import is a declared dependency, and that the
 formatter is never pointed at a byte-sensitive file.
 """
@@ -23,7 +23,6 @@ import unittest
 
 import berman
 from berman.archive import builder
-from berman.capture.adapters import ADAPTERS
 from berman.installation import FROZEN, PACKAGE
 from tests.support.paths import REPO
 
@@ -32,33 +31,33 @@ SETTINGS = tomllib.loads(CONFIG.read_text())
 CONTRACTS = {c['id']: c for c in SETTINGS['tool']['importlinter']['contracts']}
 # (contract id, module to change, import to append). Each must break the named contract.
 VIOLATIONS = (
-    ('layers', 'records.py', 'from berman import workflow'),
+    ('layers', 'records.py', 'from berman import verify'),
     ('layers', 'config.py', 'from berman import lifecycle'),
-    ('layers', 'capture/runtime.py', 'from berman import records'),
+    ('layers', 'capture/claude.py', 'from berman import records'),
     ('layers', 'archive/select.py', 'from berman import records'),
     ('layers', 'files.py', 'from berman import installation'),
     ('layers', 'schemas/__init__.py', 'from berman import files'),
-    ('layers', 'harnesses/probe.py', 'from berman import files'),
-    ('hooks', 'capture/runtime.py', 'import rich'),
+    ('layers', 'checks.py', 'from berman import verify'),
+    ('layers', 'protocol.py', 'from berman import custody'),
+    ('hooks', 'capture/hooks.py', 'import rich'),
     ('hooks', 'files.py', 'import jsonschema'),
     ('hooks', 'files.py', 'import packaging.requirements'),
+    ('hooks', 'sources.py', 'import rich.console'),
     ('hooks', 'capture/claude.py', 'from berman import schemas'),  # Indirectly, through the confining module.
+    ('hooks', 'executor/capture.py', 'from berman import recipes'),  # Indirectly, two modules away.
     ('archive', 'archive/package.py', 'import rich.console'),
     ('archive', 'archive/package.py', 'import packaging'),
-    ('scripts', 'harnesses/probe.py', 'import jsonschema'),
-    ('scripts', 'harnesses/probe.py', 'import packaging'),
-    ('scripts', 'harnesses/probe.py', 'import rich'),
     ('lifecycle', 'lifecycle.py', 'import subprocess'),
     ('lifecycle', 'lifecycle.py', 'from berman import files'),
     ('frozen', 'config.py', 'from berman._legacy import capture_session'),
     ('presentation', 'verify.py', 'from berman.presentation import plain'),
-    ('presentation', 'workflow.py', 'from berman import presentation'),
+    ('presentation', 'records.py', 'from berman import presentation'),
     ('layers', 'presentation/plain.py', 'from berman import lifecycle'),
     ('layers', 'presentation/terminal.py', 'from berman import verify'),
-    ('confined', 'workflow.py', 'import rich'),
+    ('confined', 'records.py', 'import rich'),
     ('confined', 'presentation/plain.py', 'import rich'),
     ('confined', 'cli.py', 'from rich.console import Console'),
-    ('confined', 'records.py', 'import jsonschema'),
+    ('confined', 'verify.py', 'import jsonschema'),
     ('confined', 'workspace.py', 'import packaging'),
 )
 RUNNER = """
@@ -68,14 +67,17 @@ from importlinter import cli
 raise SystemExit(cli.lint_imports(config_filename=sys.argv[2], limit_to_contracts=tuple(sys.argv[3:]),
                                   no_cache=True, no_logo=True))
 """
-# Files whose bytes are named by qualification receipts, access receipts or edition identities.
-BYTE_SENSITIVE = (
-    {rel for adapter in ADAPTERS.values() for rel in adapter['implementation']}
-    | {'archive/' + name for name in builder.BUILDER}
-    | {'harnesses/codex.py', 'harnesses/probe.py', 'harnesses/claude_support.py'}
-)
-# Copied out of the package and run as files by an interpreter that may lack Berman.
-SCRIPTS = ('harnesses/probe.py',)
+# Files whose bytes an edition's reader identity names.
+BYTE_SENSITIVE = {'archive/' + name for name in builder.BUILDER}
+
+
+def hook_path():
+    """Every file of the modules the hooks contract names: the executor's routing and all it can import."""
+    found = set()
+    for module in CONTRACTS['hooks']['source_modules']:
+        target = PACKAGE.joinpath(*module.split('.')[1:])
+        found.update(target.rglob('*.py') if target.is_dir() else [target.with_suffix('.py')])
+    return sorted(path.relative_to(PACKAGE).as_posix() for path in found)
 
 
 def lint(parent, *contracts):
@@ -146,12 +148,14 @@ class ContractTests(unittest.TestCase):
 
 
 class StandardLibraryTests(unittest.TestCase):
-    def test_hooks_and_copied_scripts_import_only_the_standard_library(self):
+    def test_hook_routing_imports_only_the_standard_library(self):
         # The contracts name the packages Berman depends on; this refuses every other one too.
-        for relative in sorted({rel for a in ADAPTERS.values() for rel in a['implementation']} | set(SCRIPTS)):
-            allowed = set(sys.stdlib_module_names) | ({'berman'} if relative not in SCRIPTS else set())
+        files = hook_path()
+        self.assertIn('executor/capture.py', files)
+        self.assertIn(FROZEN, files)
+        for relative in files:
             with self.subTest(file=relative):
-                self.assertLessEqual(top_level_imports(PACKAGE / relative), allowed)
+                self.assertLessEqual(top_level_imports(PACKAGE / relative), set(sys.stdlib_module_names) | {'berman'})
 
     def test_third_party_imports_are_declared_dependencies(self):
         declared = {re.match(r'[A-Za-z0-9._-]+', r).group().lower() for r in metadata.requires('berman') or []}

@@ -1,21 +1,15 @@
 Berman verification: INCOMPLETE
   passed                      frozen-collector: Frozen collector SHA-256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; expected ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-  not established             hook-trust:berman-codex: The berman-codex collector implementation changed after its verification; renewed verification is required
-                              changed: capture/router.py
-                              changed: capture/runtime.py
-                              next: With the researcher's approval, review /hooks in the actual Codex CLI, then record it with berman capture record-trust --evidence FILE --attest
-  not established             native-capture:berman-codex: Depends on hook-trust:berman-codex
-                              next: A native support trial for berman-codex
-  passed (optional)           hook-trust:berman-claude: Per-launch hook template, in-session bytes, helpers and settings policy match the qualified support trial; warning: Claude CLI changed since qualification
-  not established (optional)  native-capture:berman-claude: Trust recorded; no native capture demonstrated for these implementation bytes
-                              next: A native support trial for berman-claude
+  passed                      recorded-hashes: 120 recorded hashes match
+  passed                      workspace: The workspace loads with this code; 1 connection(s), no problems
+  not established             settled: 1 unsettled; this version reads a co-located workspace and closes nothing in it
+                              run-004: its engagement is open: the packet is still in the packet root with no declared ending. It has to be closed with the release that opened it (Berman 0.26.3); this version does not close co-located fieldwork.
+                              next: Close each with the Berman release that opened it and keep that runtime installed until none remain; this version commissions and closes fieldwork only through the controller and executor (docs/usage.md)
   not run                     archive: Skipped with --skip
                               next: berman verify without --skip archive
-  not run                     native-access: Not selected
-                              next: berman verify --native-access
-Not run: archive, native-access
-Not established: hook-trust:berman-codex, native-capture:berman-codex, native-capture:berman-claude (optional)
+Not run: archive
+Not established: settled
 Never checked by berman verify:
   Developer regression tests (run separately from the source checkout).
-  The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).
-  A native support trial; verify reports only a recorded successful capture.
+  Hook trust, native capture and native access. This version operates no harness in a co-located workspace; the executor qualifies each launch from its own evidence (berman remote qualify RUN).
+  Fieldwork commissioned through the controller. Its recording and edition are verified in the guest study (berman remote verify RUN).

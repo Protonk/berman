@@ -4,3 +4,4 @@ Berman verification: PASSED
 Never checked by berman verify:
   Developer regression tests (run separately from the source checkout).
   Workspace records, preserved evidence and reading editions.
+  Native harness execution, hook trust and native capture.

@@ -1,4 +1,8 @@
-"""Versioned worker guidance, its rendering into a packet, and project snapshots."""
+"""Versioned worker guidance and bounded project snapshots.
+
+The controller reads a recipe when it commissions an engagement; the executor snapshots the selected
+project documents when it prepares and when it collects.
+"""
 import os
 from pathlib import Path
 import re
@@ -9,7 +13,6 @@ import tempfile
 from berman import files
 from berman import schemas
 from berman.files import Decision, keep, read, write
-from berman import recovery as fieldwork
 
 
 PROTOCOLS = ('work-accounts/1', 'participant-inquiry/1')
@@ -140,50 +143,3 @@ def snapshot(project, names, target, require_stable_git=True):
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-
-
-def prepare(store, record):
-    run = record['run']
-    recovered = fieldwork.generated_residue(store, run)
-    if recovered:
-        record['recovered_writes'] = sorted(set(record.get('recovered_writes', []) + recovered))
-    folder = store.folder(run)
-    project = Path(record['project'])
-    packet = store.field / run
-    if record.get('packet', str(packet)) != str(packet) or packet.parent != store.field:
-        raise Decision(f'{run}: packets must stay directly within the shared packet root {store.field}')
-    context = snapshot(project, record['documents'], folder / 'preparation/initial-project')
-    instructions = record['recipe']['instructions'].replace('{{notes_directory}}', str(packet / 'notes') + '/')
-    source = folder / 'preparation/INSTRUCTIONS.md'
-    keep(source, instructions.encode())
-    capture_record = record.get('capture')
-    if not capture_record:
-        raise Decision(f'{run}: the reservation names no capture adapter; it predates the current adapters and cannot be prepared')
-    metadata = record['recipe']['metadata']
-    protocol = metadata.get('recording_protocol')
-    if protocol is None:
-        # Previously reserved recipes retain their bytes; resolve their known identity.
-        protocol = {'work-accounts': 'work-accounts/1', 'participant-inquiry': 'participant-inquiry/1'}.get(metadata['id'])
-    if protocol is None:
-        raise Decision('Reserved recipe needs a recording protocol before preparing its packet')
-    if not packet.exists():
-        connection = record.get('connection') or {}
-        if record.get('commission') or not connection:
-            # Its commission would be dropped without a word, or it predates connections and names no project.
-            raise Decision(f'{run} was reserved by an earlier version whose opening message carried a commission; '
-                           'cancel this unused preparation and run berman new')
-        fieldwork.prepare(store.collector_for(record), run, project, ['notes'], source, recording_protocol=protocol,
-                          marker=capture_record['marker'], layout=capture_record['layout'],
-                          connection=connection.get('id'),
-                          harness='Claude Code' if record.get('harness', {}).get('id') == 'claude' else 'Codex CLI',
-                          project_name=connection.get('name') or connection['id'], head=context['head'])
-    if read(packet / 'run.json').get('recording_protocol') != protocol:
-        raise Decision(f'{run}: packet protocol differs from its recipe; cancel this unused preparation and run berman new')
-    # A retry must never replace an existing or worker-edited assignment.
-    if (packet / 'INSTRUCTIONS.md').read_bytes() != source.read_bytes():
-        raise Decision(f'{run}: instructions differ from the reserved recipe')
-    for name in ('INSTRUCTIONS.md', 'ASSIGNMENT.md', 'run.json'):
-        keep(folder / 'preparation' / name, files.regular(packet / name).read_bytes())
-    record['phase'] = 'prepared'
-    store.save(record)
-    return packet

@@ -1,4 +1,4 @@
-"""Structural contracts for the records Berman reads and writes, as packaged JSON Schemas.
+"""Structural contracts for the records Berman reads, as packaged JSON Schemas.
 
 A record's `schema` value names its family and version, and that name selects one schema
 file beside this module. A schema refuses only structure Berman's code would crash on or
@@ -24,8 +24,8 @@ schema name for a materially different record meaning. Validation never rewrites
 
 This is the only module that imports jsonschema, and it does so when first used, so that a
 command which validates nothing, and `berman verify --software` in a damaged environment,
-still start. Hooks, probes and the archive builder read their records directly and never
-come here; pyproject.toml's Import Linter contracts hold them to that.
+still start. The executor's hook path and the archive builder read their records directly and
+never come here; pyproject.toml's Import Linter contracts hold them to that.
 """
 
 from functools import cache
@@ -41,11 +41,8 @@ SUPPORTED = (
     'berman.research-plan/1',
     'berman.run-catalogue/1',
     'berman.operation/1',
-    'berman.new-request/1',
-    'berman.new-request/2',
     'berman.software/1',
     'berman.verification/1',
-    'berman.recovered-write/1',
     'berman.recording/2',
     'berman.capture-current/1',
     'berman.reading-edition/2',

@@ -22,18 +22,19 @@ uv is a development tool only. The wheel installs and runs with pip, and a
 checkout can be developed with pip alone: `python -m pip install -e . --group dev`
 in a Python 3.14 environment installs the same tools, unlocked.
 
-Tests create disposable repositories, synthetic packets and simulated callbacks.
-They do not spend model tokens or establish native capture. The installed
-`berman verify` checks package integrity and, when selected, a fieldwork workspace.
-It never runs the developer tests or requires this checkout.
+Tests create disposable repositories, synthetic studies, harness doubles and
+simulated callbacks. They do not spend model tokens or establish native capture.
+The installed `berman verify` checks package integrity and, when one is selected,
+a co-located workspace made by an earlier release. It never runs the developer
+tests or requires this checkout.
 
 ## What each tool is for
 
 | Tool | Kind | What it enforces | Where it is configured |
 | --- | --- | --- | --- |
 | Ruff | development | Lint on everything but the frozen collector; formatting of files written since it was adopted. | `[tool.ruff]` in `pyproject.toml` |
-| Import Linter | development | Eight architectural contracts over the import graph. | `[tool.importlinter]` in `pyproject.toml` |
-| JSON Schema (`jsonschema`) | runtime | Packaged structural contracts; workspace records checked on access, standalone evidence contracts also checked by dependency-free readers. | `src/berman/schemas/` |
+| Import Linter | development | Seven architectural contracts over the import graph. | `[tool.importlinter]` in `pyproject.toml` |
+| JSON Schema (`jsonschema`) | runtime | Packaged structural contracts; study inputs and co-located records checked when read, standalone evidence contracts also checked by dependency-free readers. | `src/berman/schemas/` |
 | Hypothesis | development | Behavioral invariants over generated inputs and operation sequences. | `tests/properties/`, `tests/support/properties.py` |
 | Rich | runtime | Operator-facing output on an interactive terminal. | `src/berman/presentation/terminal.py` |
 | Packaging | runtime | Python requirements, versions and environment markers for installation verification. | `src/berman/environment.py` |
@@ -49,15 +50,22 @@ defect requires a change, and then say what the change costs.
 | Files | What their bytes identify | Cost of a change |
 | --- | --- | --- |
 | `src/berman/_legacy/capture_session.py` | The frozen historical collector. | Never changed. |
-| Each adapter's `implementation` list in `capture/adapters.py`: the hook entry points and what they import, `installation.py`, `files.py`, `harnesses/claude.py`; and the probe and assessment modules fingerprinted by Claude qualification | Hook trust and native capture. | Renewed qualification in every adopting study. |
 | `src/berman/archive/*.py` | A reading edition's reader identity. | New editions name new reader bytes; published editions verify independently. |
-| `harnesses/codex.py`, `harnesses/probe.py` | Native checkout and policy receipts. | Rechecked when their fingerprint changes. |
 
-Ruff never formats these files, and a test keeps them on the formatter's
-exemption list. Lint findings in them that are only style are ignored per file
-and per rule in `pyproject.toml`; a new kind of finding still surfaces and gets
-a decision. Schema validation and presentation are attached elsewhere, so none
-of these files imports `jsonschema` or `rich`.
+Ruff never formats these files, and a test keeps the archive modules on the
+formatter's exemption list. Lint findings in them that are only style are ignored
+per file and per rule in `pyproject.toml`; a new kind of finding still surfaces
+and gets a decision. Schema validation and presentation are attached elsewhere,
+so none of these files imports `jsonschema` or `rich`.
+
+Every preparation and launch receipt the executor writes records the digest of
+each installed module. No file is singled out by that: any source change shows
+in the next receipt, and a qualification describes the launch that produced it.
+
+Three helpers keep the results earlier receipts recorded, wherever they now
+live: `berman.checks.project_checks`, `berman.capture.hooks.capture_entry` and
+`berman.capture.claude.render`, with the frozen collector's `render`.
+`tests/unit/test_capture_readers.py` pins them.
 
 ## Formatting and lint
 
@@ -72,14 +80,13 @@ families and bugbear.
 
 ## Architecture
 
-`uv run lint-imports` checks eight contracts, and the suite checks them again:
+`uv run lint-imports` checks seven contracts, and the suite checks them again:
 
 | Contract | What it holds |
 | --- | --- |
-| `layers` | Command line, then orchestration (`workflow`, `verify`, `support`, `harnesses.claude_support`), then operations, then `records`, then `config` and `lifecycle`, then the capture path, then foundations that import nothing else in the package. |
-| `hooks` | Hook entry points, and everything they import, load no third-party package. |
+| `layers` | Command line, then the connector, then orchestration (`controller`, `executor`, `verify`), then operations (`custody`, `sources`, `recordings`, `recipes`, `workspace`, `checks`), then `protocol` and `records`, then `config` and `lifecycle`, then `capture` and the frozen collector, then evidence, snapshots and the archive, then foundations that import nothing else in the package. |
+| `hooks` | The executor's hook routing, and everything it imports, load no third-party package. |
 | `archive` | The archive builder uses the standard library only. |
-| `scripts` | The copied execution probe uses the standard library. |
 | `lifecycle` | Lifecycle facts are evaluated without filesystem or process access. |
 | `frozen` | Only `capture/collector.py` loads the frozen collector. |
 | `presentation` | Only the command line imports `berman.presentation`. |
@@ -91,8 +98,9 @@ Add a case when you add a contract. A new module needs a place in `layers`; a
 test fails until it has one.
 
 Some properties have no form as a contract and stay as tests: that every module
-a hook imports is fingerprinted, that hooks and copied scripts import nothing
-outside the standard library, that every third-party import is a declared
+the hook routing can import is named by the `hooks` contract, that those modules
+import nothing outside the standard library, that the hook entry point loads no
+third-party package when it starts, that every third-party import is a declared
 dependency, that the frozen collector is loaded once, and that the frozen bytes
 and serialization helpers are unchanged.
 
@@ -105,17 +113,22 @@ wheel, covered by the software identity and checked by
 
 | Schema | Record | Validated |
 | --- | --- | --- |
-| `berman.workspace/1` | `berman.json` | when a workspace loads |
-| `berman.connection/1` | `connection.json` | when a workspace loads |
-| `berman.research-plan/1` | `plan.json` | when a selected plan is inspected or supplies a fresh assignment |
-| `berman.run-catalogue/1` | the run catalogue | when a workspace loads |
+| `berman.connection/1` | `connection.json` | when the controller commissions, and when a co-located workspace loads |
+| `berman.research-plan/1` | `plan.json` | when a commission selects a plan, and when a co-located workspace's selected plan is described |
 | `berman.recipe/2` | `recipe.json` | when a recipe is selected |
-| `berman.operation/1` | `operations/RUN/operation.json` | on every read and before every write |
-| `berman.new-request/2` | a combined request naming an already reserved target | on every read and before every write |
-| `berman.new-request/1` | a historical combined request | completed records read unchanged; pending records require settlement with the original installation |
-| `berman.software/1` | `berman version`, `software.json` | by tests |
+| `berman.recording/2` | a recording's `recording.json` | by tests; the dependency-free reader validates every package it opens |
+| `berman.capture-current/1` | `session/current.json` | by tests; the dependency-free reader validates every capture it reads |
+| `berman.reading-edition/2` | an edition's manifest | by tests; the dependency-free verifier checks every edition it opens |
+| `berman.software/1` | `berman version` | by tests |
 | `berman.verification/1` | `berman --json verify` and kept results | by tests |
-| `berman.recovered-write/1` | retained interrupted-write receipts | before writing and when reading recovery receipts |
+| `berman.workspace/1` | a co-located workspace's `berman.json` | when the workspace loads |
+| `berman.run-catalogue/1` | a co-located workspace's run catalogue | when the workspace loads |
+| `berman.operation/1` | a co-located workspace's `operations/RUN/operation.json` | on every read |
+
+The last three families were written only by releases up to 0.26.3. This version
+reads them and writes none. The combined-request and recovered-write schemas
+went with the writer that used them: a pending combined request is now read only
+for its recorded state and reported as unsettled.
 
 The rule for what a schema refuses:
 
@@ -128,9 +141,8 @@ The rule for what a schema refuses:
   absent, and every object stays open to fields the schema does not name.
 - A plan's `commitment` and `relationships` are study annotations, not
   operational preconditions; their shapes do not constrain assignment.
-- A field only a later command reads is not required at load. A connection
-  without `documents` loads and serves development; preparing fieldwork for it
-  fails then, as before.
+- A field only a later step reads is not required at load. A connection
+  without `documents` loads; an assignment made from it selects none.
 
 So a workspace or record that version 0.4.1 loaded still loads, with one class
 of exception: a list given as text, which was read character by character
@@ -143,7 +155,7 @@ The division of labor:
 
 - Phases, purposes, adapter names, run and session identities, agreement
   between records and filesystem safety stay in the Python that decides them.
-- For operation records, combined requests and recipes, the Python rules run
+- For operation records and recipes, the Python rules run
   first and in the same words, and the schema then refuses structure nothing
   looked at before. For `berman.json`, connections, plans and the catalogue, the
   schema runs once the file's family is recognized, so a wrong type that used to
@@ -154,7 +166,7 @@ The division of labor:
 - A record that fails is invalid data. That stays distinct from a record that
   is missing, from an incomplete operation, whose record is valid at every
   step, and from a fact nobody recorded.
-- Hooks and the archive builder use explicit standard-library validators for committed captures and portable evidence. They never import jsonschema.
+- The executor's hook routing and the archive builder use explicit standard-library validators for committed captures and portable evidence. They never import jsonschema.
 - If `jsonschema` does not import, every record is refused with that reason;
   nothing is read unchecked.
 
@@ -178,19 +190,33 @@ BERMAN_HYPOTHESIS_PROFILE=explore uv run python -m unittest discover -s tests/pr
 
 That profile randomizes, multiplies the example counts by ten and keeps a local
 `.hypothesis` database. When it finds something, fix the defect and pin the case
-as a plain test beside the code it concerns, as the two regressions in
-`tests/integration/test_records.py` are.
+as a plain test beside the code it concerns.
 
-`test_workflow_sequences.py` is a state machine over the real workflow in a
-disposable workspace: preparation, sessions, callbacks, finalization, endings,
-cancellation, lock contention and an interruption at any durable write, followed
-by a retry. Its docstring lists what it holds and what it does not model.
+`test_lifecycle_facts.py` ranges over what a co-located run's records can
+establish: a fact is stated with evidence or unknown with a reason, only an
+operator declaration is an ending, and a run at rest awaits nothing whatever
+history left out. `test_sequence_rules.py` covers the plan step a commission
+takes next.
+
+## Co-located fixtures
+
+No product code writes a co-located workspace any more, so the tests of its
+reader build one. `tests/support/legacy.py` writes the records release 0.26.3
+wrote: a prepared packet and its operation record, a bound session with
+committed capture generations, a frozen capture, a declared ending, the
+migration inventory and journal, a recording/2 manifest with its package, and
+the closeout receipt with its edition. Each builder stops where a study could
+have stopped, so the unsettled states are reachable. They are fixtures: they
+take no lock, run no harness and are never installed. When a reader's
+understanding of a record changes, check the builder against a workspace the
+released writer made, not against the reader.
 
 ## Presentation
 
-`berman.presentation` turns finished results into text and computes nothing.
+`berman.presentation` turns finished results into text and computes nothing. It
+renders two results, `status` and `verify`.
 `plain` is the established text, and scripts depend on its bytes;
-`tests/fixtures/presentation/` pins it against what version 0.4.1 printed.
+`tests/fixtures/presentation/` pins it.
 `terminal` is a Rich rendering of the same results, used when standard output is
 an interactive terminal. Redirected output is always plain,
 `BERMAN_OUTPUT=plain` keeps the plain text on a terminal, and if `rich` does not
@@ -200,6 +226,11 @@ A change to `plain` is a change to Berman's output and needs the deliberateness
 of a change to a command's options. A change to `terminal` must keep three
 rules its tests hold: every word of the plain text is shown, every distinction
 survives without color, and recorded text is shown literally.
+
+`wheel_smoke.py` (see [building](#building)) commissions and closes a synthetic
+guest study through the installed controller's entry point, with a hand-made
+collection receipt standing in for the executor, then verifies the recording and
+edition from copies.
 
 ## Building
 
@@ -258,21 +289,23 @@ its tag.
 
 | Location | Responsibility |
 | --- | --- |
-| `src/berman/cli.py`, `workspace.py` | Command interface, workspace discovery and initialization, software identity. |
+| `src/berman/connector.py`, `protocol.py` | The operator's commands on the host and the version 1 command envelope across SSH. |
+| `controller.py`, `custody.py` | The guest's commissions, ledger and endings; portable recordings and editions from accepted evidence. |
+| `executor/` | Native preparation, launch, hook routing, staging, closeout and qualification. |
+| `capture/`, `_legacy/` | Transcript readers, recognition of Berman's own hook commands, and the frozen collector. |
+| `recipes.py`, `checks.py`, `sources.py`, `snapshots.py` | Recipes and document snapshots, project checks, associated sessions, committed capture generations. |
+| `evidence.py`, `archive/` | Portable recording verification; selection, reading aids and deterministic packaging, including historical readers. |
+| `cli.py`, `workspace.py` | The `berman` command, software identity and selection of a co-located workspace to read. |
+| `records.py`, `lifecycle.py`, `config.py`, `recordings.py` | Read-only discovery of a co-located workspace, what its records establish and what is unsettled, and the audit and export of its preserved runs. `config.py` also serves the controller's connections and plans. |
+| `verify.py`, `installation.py`, `environment.py` | Verification of the installed software and of a co-located workspace; installed resources. |
 | `presentation/` | Plain and terminal renderings of finished results. |
-| `workflow.py`, `records.py`, `lifecycle.py` | Engagement decisions, journals and resumable operations. |
 | `schemas/` | Packaged record schemas and their validation. |
-| `recipes.py`, `preserve.py`, `recovery.py` | Preparation, retained records and explicit low-level recovery. |
-| `capture/` | Exclusive session routing, collector adapters and locking. |
-| `harnesses/` | Native checkout checks, fieldwork launch arguments and Claude capture settings. |
-| `archive/` | Selection, reading aids and deterministic packaging, including historical readers. |
-| `installation.py`, `verify.py` | Installed resources, diagnostics and qualification receipts. |
 | `tests/` | Unit, integration, compatibility and property tests with synthetic fixtures and shared helpers. |
 
-Workspace paths come from the selected Store. Installed resources come from the
-package. Recorded launch commands and hooks name the installed interpreter and
-use isolated module execution. The operator's cheatsheet uses `berman` on PATH
-with an explicit workspace root. The probe runs in a disposable project fixture.
+A co-located workspace's paths come from the selected Store, and nothing is
+written beneath them except a new edition or a requested verification record.
+Installed resources come from the package. Hook commands name the installed
+interpreter and use isolated module execution.
 
 ## Compatibility and qualification
 
@@ -282,45 +315,74 @@ robust corrective change over compatibility machinery. Describe changed
 refusals, output and verification scope, and any response an adopting study
 needs. Preserved evidence is never rewritten to make a new check pass.
 
-### Unreleased: optional study plans
+### Unreleased: one lifecycle
 
-`new --recipe NAME` reserves a direct assignment. Bare `new` uses an optional
-plan for a fresh assignment or retries retained work. New operations record
-assignment origin explicitly; missing historical origins retain their meaning.
-Direct encounters do not advance a plan, and only that plan's own recorded
-assignments participate in its sequence checks. Plan resolution is deferred to
-selection or inspection, so a missing or invalid selected plan remains a visible
-problem without blocking otherwise valid direct work or retained retries.
+The controller and executor are now the only code that commissions, prepares,
+launches, captures, ends, collects, preserves, migrates or supplements
+fieldwork. The co-located writer that releases up to 0.26.3 carried is removed.
+This is a breaking change, made deliberately: after the research-denial sandbox
+left that path, a co-located workspace kept research plans, analysis and
+preserved runs where the observed agent could read them, and the `init`
+command still created such workspaces.
 
-The cross-project commitment gate is removed. `commitment` and `relationships`
-remain readable study annotations. This deliberately changes operational
-restrictions; studies that use those promises must manage them in their own
-practice. Connecting a project alone still assigns no fieldworker.
+Removed commands: `init`, `ready`, `new`, `launch`, `finish`, `supplement`,
+`cancel`, `dev`, `cheatsheet`, `capture` (with its `readiness`, `install`,
+`definition`, `record-trust` and `record-capture`), `support-trial`,
+`recording import`, and the `--native-access` option of `verify`. Each of the
+eleven removed commands answers with one refusal that names the controller and
+executor and exits 2. The modules behind them are gone: the workflow,
+preservation, recovery and support-trial modules, the harness launchers and
+probe, the capture router, runtime, transactions and adapters, and the writing
+halves of the record, lifecycle, recipe and configuration modules. So are the
+`hook-trust`, `native-capture` and `native-access` checks of `verify`.
 
-New combined requests use `berman.new-request/2`: the exact target assignment
-is reserved before its run is named in the request and before the previous
-ending is declared. Interruption tests cover reservation, request publication,
-ending, preservation, preparation and cancellation. Cancelling an unused target
-cancels further preparation by a pending request without undoing an ending.
-Completed historical `/1` requests stay readable unchanged. Pending `/1`
-requests must be settled with their original installation before adoption;
-the new software reports this recovery requirement rather than guessing a
-target. Do not rewrite historical requests to satisfy the new contract.
+What remains for a co-located workspace is reading:
 
-Native access verification now checks every configured Codex connection,
-including plan-free connections, with a reserved diagnostic recipe in disposable
-roots. It retains actual checkout/document/access checks without copying a study
-plan or choosing research instructions. Reserved-name collisions are refused.
-Receipts identify diagnostic instructions. This launches neither a fieldworker
-nor a model and establishes no hook trust or native capture; a later adopting
-study renews only arrangements changed by the new bytes under its own procedure.
+- `status` reports each connection's selected plan as its records left it, every
+  run that is not at rest, and what is unsettled. It takes no lock and never
+  consults a native source. Its result drops `next_recipe` at the top level,
+  `operations_in_progress`, and each run's `prepared_unstarted`,
+  `capture_consistent`, `warnings` and `operation_in_progress`; it adds
+  `unsettled`, `pending_requests` and each run's `unsettled` and `opened_with`.
+  A connection reports `plan`, `next_step`, `next_recipe`, `plan_note`,
+  `plan_error` and `problems`.
+- `verify` runs `frozen-collector`, `recorded-hashes`, `workspace`, `settled`,
+  `recordings` and `archive`. `settled` is new and required: unsettled work makes
+  it not established and the verdict incomplete, with exit status 3.
+- `recording export`, `recording verify`, `recording materialize` and `archive`
+  are unchanged.
 
-Plain and terminal output now identify assignment recipe and origin, show
-selected-plan errors separately, and label direct-assignment commands containing
-`RECIPE` as templates requiring a choice. These are deliberate changes to the
-redirected-text fixtures; machine output carries the corresponding result fields.
+Unsettled work is never closed here. A reserved, prepared or open engagement, a
+declared ending whose preservation, migration, packaging or reading publication
+never finished, a pending combined request and an open support trial are each
+reported with the statement that it has to be closed with the release that
+opened it. A run at rest without an ending or a package is reported as it is and
+gains nothing by being read. The plain-text fixtures for `status` and `verify`
+change accordingly; the `cheatsheet` and preparation fixtures are removed.
+
+Two helpers the executor reuses moved without a change in what they return:
+`project_checks` to `berman.checks`, and `capture_entry` to
+`berman.capture.hooks`. `berman.capture.claude` keeps `EVENTS` and `render`, and
+`berman.capture.collector` keeps the frozen module as `capture`.
+
+A study that still has a co-located workspace:
+
+- keeps its released runtime, and closes with it whatever `status` reports as
+  unsettled, before relying on this version for that workspace;
+- reads and verifies the workspace with this version whenever it likes: `status`
+  and a plain `verify` only read;
+- continues in the guest: export each preserved run, import it into custody and
+  reserve the run numbers already used, as
+  [historical studies](guest-deployment.md#historical-studies) describes.
+
 No release number, package, adoption or native qualification follows from this
 checkout change.
+
+### Version 0.26.3: the last co-located writer
+
+0.26.3 is the last release that prepares, captures and closes fieldwork in a
+co-located workspace. [Its release note](releases/0.26.3.md) describes it. A
+workspace it or an earlier release operated stays that release's to operate.
 
 ### Version 0.26.2: keeping release artifacts
 
@@ -340,45 +402,14 @@ names them.
 
 ### Version 0.4.4: one opening message
 
-The opening message a fieldworker receives is now written entirely by Berman
-and is the same for every connection and recipe; the
-[fieldwork guide](usage.md#what-a-fieldworker-receives) shows it. It names the
-working directory, the connection's name and the commit observed at
-preparation, the run directory and its access, and the instructions. The access
-sentence used to be supplied by individual recipes.
-
-This is a breaking change. Three researcher inputs are retired: a connection's
-`commission` file and `revision` text, and a recipe's `research_commission`
-file. None of them reaches a fieldworker any more.
-
-- `berman new` refuses a connection that still names `commission` or `revision`
-  and a recipe that still names `research_commission` or `commission`, saying
-  which file to change. It does not ignore them: text a researcher wrote for a
-  fieldworker must not silently go undelivered. `status`, `verify` and
-  development still load such a connection.
-- New operation records carry no `commission`, their retained connection no
-  `commission` or `revision_template`, and no `preparation/COMMISSION.md` is
-  written. A packet's run.json records `manager.project` and `manager.head` in
-  place of `manager.revision`, and no `assignment_sha256`. Earlier records and
-  packets keep what they have and stay readable.
-- A packet prepared by an earlier version keeps its opening message and
-  launches unchanged. A reservation made by an earlier version whose packet was
-  never created is refused: cancel it and run `berman new` again.
-- Support trials use the same message, without the commit sentence.
-- `berman init` writes a connection with no commission.
-
-The minimal study example now holds the baseline recipe: plain accounts of work
-in progress. The baseline does not tell the fieldworker that the session is
-being recorded.
-
-The fingerprinted capture implementation, the archive builder, the probes, the
-launcher scripts and the frozen collector are byte for byte what 0.4.3 shipped.
-
-A study that adopts this version removes `commission` and `revision` from each
-connection.json and writes its recipes without a research commission, moving
-any text a fieldworker still needs into INSTRUCTIONS.md. Recipes kept only as a
-record of earlier runs can stay as they are; they are refused only if a plan
-selects them.
+From 0.4.4 the opening message a fieldworker received was written entirely by
+Berman and was the same for every connection and recipe. A connection's
+`commission` file and `revision` text and a recipe's `research_commission` file
+were retired. Recipes written since carry everything a fieldworker needs in
+INSTRUCTIONS.md, and a recipe that still names `research_commission` or
+`commission` is refused when it is selected. The
+[fieldwork guide](usage.md#what-a-fieldworker-receives) says what reaches a
+fieldworker now.
 
 ### Adopting a release in a study
 
@@ -386,29 +417,31 @@ Publishing a release adopts it nowhere, and none of the development checks
 qualifies a native installation. A study that adopts a release decides, and
 does, the following under its own procedure:
 
-- **A read of existing records before any write.** `berman status` and a plain
-  `berman verify` only read. Run them with the new release first: a record it
-  refuses is reported there, with its place.
+- **A read of existing records before any write.** For a co-located workspace,
+  `berman status` and a plain `berman verify` only read. Run them with the new
+  release first: a record it refuses is reported there, with its place, and so
+  is anything unsettled.
 - **Closed captures.** An active capture is closed with the runtime that opened
-  it before another release replaces that runtime.
+  it before another release replaces that runtime. A co-located engagement is
+  closed with the release that opened it; this version cannot close one.
 - **An environment with dependencies.** Keep the dependency wheels with the
   adoption record so the environment can be rebuilt from recorded bytes:
   `python -m pip download WHEEL -d wheelhouse`, then
   `python -m pip install --no-index --find-links wheelhouse berman==VERSION`.
   One dependency, `rpds-py`, is a compiled wheel for one platform and Python.
-- **A recorded identity.** `berman version` and a workspace's software.json name
-  the version, the digest of every source and schema file, and the interpreter
-  and dependency versions. A later change to an installed dependency changes
-  `berman version` and no source digest.
-- **Hook trust, native capture and native access.** Changed fingerprinted bytes
-  or hook commands need renewed qualification in that installation, including
-  an actual CLI trust review where applicable. Unchanged bytes can leave a
-  recorded basis mechanically valid; whether that is sufficient is the study's
-  decision. Never reuse another study's receipts.
+- **A recorded identity.** `berman version` names the version, the digest of
+  every source and schema file, and the interpreter and dependency versions. A
+  later change to an installed dependency changes `berman version` and no
+  source digest.
+- **Native qualification.** A changed executor or hook command needs the
+  installed Codex router replaced and reviewed in the actual CLI, and a
+  designated launch evaluated with `berman remote qualify RUN`, as
+  [native execution](executor.md#qualification-evidence) describes. Never reuse
+  another study's receipts.
 
 `src/berman/_legacy/capture_session.py` is frozen at SHA-256 `f87241a6b9506590fffa4e2a964f37bb7f7c719e508f4024661b45c57f983a99`.
-Never edit it or install it directly. The exclusive router owns session locking
-and chooses the collector. Historical markers and schema names remain readable.
+Never edit it or install it directly. The executor's exclusive router owns
+capture. Historical markers and schema names remain readable.
 
 Notes on releases before 0.4.4 were removed from this guide; Git history keeps
 them.
@@ -420,8 +453,8 @@ Git commands inside their nested repositories. Archive verification checks
 recorded bytes, modes and modification times where recorded. Keep maintenance
 evidence with the installation it checked.
 
-`berman --root PATH verify --native-access` adds a native access check. Use
-`--record experiments/NAME` to retain receipts in that workspace. Every report
-distinguishes failures, checks not run, facts not established and work never
-performed. Rebuilding an archive, native support trials and actual CLI trust
-review are separate actions. See [current limits](limitations.md).
+`berman --root PATH verify --record experiments/NAME` retains the result and its
+receipts in that workspace. Every report distinguishes failures, checks not run,
+facts not established and work never performed. Rebuilding an archive and
+qualifying a native installation are separate actions. See
+[current limits](limitations.md).
