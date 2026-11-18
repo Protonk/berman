@@ -192,7 +192,7 @@ severity, compatibility, maturity or progress.
   Numbers below 0.26 predate this scheme and carry no meaning under it.
 
 Notes for each release stay with it under `releases/`; the latest are the
-[0.26.6 release notes](releases/0.26.6.md). Between releases, collect what the
+[0.26.7 release notes](releases/0.26.7.md). Between releases, collect what the
 next one will need to say in `releases/unreleased.md`, and rename that file
 when the release is prepared.
 
