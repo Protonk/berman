@@ -195,17 +195,18 @@ def codex_preflight(native, spool, directory):
     executable = native['executable']
     env = dict(os.environ, CODEX_HOME=str(home))
     project = native['project']
-    status = subprocess.run([executable, 'login', 'status'], env=env, cwd=project, stdin=subprocess.DEVNULL, timeout=30)
-    if status.returncode:
-        login = shlex.join(['env', f'CODEX_HOME={home}', executable, 'login'])
-        raise ValueError(f'Codex sign-in check failed in the qualification home. Run {login}, then retry.')
     print(
-        f'Review this candidate in /hooks in the Codex window opening now ({home}). '
+        f'In the Codex window opening now ({home}), sign in if prompted and review this candidate in /hooks. '
         'Exit Codex after review to start the fixture assignment.',
         file=sys.stderr,
         flush=True,
     )
     subprocess.run([executable, '--sandbox', native['policy'], '-C', project], env=env, cwd=project, check=True)
+    status = subprocess.run([executable, 'login', 'status'], env=env, cwd=project, stdin=subprocess.DEVNULL, timeout=30)
+    if status.returncode:
+        raise ValueError(
+            f'Codex could not confirm sign-in in {home}. Retry CI and finish sign-in in the review window.'
+        )
 
 
 def access(read, challenge_sha256):
@@ -310,7 +311,7 @@ def engage(trial, config):
     remote.call('status', run=None)
     trial.update(candidate_verified=True)
     if harness == 'codex':
-        trial.step('check Codex sign-in and review the qualification hooks')
+        trial.step('review the qualification hooks and confirm Codex sign-in')
         codex_preflight(native, spool, trial.directory)
     trial.step('commission fixture assignment')
     assignment = op.commission(

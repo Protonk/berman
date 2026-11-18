@@ -64,27 +64,20 @@ the transcript file exists. The recording names those callbacks and the ones
 that obtained a verified snapshot. The original event receipts retain the
 observation at each point.
 
-For Codex, sign in to its dedicated CI home once from a terminal. If the
-config selects a custom executable, use that executable for login too.
+For Codex, CI verifies the installed router against the candidate. It installs
+the initial hook definition in a new home. If the registration needs updating,
+CI prints the proposed file and destination. Preserve unrelated hooks and
+close active captures before updating a registration.
 
-```sh
-CODEX_HOME="$HOME/.local/share/berman-ci/codex-home" codex login
-```
-
-CI verifies the installed router against the candidate and checks sign-in with
-the bound executable before commissioning. For a new home it installs the
-initial hook definition. When the candidate changes, CI prints the proposed
-file and destination if registration needs updating. Preserve unrelated hooks
-and close active captures before updating a registration.
-
-CI opens Codex in the fixture checkout for review before it sends an assignment.
-Open `/hooks`, inspect and trust the candidate's Berman hooks, and exit that
-window. CI then commissions the run and opens Codex with the prepared
-assignment. This binding uses Codex's native `workspace-write` mode and adds
-the packet as a writable directory. At the end of the work, exit the sitting
-to start collection. A live pass requires attributed opening and stop
-callbacks, a captured generation, an intact parent transcript and an observed
-successful exit.
+Start with the `--live codex` command above, including on first use. In the
+first Codex window, sign in if prompted, open `/hooks`, inspect and trust the
+candidate's Berman hooks, and exit. CI checks the saved sign-in with
+`codex login status` before commissioning. It then opens the assignment using
+the same executable, checkout and persistent Codex home. This binding uses
+Codex's native `workspace-write` mode and adds the packet as a writable
+directory. Exit the sitting to start collection. A live pass requires
+attributed opening and stop callbacks, a captured generation, an intact
+parent transcript and an observed successful exit.
 
 ## Results and retries
 

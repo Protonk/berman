@@ -59,26 +59,29 @@ class QualificationTests(unittest.TestCase):
             ci.codex_hooks(home, spool, root)
         self.assertEqual(installed.read_text(), '{"hooks": {}}')
 
-    def test_codex_checks_the_bound_login_and_opens_hook_review_before_fieldwork(self):
+    def test_codex_offers_interactive_review_before_checking_saved_login(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         trial = ci.Trial(root)
         trial.update(worker='codex')
         with patch.object(ci, 'STATE', root):
             _, native = ci.binding(trial, {'executables': {'codex': sys.executable}})
         self.assertEqual(native['policy'], 'workspace-write')
-        with patch.object(ci.subprocess, 'run') as run:
-            run.return_value.returncode = 1
-            with self.assertRaisesRegex(ValueError, 'sign-in.*CODEX_HOME=.*codex-home.*login'):
-                ci.codex_preflight(native, root / 'spool', root)
-            self.assertEqual(run.call_count, 1)
-            self.assertEqual(run.call_args.args[0], [native['executable'], 'login', 'status'])
-            self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'], native['home'])
-            run.return_value.returncode = 0
-            ci.codex_preflight(native, root / 'spool', root)
-            self.assertEqual(
-                run.call_args.args[0], [native['executable'], '--sandbox', 'workspace-write', '-C', native['project']]
-            )
-            self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'], native['home'])
+        review = [native['executable'], '--sandbox', 'workspace-write', '-C', native['project']]
+        status = [native['executable'], 'login', 'status']
+        for status_code in (0, 1):
+            with self.subTest(status_code=status_code), patch.object(ci.subprocess, 'run') as run:
+                run.side_effect = [None, subprocess.CompletedProcess(status, status_code)]
+                if status_code:
+                    with self.assertRaisesRegex(ValueError, 'finish sign-in in the review window'):
+                        ci.codex_preflight(native, root / 'spool', root)
+                else:
+                    ci.codex_preflight(native, root / 'spool', root)
+                self.assertEqual([c.args[0] for c in run.call_args_list], [review, status])
+                for invocation in run.call_args_list:
+                    self.assertEqual(invocation.kwargs['env']['CODEX_HOME'], native['home'])
+                    self.assertEqual(invocation.kwargs['cwd'], native['project'])
+                self.assertTrue(run.call_args_list[0].kwargs['check'])
+                self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
 
     def test_failed_native_launch_and_failed_preservation_have_separate_receipts(self):
         trial = ci.Trial(Path(self.enterContext(tempfile.TemporaryDirectory())).resolve())
