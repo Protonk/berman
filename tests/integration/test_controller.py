@@ -3,14 +3,41 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
+import json
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 from uuid import uuid4
+import zipfile
 
-from berman import files, protocol
+from berman import custody, evidence, files, protocol
+from berman.archive import package
 from berman.connector import stable_id
 from berman.controller import Controller
+
+
+def unpack(path):
+    with zipfile.ZipFile(path) as archive:
+        payload = {info.filename: (archive.read(info), info.external_attr >> 16) for info in archive.infolist()}
+    return json.loads(payload.pop(evidence.MANIFEST)[0]), payload
+
+
+def repack(manifest, payload, changed=()):
+    """A package like the given one with some evidence members replaced or dropped and their rows fixed."""
+    payload, manifest = dict(payload), deepcopy(manifest)
+    for name, value in dict(changed).items():
+        if value is None:
+            payload.pop(name)
+            manifest['entries'] = [row for row in manifest['entries'] if row['path'] != name]
+            continue
+        data = protocol.json_bytes(value)
+        payload[name] = (data, stat.S_IFREG | 0o600)
+        for row in manifest['entries']:
+            if row['path'] == name:
+                row.update(size=len(data), sha256=files.digest(data))
+    payload[evidence.MANIFEST] = (protocol.json_bytes(manifest), stat.S_IFREG | 0o644)
+    return package.make_zip(payload, '')
 
 
 class ControllerTest(unittest.TestCase):
@@ -180,7 +207,10 @@ class ControllerTest(unittest.TestCase):
         self.assertEqual(raw, stored.read_bytes())
         stored.chmod(0o600)
         stored.write_bytes(b'x' * len(raw))
+        # Damage of the same length shows only when the guest rereads its objects, as transfer asks.
         self.assertEqual([], self.call(self.request('status', run=run))['result']['outstanding'])
+        deep = self.call(self.request('status', run=run, deep=True))['result']
+        self.assertEqual((['packet/notes/first.md'], 'sha256'), (deep['outstanding'], deep['outstanding_check']))
         with self.assertRaisesRegex(ValueError, 'damaged in the guest store'):
             self.call(self.request('accept', run=run))
         self.assertEqual(receipt, self.call(transfer, raw))
@@ -242,6 +272,113 @@ class ControllerTest(unittest.TestCase):
         status = self.call(self.request('status', run=run))['result']
         self.assertEqual([['capture', 'accept', 'preserve', 'publish']], [s['facts'] for s in status['supplements']])
         # The first recording is the bytes it was before the supplement existed.
-        from berman import custody
+        self.assertEqual(first['package_sha256'], files.digest((self.root / first['relative_path']).read_bytes()))
 
-        self.assertEqual(first['package_sha256'], custody.verify_recording(self.root, first)['package_sha256'])
+    def packaged(self):
+        """A first recording with one member missing at acceptance, and a supplement beside it."""
+        raw, later = b'first account', b'account written after the ending'
+        a, rows, ending = self.frozen_run({'packet/notes/first.md': raw, 'packet/notes/lost.md': b'never sent'})
+        run = a['run']
+        self.call(self.request('transfer', run=run, **rows[0]), raw)
+        self.call(self.request('accept', run=run, missing_reason='The staged note was lost'))
+        declare = self.request('supplement', run=run, reason='The worker returned after the ending')
+        self.call(declare)
+        row = dict(path='packet/notes/later.md', size=len(later), sha256=files.digest(later))
+        ids = {'ending_id': ending['operation'], 'supplement_id': declare['operation'], 'sequence': 1}
+        self.call(self.request('capture', run=run, supplement=1, observation=self.collected(a, ids, [row])))
+        self.call(self.request('transfer', run=run, supplement=1, **row), later)
+        self.call(self.request('accept', run=run, supplement=1))
+        first = self.call(self.request('preserve', run=run))['result']
+        second = self.call(self.request('preserve', run=run, supplement=1))['result']
+        return run, rows, first, second
+
+    def refused(self, data, text):
+        with self.assertRaisesRegex(ValueError, text):
+            evidence.inspect_package(data)
+
+    def test_verifier_refuses_a_supplement_whose_records_disagree(self):
+        run, _, first, second = self.packaged()
+        manifest, payload = unpack(self.root / second['relative_path'])
+        controller = json.loads(payload['evidence/controller.json'][0])
+        self.assertEqual('passed', evidence.inspect_package(repack(manifest, payload))['integrity'])
+        # Relabelled as the run's first recording: its capture receipt still says it is a supplement.
+        relabelled = deepcopy(controller)
+        item = relabelled.pop('supplement')
+        relabelled['facts'].update(capture=item['facts']['capture'], accept=item['facts']['accept'])
+        relabelled['facts'].pop('preserve')
+        relabelled['transferred'] = item['transferred']
+        m = deepcopy(manifest)
+        m.pop('supplement')
+        m['evidence'].pop('supplement')
+        changed = {'evidence/controller.json': relabelled, 'evidence/supplement.json': None}
+        self.refused(repack(m, payload, changed), 'cannot package a supplement collection')
+        # No declaration.
+        undeclared = deepcopy(controller)
+        undeclared['supplement']['declaration'] = None
+        m = deepcopy(manifest)
+        m['evidence'].pop('supplement')
+        changed = {'evidence/controller.json': undeclared, 'evidence/supplement.json': None}
+        self.refused(repack(m, payload, changed), 'supplement and controller record disagree')
+        # A declaration numbered differently from the supplement it is filed under.
+        other = deepcopy(controller)
+        other['supplement']['declaration']['sequence'] = 7
+        changed = {'evidence/controller.json': other, 'evidence/supplement.json': other['supplement']['declaration']}
+        self.refused(repack(manifest, payload, changed), 'declaration, capture and first recording disagree')
+        # A predecessor that is not the first recording the controller preserved.
+        m = deepcopy(manifest)
+        m['supplement']['follows_recording_sha256'] = 'f' * 64
+        self.refused(repack(m, payload), 'declaration, capture and first recording disagree')
+        # Custody also checks the predecessor against the recording it actually holds.
+        forged = deepcopy(controller)
+        forged['facts']['preserve'] = dict(forged['facts']['preserve'], package_sha256='f' * 64)
+        data = repack(m, payload, {'evidence/controller.json': forged})
+        self.assertEqual('passed', evidence.inspect_package(data)['integrity'])
+        other_study = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        files.write(other_study / 'collection.json', {'id': self.ident})
+        genuine = (self.root / first['relative_path']).read_bytes()
+        custody.import_recording(
+            other_study, BytesIO(genuine), expected_sha256=files.digest(genuine), size=len(genuine)
+        )
+        with self.assertRaisesRegex(ValueError, 'another recording than the one in custody'):
+            custody.import_recording(other_study, BytesIO(data), expected_sha256=files.digest(data), size=len(data))
+
+    def test_verifier_requires_the_exact_account_of_missing_evidence(self):
+        run, rows, first, _ = self.packaged()
+        manifest, payload = unpack(self.root / first['relative_path'])
+        controller = json.loads(payload['evidence/controller.json'][0])
+        self.assertEqual('passed', evidence.inspect_package(repack(manifest, payload))['integrity'])
+        gap = next(text for text in manifest['coverage']['unknown'] if 'lost.md' in text)
+        # Another line that merely contains the path is not the account of the gap.
+        m = deepcopy(manifest)
+        m['coverage']['unknown'] = [t for t in m['coverage']['unknown'] if t != gap] + [
+            'Reviewed packet/notes/lost.md.orig'
+        ]
+        self.refused(repack(m, payload), 'does not account for evidence missing at acceptance')
+        bare = deepcopy(controller)
+        bare['facts']['accept'].pop('missing_reason')
+        self.refused(repack(manifest, payload, {'evidence/controller.json': bare}), 'does not account')
+        # "Never transferred" cannot stand beside a transfer map that holds the member.
+        both = deepcopy(controller)
+        both['transferred']['packet/notes/lost.md'] = rows[1]['sha256']
+        self.refused(repack(manifest, payload, {'evidence/controller.json': both}), 'does not account')
+        # A member in the package cannot also be listed as missing.
+        twice = deepcopy(controller)
+        twice['facts']['accept']['missing'].append(dict(rows[0], problem='never transferred'))
+        self.refused(repack(manifest, payload, {'evidence/controller.json': twice}), 'does not account|disagree')
+
+    def test_acceptance_closes_the_collection_to_new_transfers(self):
+        payloads = {'packet/notes/kept.md': b'kept', 'packet/notes/lost.md': b'readable again later'}
+        a, rows, _ = self.frozen_run(payloads)
+        run = a['run']
+        kept = self.request('transfer', run=run, **rows[0])
+        self.call(kept, payloads['packet/notes/kept.md'])
+        self.call(self.request('accept', run=run, missing_reason='Unreadable on the host at the time'))
+        with self.assertRaisesRegex(ValueError, 'belongs in a supplement'):
+            self.call(self.request('transfer', run=run, **rows[1]), payloads['packet/notes/lost.md'])
+        status = self.call(self.request('status', run=run, deep=True))['result']
+        self.assertEqual(([], ['packet/notes/kept.md']), (status['outstanding'], list(status['transferred'])))
+        # A repeat of the earlier transfer is still taken: it can only repair the store.
+        again = self.call(kept, b'kept')['result']
+        self.assertEqual({'transferred': 'packet/notes/kept.md', 'sha256': rows[0]['sha256']}, again)
+        recording = self.call(self.request('preserve', run=run))['result']
+        self.assertEqual('passed', custody.verify_recording(self.root, recording)['integrity'])

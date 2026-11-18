@@ -102,8 +102,9 @@ class Operator:
             fields['supplement'] = supplement
         return self.remote.call(command, stable_id(self.remote.collection, *parts), run=run, **fields)
 
-    def read(self, command, run, supplement=None):
-        fields = {} if supplement is None else {'supplement': supplement}
+    def read(self, command, run, supplement=None, **fields):
+        if supplement is not None:
+            fields['supplement'] = supplement
         return self.remote.call(command, run=run, **fields)
 
     def ticket(self, run):
@@ -158,6 +159,7 @@ class Operator:
                 one_turn=args.one_turn,
                 resume=args.action == 'resume',
                 prompt=getattr(args, 'prompt', None),
+                request=getattr(args, 'request', None),
             )
             if observed.get('exit') is None:
                 raise ValueError(
@@ -177,7 +179,11 @@ class Operator:
                 return self.action('capture', args.run, supplement, observation=observation)
             # Send each member the guest lacks. A staged file that is gone or changed is
             # reported and skipped, so one bad member never strands the rest on the host.
-            outstanding = set(self.read('status', args.run, supplement)['result']['outstanding'])
+            # Ask the guest to reread its objects, so damage of the same length is resent too.
+            held = self.read('status', args.run, supplement, deep=True)['result']
+            if 'capture' not in held['facts']:
+                raise ValueError('The guest has no inventory for this collection yet. Run collect first.')
+            outstanding = set(held['outstanding'])
             rows = protocol.inventory(observation['members'])
             unavailable = []
             for name, (size, digest) in rows.items():
@@ -255,6 +261,11 @@ def main(argv=None):
             cmd.add_argument('--one-turn', action='store_true', help='run a noninteractive native qualification')
         if action == 'resume':
             cmd.add_argument('--prompt', help='text to send on resuming; required with --one-turn')
+            cmd.add_argument(
+                '--request',
+                required=True,
+                help='a label for this sitting; repeating the command with it never starts another',
+            )
     args = parser.parse_args(argv)
     try:
         result = Operator(files.read(args.config.resolve(strict=True))).perform(args)

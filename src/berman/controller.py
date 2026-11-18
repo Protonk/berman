@@ -83,7 +83,7 @@ class Controller:
                     value = dict(collection_id=self.collection, run=state['run'], operation=anchor['operation'])
                 return dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, result=value)
             if command == 'status':
-                return self.status(db, request.get('run'), request.get('supplement'))
+                return self.status(db, request.get('run'), request.get('supplement'), request.get('deep') is True)
             operation = protocol.identifier(request['operation'])
             digest = protocol.fingerprint(request)
             previous = db.execute('SELECT * FROM operations WHERE id=?', (operation,)).fetchone()
@@ -155,16 +155,27 @@ class Controller:
             return 'transferred, then damaged in the guest store'
         return None
 
-    def outstanding(self, members, transferred):
-        """Members the host should send: never transferred, or no longer present at the right size."""
+    def outstanding(self, facts, transferred, deep=False):
+        """Members the host should send again, and how they were checked.
+
+        A member the acceptance already records as missing is not outstanding. The cheap check
+        compares lengths; `deep` rereads every object and catches damage of the same length.
+        """
+        waived = {row['path'] for row in facts.get('accept', {}).get('missing', [])}
         result = []
-        for row in members:
+        for row in facts.get('capture', {}).get('members', []):
+            if row['path'] in waived:
+                continue
             path = self.store / 'objects' / row['sha256']
-            if (
-                transferred.get(row['path']) != row['sha256']
-                or not path.is_file()
-                or path.stat().st_size != row['size']
-            ):
+            if deep:
+                wrong = self.object_problem(transferred, row['path'], row['size'], row['sha256'])
+            else:
+                wrong = (
+                    transferred.get(row['path']) != row['sha256']
+                    or not path.is_file()
+                    or path.stat().st_size != row['size']
+                )
+            if wrong:
                 result.append(row['path'])
         return result
 
@@ -177,7 +188,7 @@ class Controller:
             raise ValueError('Unknown run')
         return json.loads(row['state'])
 
-    def status(self, db, run, supplement=None):
+    def status(self, db, run, supplement=None, deep=False):
         if not run:
             runs = [json.loads(row[0]) for row in db.execute('SELECT state FROM runs ORDER BY number')]
             result = [{'run': s['run'], 'connection': s['connection'], 'facts': list(s['facts'])} for s in runs]
@@ -193,7 +204,8 @@ class Controller:
                 exposures=len(state.get('exposures', [])),
                 observed=[row['path'] for row in members],
                 transferred=transferred,
-                outstanding=self.outstanding(members, transferred),
+                outstanding=self.outstanding(facts, transferred, deep),
+                outstanding_check='sha256' if deep else 'length',
                 accepted=facts.get('accept'),
                 preserved=facts.get('preserve'),
                 published=facts.get('publish'),
@@ -413,6 +425,12 @@ class Controller:
                 name = request['path']
                 if name not in members or members[name] != (request['size'], request['sha256']):
                     raise ValueError('Transfer differs from observed inventory')
+                if 'accept' in facts:
+                    # Acceptance fixed what this collection holds. Only a repeat of an earlier
+                    # transfer, which repairs the store, is taken after it.
+                    raise ValueError(
+                        'Acceptance is already recorded for this collection. Evidence that arrives later belongs in a supplement.'
+                    )
                 self.receive(body, *members[name])
                 transferred[name] = request['sha256']
                 return {'transferred': name, 'sha256': transferred[name]}

@@ -30,15 +30,21 @@ def operation_dir(spool, operation):
 
 
 def sitting_files(folder, number):
-    """One native process per sitting. Operations launched before sittings existed keep their names."""
+    """One native process per sitting. Operations launched before sittings existed keep their names.
+
+    `receipt` is written once, when the sitting's exit is recorded, and never rewritten: the
+    guest is sent exactly those bytes however often the report is repeated.
+    """
     if number == 1 and (folder / 'launch-intent.json').exists():
-        return {
-            'intent': folder / 'launch-intent.json',
-            'started': folder / 'started.json',
-            'exit': folder / 'exit.json',
+        names = {
+            'intent': 'launch-intent.json',
+            'started': 'started.json',
+            'exit': 'exit.json',
+            'receipt': 'launch.json',
         }
+        return {key: folder / name for key, name in names.items()}
     base = folder / 'sittings' / f'{number:04d}'
-    return {'intent': base / 'intent.json', 'started': base / 'started.json', 'exit': base / 'exit.json'}
+    return {key: base / f'{key}.json' for key in ('intent', 'started', 'exit', 'receipt')}
 
 
 def sittings(folder):

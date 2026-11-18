@@ -163,8 +163,12 @@ def _commit(root, data, expected):
     _dirsync(root)
     folder = root / _place(receipt['run'], receipt.get('supplement'))
     if receipt.get('supplement') is not None:
-        # A supplement sits beside the recording it follows, which must already be in custody.
+        # A supplement sits beside the recording it follows, which must already be in custody
+        # and must be the one it names.
         files.safe_directory(parent / receipt['run'])
+        first = files.read(parent / receipt['run'] / 'receipt.json')
+        if first.get('package_sha256') != report['manifest']['supplement']['follows_recording_sha256']:
+            raise ValueError('Supplement follows another recording than the one in custody')
         folder.parent.mkdir(exist_ok=True, mode=0o700)
         _dirsync(parent / receipt['run'])
     if not folder.exists():
@@ -236,6 +240,10 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
         if item['sequence'] != supplement:
             raise ValueError('Supplement sequence differs from its position')
         part, transferred = item['facts'], item['transferred']
+        first = metadata['facts'].get('preserve')
+        if not first:
+            raise ValueError('Preserve the first collection before its supplement')
+        facts['preserve'] = first
         controller['supplement'] = {
             'sequence': supplement,
             'declaration': item['declaration'],
@@ -283,15 +291,16 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
     refs.update(controller='evidence/controller.json', ending='evidence/ending.json')
     if supplement is not None:
         refs['supplement'] = 'evidence/supplement.json'
-    if capture.get('parent_sha256'):
+    # With any file of the parent generation missing, the recording makes no claim about it.
+    parent_gap = any(name.startswith('session/') for name in absent)
+    if capture.get('parent_sha256') and not parent_gap:
         refs['capture'], _ = evidence.committed_capture(run, lambda name: payload[name][0])
     inventory = [dict(row, path=row['path'][len(base) + 1 :]) for row in entries if row['path'].startswith(base + '/')]
     coverage = list(capture.get('limitations', []))
     coverage.extend(f'No {key} receipt retained' for key in ('preparation', 'launch') if key not in facts)
-    coverage.extend(
-        f'Observed on the host but not accepted into custody: {name} ({row["problem"]})'
-        for name, row in sorted(absent.items())
-    )
+    coverage.extend(evidence.missing_line(row) for _, row in sorted(absent.items()))
+    if parent_gap:
+        coverage.append(evidence.PARENT_GAP)
     if supplement is not None:
         coverage.append(
             f'Supplement {supplement} to {run}: later observations kept after the first collection froze. '
@@ -337,9 +346,6 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
         },
     }
     if supplement is not None:
-        first = metadata['facts'].get('preserve')
-        if not first:
-            raise ValueError('Preserve the first collection before its supplement')
         manifest['supplement'] = {'sequence': supplement, 'follows_recording_sha256': first['package_sha256']}
     raw_manifest = protocol.json_bytes(manifest)
     if len(raw_manifest) > MAX_MANIFEST or len(payload) >= MAX_MEMBERS:

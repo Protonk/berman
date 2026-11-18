@@ -283,6 +283,36 @@ class ExecutorTests(unittest.TestCase):
         # The callback names stay in the manifest even when their files did not fit.
         self.assertEqual(frozen['events'], ['UserPromptSubmit', 'Stop', 'SessionEnd'])
 
+    def test_total_bound_includes_the_record_of_omissions(self):
+        p = self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        notes = Path(p['packet']) / 'notes'
+        for index in range(40):
+            (notes / f'filler-{index:02d}.txt').write_bytes(bytes([index]) * 2000)
+        with patch.object(protocol, 'TOTAL_LIMIT', 60_000):
+            frozen = executor.collect(self.spool, self.op, self.ending)
+            # The guest applies the same bounds to the inventory it is sent.
+            inventory = protocol.inventory(frozen['members'])
+        self.assertLessEqual(sum(size for size, _ in inventory.values()), 60_000)
+        self.assertIn('omitted.json', inventory)
+        self.assertTrue(frozen['omitted'])
+
+    def test_unportable_names_and_unreadable_directories_are_named(self):
+        p = self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        notes = Path(p['packet']) / 'notes'
+        (notes / 'a\\b.md').write_text('a name no portable recording carries')
+        closed = notes / 'closed'
+        closed.mkdir()
+        (closed / 'inside.md').write_text('unseen')
+        closed.chmod(0)
+        self.addCleanup(closed.chmod, 0o700)
+        frozen = executor.collect(self.spool, self.op, self.ending)
+        kinds = {row['path']: row['kind'] for row in frozen['omitted']}
+        self.assertEqual('name', kinds['packet/notes/a\\b.md'])
+        self.assertEqual('unreadable', kinds['packet/notes/closed'])
+        self.assertIn('packet/notes/account.md', protocol.inventory(frozen['members']))
+
     def test_relocated_source_displaced_revision_and_policy_mismatch(self):
         self.b['policy'] = 'read-only'
         self.prepare()
@@ -342,12 +372,24 @@ class ExecutorTests(unittest.TestCase):
         self.a['harness'] = harness
         self.prepare()
         with self.assertRaisesRegex(ValueError, 'Nothing to resume'):
+            executor.launch(self.spool, self.op, resume=True, request='again')
+        with self.assertRaisesRegex(ValueError, 'request label'):
             executor.launch(self.spool, self.op, resume=True)
         first = executor.launch(self.spool, self.op, one_turn=True)
         with self.assertRaisesRegex(ValueError, 'needs --prompt'):
-            executor.launch(self.spool, self.op, one_turn=True, resume=True)
-        second = executor.launch(self.spool, self.op, one_turn=True, resume=True, prompt='continue the work')
+            executor.launch(self.spool, self.op, one_turn=True, resume=True, request='again')
+        second = executor.launch(
+            self.spool, self.op, one_turn=True, resume=True, prompt='continue the work', request='again'
+        )
         self.assertEqual(2, second['sitting'])
+        # Repeating the same request, as after a lost reply, returns that sitting and starts nothing.
+        self.assertEqual(
+            second,
+            executor.launch(
+                self.spool, self.op, one_turn=True, resume=True, prompt='continue the work', request='again'
+            ),
+        )
+        self.assertEqual([1, 2], capture.sittings(capture.operation_dir(self.spool, self.op)))
         self.assertTrue(second['intent']['resumed_native_session'])
         self.assertEqual(second['intent']['argv'][-1], 'continue the work')
         self.assertEqual(first['session_id'], second['session_id'])
@@ -372,6 +414,42 @@ class ExecutorTests(unittest.TestCase):
         argv = second['intent']['argv']
         self.assertEqual(argv[argv.index('resume') + 1], 'parent-session')
         self.assertIn('exec', argv)
+
+    def test_interactive_resume_arguments_and_a_first_sitting_that_bound_nothing(self):
+        for harness in ('claude', 'codex'):
+            with self.subTest(harness=harness):
+                self.op = str(uuid4())
+                self.a.update(operation=self.op, harness=harness)
+                p = self.prepare()
+                folder = capture.operation_dir(self.spool, self.op)
+                with patch('berman.executor.subprocess.Popen', side_effect=OSError('spawn failed')):
+                    with patch('berman.executor.fingerprint', return_value={}):
+                        with self.assertRaisesRegex(OSError, 'spawn failed'):
+                            executor.launch(self.spool, self.op)
+                first = executor.launch(self.spool, self.op)
+                self.assertIsNone(first['session_id'])
+                # No native session exists, so the next sitting opens with the prepared prompt.
+                with self.assertRaisesRegex(ValueError, 'omit --prompt'):
+                    executor.launch(self.spool, self.op, resume=True, prompt='too early', request='two')
+                second = executor.launch(self.spool, self.op, resume=True, request='two')
+                self.assertFalse(second['intent']['resumed_native_session'])
+                self.assertEqual(p['prompt'], second['intent']['argv'][-1])
+                self.assertTrue(second['session_id'])
+                # The first sitting's receipt is the bytes it was when it ended, now that a session is bound.
+                self.assertEqual(first, executor.launch(self.spool, self.op))
+                self.assertEqual([first, second], executor.sitting_receipts(self.spool, self.op))
+                third = executor.launch(self.spool, self.op, resume=True, request='three')
+                argv = third['intent']['argv']
+                self.assertTrue(third['intent']['resumed_native_session'])
+                self.assertNotIn('--print', argv)
+                self.assertNotIn('exec', argv)
+                if harness == 'claude':
+                    self.assertEqual(p['reserved_session_id'], argv[argv.index('--resume') + 1])
+                    self.assertEqual(str(Path(p['packet'])), argv[-1])
+                else:
+                    self.assertEqual([third['session_id']], argv[-1:])
+                    self.assertEqual('resume', argv[1])
+                self.assertEqual([1, 2, 3], capture.sittings(folder))
 
     def test_callbacks_after_collection_wait_for_a_supplement(self):
         self.a['harness'] = 'claude'
@@ -414,10 +492,35 @@ class ExecutorTests(unittest.TestCase):
         files.write(paths['started'], {'pid': gone.pid})
         launch = executor.launch(self.spool, self.op)
         self.assertIsNone(launch['exit']['returncode'])
-        self.assertIn('unobserved', launch['exit'])
-        files.write(capture.sitting_files(folder, 1)['exit'], launch['exit'])
+        self.assertIn('before it observed the native process exit', launch['exit']['unobserved'])
+        self.assertEqual(launch, executor.launch(self.spool, self.op))
         frozen = executor.collect(self.spool, self.op, self.ending)
         self.assertTrue(any('without its launcher observing' in text for text in frozen['limitations']))
+
+    def test_a_running_process_blocks_only_when_it_is_the_recorded_one(self):
+        self.prepare()
+        folder = capture.operation_dir(self.spool, self.op)
+        paths = capture.sitting_files(folder, 1)
+        files.write(paths['intent'], {'one_turn': False})
+        other = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        # The same pid with the recorded start time is the native process, still running.
+        files.write(paths['started'], {'pid': other.pid, 'process_started': executor.process_identity(other.pid)})
+        with self.assertRaisesRegex(ValueError, 'is still running without its launcher'):
+            executor.launch(self.spool, self.op)
+        # The same pid with another start time is some other process that reused the number.
+        files.write(paths['started'], {'pid': other.pid, 'process_started': 'Thu Jan  1 00:00:00 1970'})
+        launch = executor.launch(self.spool, self.op)
+        self.assertIsNone(launch['exit']['returncode'])
+
+    def test_a_launcher_that_died_before_starting_a_process_says_so(self):
+        self.prepare()
+        folder = capture.operation_dir(self.spool, self.op)
+        files.write(capture.sitting_files(folder, 1)['intent'], {'one_turn': False})
+        launch = executor.launch(self.spool, self.op)
+        self.assertIn('before a native process was observed to start', launch['exit']['unobserved'])
+        self.assertIsNone(launch['started'])
 
     def test_damaged_staging_is_reported_per_member(self):
         self.prepare()

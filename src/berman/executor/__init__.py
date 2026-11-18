@@ -212,8 +212,16 @@ def verify_hooks(installed, expected):
 
 
 def launch_result(folder, prepared, number=1):
-    """The receipt for one sitting. The first keeps its original shape; later ones name their number."""
+    """The receipt for one sitting. The first keeps its original shape; later ones name their number.
+
+    Once a sitting has an exit its receipt is frozen on disk and returned as written. Before
+    that it is derived, and says the exit is not yet observed.
+    """
     paths = capture.sitting_files(folder, number)
+    if paths['receipt'].exists():
+        frozen = files.read(paths['receipt'])
+        if frozen.get('exit') is not None:
+            return frozen
 
     def saved(path):
         return files.read(path) if path.exists() else None
@@ -229,6 +237,17 @@ def launch_result(folder, prepared, number=1):
     )
 
 
+def close_sitting(folder, prepared, number, outcome):
+    """Record how a sitting ended and freeze its receipt. Later state never changes that receipt."""
+    paths = capture.sitting_files(folder, number)
+    if not paths['exit'].exists():
+        files.write(paths['exit'], outcome)
+    if not paths['receipt'].exists() or files.read(paths['receipt']).get('exit') is None:
+        files.write(paths['receipt'], launch_result(folder, prepared, number))
+    capture.sync_directory(paths['receipt'].parent)
+    return files.read(paths['receipt'])
+
+
 def sitting_receipts(spool, operation):
     """Every sitting's receipt, for the connector to report. Read-only."""
     folder = capture.operation_dir(spool, operation)
@@ -237,60 +256,73 @@ def sitting_receipts(spool, operation):
         return [launch_result(folder, prepared, number) for number in capture.sittings(folder)]
 
 
-def alive(pid):
+def process_identity(pid):
+    """When this pid's process started, as the system reports it. A reused pid reports another time."""
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        done = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], capture_output=True, text=True, timeout=10)
+    except OSError, subprocess.SubprocessError:
+        return None
+    return done.stdout.strip() or None
 
 
-def settle(folder, number):
-    """Record an unobserved exit for a sitting whose launcher is gone.
+def settle(folder, prepared, number):
+    """Close a sitting whose launcher is gone, saying what was and was not observed.
 
     The caller holds the launch lock, which every launcher keeps until its child exits. So no
-    launcher is waiting on this sitting. If its recorded process is gone too, say that the exit
-    was not observed instead of leaving the sitting open forever.
+    launcher is waiting on this sitting. The recorded process counts as still running only if
+    the same pid has the start time recorded for it; a reused pid is another process.
     """
     paths = capture.sitting_files(folder, number)
     if paths['exit'].exists():
-        return
-    started = files.read(paths['started']) if paths['started'].exists() else {}
-    pid = started.get('pid')
-    if pid and alive(pid):
-        raise ValueError(f'Sitting {number} process {pid} is still running without its launcher. End it, then retry.')
-    files.write(
-        paths['exit'],
-        {
-            'returncode': None,
-            'unobserved': 'The launcher ended before it observed the native process exit.',
-            'observed_at_utc': files.now(),
-        },
+        return close_sitting(folder, prepared, number, None)
+    started = files.read(paths['started']) if paths['started'].exists() else None
+    if started is None:
+        note = 'The launcher ended before a native process was observed to start.'
+    else:
+        pid, known = started.get('pid'), started.get('process_started')
+        now = process_identity(pid) if pid else None
+        if now and (known is None or now == known):
+            which = 'is still running' if known else 'may still be running (an older record without its start time)'
+            raise ValueError(
+                f'Sitting {number} has no recorded exit and its process {pid} {which} without its launcher. '
+                'Check that it is the native session, end it, then retry.'
+            )
+        note = 'The launcher ended before it observed the native process exit.'
+    return close_sitting(
+        folder, prepared, number, {'returncode': None, 'unobserved': note, 'observed_at_utc': files.now()}
     )
 
 
-def launch(spool, operation, one_turn=False, resume=False, prompt=None):
-    """Start the first sitting, or with resume=True the next one. Repeating a plain launch never spawns again."""
+def launch(spool, operation, one_turn=False, resume=False, prompt=None, request=None):
+    """Start the first sitting, or with resume=True the next one.
+
+    Repeating a plain launch never spawns again. A resumed sitting carries the caller's
+    `request` label, and repeating a resume with the same label returns that sitting.
+    """
     if prompt is not None and (not isinstance(prompt, str) or not prompt.strip() or prompt.startswith('-')):
         raise ValueError('A sitting prompt is non-empty text that does not begin with a dash')
+    if resume and (not isinstance(request, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', request)):
+        raise ValueError('A resumed sitting needs a short request label; reuse it when repeating the command')
     folder = capture.operation_dir(spool, operation)
     with capture.locked(folder, '.launch-lock'):
-        return launch_once(folder, spool, operation, one_turn, resume, prompt)
+        return launch_once(folder, spool, operation, one_turn, resume, prompt, request)
 
 
-def launch_once(folder, spool, operation, one_turn, resume, prompt):
+def launch_once(folder, spool, operation, one_turn, resume, prompt, request):
     with capture.locked(folder):
         p = files.read(folder / 'preparation.json')
         numbers = capture.sittings(folder)
         if numbers:
-            settle(folder, numbers[-1])
+            settle(folder, p, numbers[-1])
             if not resume:
                 result = launch_result(folder, p, 1)
                 if result['intent'] and result['intent'].get('one_turn') != one_turn:
                     raise ValueError('Launch already requested with another mode')
                 return result
+            for number in numbers:
+                earlier = launch_result(folder, p, number)
+                if (earlier['intent'] or {}).get('request') == request:
+                    return earlier
         elif resume:
             raise ValueError('Nothing to resume: launch the first sitting')
         number = numbers[-1] + 1 if numbers else 1
@@ -355,10 +387,11 @@ def launch_once(folder, spool, operation, one_turn, resume, prompt):
             'installation': fingerprint(p, folder),
         }
         if number > 1:
-            intent['resumed_native_session'] = native
+            intent.update(resumed_native_session=native, request=request)
         paths = capture.sitting_files(folder, number)
         files.write(paths['intent'], intent)
-        capture.sync_directory(paths['intent'].parent)
+        for directory in (paths['intent'].parent, paths['intent'].parent.parent, folder):
+            capture.sync_directory(directory)
         try:
             child = subprocess.Popen(
                 argv,
@@ -368,26 +401,42 @@ def launch_once(folder, spool, operation, one_turn, resume, prompt):
                 stdout=sys.stderr if one_turn else None,
             )
         except OSError as exc:
-            files.write(paths['exit'], {'error': str(exc), 'observed_at_utc': files.now()})
+            close_sitting(folder, p, number, {'error': str(exc), 'observed_at_utc': files.now()})
             raise
-        files.write(paths['started'], {'pid': child.pid, 'observed_at_utc': files.now()})
+        files.write(
+            paths['started'],
+            {'pid': child.pid, 'process_started': process_identity(child.pid), 'observed_at_utc': files.now()},
+        )
     code = child.wait()
     with capture.locked(folder):
-        files.write(paths['exit'], {'returncode': code, 'observed_at_utc': files.now()})
-        return launch_result(folder, p, number)
+        return close_sitting(folder, p, number, {'returncode': code, 'observed_at_utc': files.now()})
 
 
 def members(directory):
-    """Yield (path, problem) for everything under a directory. Only regular files have no problem."""
+    """Yield (path, problem) for everything under a directory. Only regular files have no problem.
+
+    A directory that cannot be listed and an entry that cannot be examined are yielded with
+    their problem, so the collection names them instead of passing over them.
+    """
     files.safe_directory(directory)
-    for path in sorted(directory.rglob('*')):
-        mode = path.lstat().st_mode
-        if stat.S_ISLNK(mode):
-            yield path, ('symlink', f'symbolic link to {os.readlink(path)}')
-        elif stat.S_ISREG(mode):
-            yield path, None
-        elif not stat.S_ISDIR(mode):
-            yield path, ('special', 'not a regular file')
+    unreadable = []
+    for parent, folders, names in os.walk(directory, onerror=unreadable.append, followlinks=False):
+        folders.sort()
+        for name in sorted(folders + names):
+            path = Path(parent) / name
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                yield path, ('unreadable', exc.strerror or str(exc))
+                continue
+            if stat.S_ISLNK(mode):
+                yield path, ('symlink', f'symbolic link to {os.readlink(path)}')
+            elif stat.S_ISREG(mode):
+                yield path, None
+            elif not stat.S_ISDIR(mode):
+                yield path, ('special', 'not a regular file')
+    for error in unreadable:
+        yield Path(error.filename), ('unreadable', f'directory could not be listed: {error.strerror}')
 
 
 def event_summary(folder):
@@ -535,7 +584,10 @@ def collect(spool, operation, declaration_id, supplement=None):
 
             def retain(name, src):
                 nonlocal total
-                evidence.relative(name)
+                try:
+                    evidence.relative(name)
+                except ValueError:
+                    return omit(name, 'name', 'this name cannot be carried in a portable recording')
                 if len(name.encode()) > 4000 or len(Path(name).parts) > 60:
                     return omit(name, 'bound', 'path exceeds the portable recording bound')
                 # One place stays free for the record of omissions itself.
@@ -593,12 +645,25 @@ def collect(spool, operation, declaration_id, supplement=None):
                         else:
                             retain(name, path)
             if omitted:
+                # The record of omissions is itself a member and must fit the same bounds. Give
+                # up the most recently taken members until it does; each is then named in it.
+                while True:
+                    data = files.json_bytes(omitted)
+                    if total + len(data) <= protocol.TOTAL_LIMIT or not rows:
+                        break
+                    last = rows.pop()
+                    (payload / last['path']).unlink()
+                    total -= last['size']
+                    omit(last['path'], 'bound', 'left out so that the record of omissions fits the collection bound')
+                if total + len(data) > protocol.TOTAL_LIMIT:
+                    kept = omitted[: max(1, protocol.TOTAL_LIMIT // 512)]
+                    data = files.json_bytes(
+                        [*kept, {'path': '', 'kind': 'bound', 'detail': f'{len(omitted)} omissions in all'}]
+                    )
                 for row in omitted[:12]:
                     limitations.append(f'Omitted from this collection: {row["path"]} ({row["detail"]}).')
                 if len(omitted) > 12:
                     limitations.append(f'{len(omitted) - 12} further members omitted; see omitted.json.')
-                files.write(stage / 'omitted.json', omitted)
-                data = (stage / 'omitted.json').read_bytes()
                 files.keep(payload / 'omitted.json', data)
                 rows.append({'path': 'omitted.json', 'size': len(data), 'sha256': files.digest(data)})
             extra = {} if supplement is None else {'supplement_id': declaration_id, 'sequence': supplement}
@@ -742,6 +807,7 @@ def main(argv=None):
             cmd.add_argument('--one-turn', action='store_true')
             cmd.add_argument('--resume', action='store_true', help='start the next sitting of this engagement')
             cmd.add_argument('--prompt', help='text for a resumed sitting; required with --one-turn')
+            cmd.add_argument('--request', help='label for a resumed sitting; repeating it returns that sitting')
         else:
             cmd.add_argument('declaration_id', help='the ending UUID, or the supplement UUID with --supplement')
         if action in ('collect', 'payload-path', 'damaged'):
@@ -760,7 +826,14 @@ def main(argv=None):
         if args.action == 'prepare':
             result = prepare(args.spool, files.read(args.assignment.resolve()), files.read(args.binding.resolve()))
         elif args.action == 'launch':
-            result = launch(args.spool, args.operation, one_turn=args.one_turn, resume=args.resume, prompt=args.prompt)
+            result = launch(
+                args.spool,
+                args.operation,
+                one_turn=args.one_turn,
+                resume=args.resume,
+                prompt=args.prompt,
+                request=args.request,
+            )
         elif args.action == 'collect':
             result = collect(args.spool, args.operation, args.declaration_id, args.supplement)
         elif args.action == 'damaged':

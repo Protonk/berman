@@ -188,22 +188,41 @@ def verify_members(manifest, members, read):
     check_authority(manifest, read)
 
 
+PARENT_GAP = 'The parent transcript generation was observed on the host but is not complete in custody. It is not verified here.'
+
+
+def missing_line(row):
+    """The one coverage statement for a member observed on the host and absent from custody."""
+    return f'Observed on the host but not accepted into custody: {row["path"]} ({row["problem"]})'
+
+
 def split_part(manifest, controller):
-    """The capture, acceptance and transfer map this split recording packages.
+    """The capture, acceptance, transfer map and declaration this split recording packages.
 
     A first recording packages the run's own facts. A supplement packages the one supplement
-    the controller record carries, and must name the recording it follows.
+    the controller record carries. Which of the two a package is comes from its manifest, and
+    the retained records must then all say the same.
     """
     supplement = manifest.get('supplement')
     if supplement is None:
-        if 'supplement' in controller:
+        if 'supplement' in controller or manifest['evidence'].get('supplement') is not None:
             raise ValueError('Controller record carries a supplement the recording does not name')
         return controller['facts'], controller['transferred'], None
     item = controller.get('supplement')
     if (not isinstance(supplement, dict) or not isinstance(item, dict) or type(supplement.get('sequence')) is not int
-            or item.get('sequence') != supplement['sequence'] or not SHA.fullmatch(supplement.get('follows_recording_sha256', ''))):
+            or supplement['sequence'] < 1 or item.get('sequence') != supplement['sequence']
+            or not isinstance(item.get('declaration'), dict) or not isinstance(item.get('facts'), dict)
+            or not SHA.fullmatch(supplement.get('follows_recording_sha256', ''))):
         raise ValueError('Split supplement and controller record disagree')
     return item['facts'], item['transferred'], item['declaration']
+
+
+def split_absent(manifest, controller):
+    """Members the acceptance names as missing, by path. Their shape is checked with the authority."""
+    rows = split_part(manifest, controller)[0]['accept'].get('missing', [])
+    if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('path'), str) for row in rows):
+        raise ValueError('Split acceptance lists missing evidence in an unknown form')
+    return {row['path']: row for row in rows}
 
 
 def check_split_authority(manifest, controller, ending, capture, read=None):
@@ -219,6 +238,7 @@ def check_split_authority(manifest, controller, ending, capture, read=None):
     if any(assignment.get(key) != controller[key] for key in ('run', 'collection_id', 'connection')):
         raise ValueError('Split assignment names another occurrence')
     part, transferred, declaration = split_part(manifest, controller)
+    supplement = manifest.get('supplement')
     sittings = controller.get('sittings', {})
     if not isinstance(sittings, dict):
         raise ValueError('Split sitting receipts are not a mapping')
@@ -231,32 +251,50 @@ def check_split_authority(manifest, controller, ending, capture, read=None):
     capture_receipt = part['capture']
     if not declared.get('operation') or capture_receipt.get('ending_id') != declared['operation']:
         raise ValueError('Split capture closeout names another ending')
-    if declaration is not None:
+    if supplement is None:
+        # A collection made for a supplement says so in its own receipt, whatever wraps it.
+        if 'supplement_id' in capture_receipt or 'sequence' in capture_receipt:
+            raise ValueError('A first recording cannot package a supplement collection')
+    else:
         ref = manifest['evidence'].get('supplement')
+        first = facts.get('preserve')
         if (ref != 'evidence/supplement.json' or read is None or json.loads(read(ref)) != declaration
-                or not declaration.get('reason') or capture_receipt.get('supplement_id') != declaration.get('operation')
-                or capture_receipt.get('sequence') != manifest['supplement']['sequence']):
-            raise ValueError('Split supplement declaration and capture disagree')
-    if capture_receipt.get('parent_sha256') != (capture and capture['sha256']):
-        raise ValueError('Split parent transcript differs from native closeout')
-    if capture and (capture_receipt.get('session_id') != capture.get('session_id')
-                    or capture.get('harness') != assignment.get('harness')):
-        raise ValueError('Split parent transcript attribution differs from native closeout')
+                or not declaration.get('reason') or not declaration.get('operation')
+                or declaration.get('sequence') != supplement['sequence']
+                or capture_receipt.get('supplement_id') != declaration['operation']
+                or capture_receipt.get('sequence') != supplement['sequence']
+                or not isinstance(first, dict) or first.get('package_sha256') != supplement['follows_recording_sha256']):
+            raise ValueError('Split supplement declaration, capture and first recording disagree')
+    absent = split_absent(manifest, controller)
+    lines = manifest['coverage']['unknown']
+    if any(path.startswith('session/') for path in absent):
+        # The parent generation cannot be checked from an incomplete set of its files. The
+        # recording must then make no claim about it and must say so.
+        if capture is not None or manifest['evidence'].get('capture') is not None or PARENT_GAP not in lines:
+            raise ValueError('Split recording claims a parent transcript that is incomplete in custody')
+    else:
+        if capture_receipt.get('parent_sha256') != (capture and capture['sha256']):
+            raise ValueError('Split parent transcript differs from native closeout')
+        if capture and (capture_receipt.get('session_id') != capture.get('session_id')
+                        or capture.get('harness') != assignment.get('harness')):
+            raise ValueError('Split parent transcript attribution differs from native closeout')
     limits = capture_receipt.get('limitations')
-    if not isinstance(limits, list) or any(limit not in manifest['coverage']['unknown'] for limit in limits):
+    if not isinstance(limits, list) or any(limit not in lines for limit in limits):
         raise ValueError('Split recording omits native coverage limitations')
     rows = capture_receipt['members']
     inventory = {row['path']: (row['size'], row['sha256']) for row in rows}
     members = {row['path']: (row['size'], row['sha256']) for row in manifest['custody']['inventory']['entries']
                if row['type'] == 'file'}
     accepted = part['accept']
-    # Evidence observed on the host and never accepted stays named: in the acceptance and in coverage.
-    absent = accepted.get('missing', [])
-    if (not isinstance(absent, list) or (absent and not accepted.get('missing_reason'))
-            or any(row.get('path') not in inventory or inventory[row['path']] != (row.get('size'), row.get('sha256'))
-                   or not any(row['path'] in limit for limit in manifest['coverage']['unknown']) for row in absent)):
+    # Evidence observed on the host and never accepted stays named: once in the acceptance,
+    # with its length, digest and reason, and by exactly that statement in coverage.
+    if ((absent and not accepted.get('missing_reason')) or len(absent) != len(accepted.get('missing', []))
+            or any(path not in inventory or inventory[path] != (row.get('size'), row.get('sha256'))
+                   or not isinstance(row.get('problem'), str) or missing_line(row) not in lines
+                   or (row['problem'] == 'never transferred' and transferred.get(path) == row['sha256'])
+                   for path, row in absent.items())):
         raise ValueError('Split recording does not account for evidence missing at acceptance')
-    expected = {key: value for key, value in inventory.items() if key not in {row['path'] for row in absent}}
+    expected = {key: value for key, value in inventory.items() if key not in absent}
     fingerprint = files.digest(json.dumps(rows, sort_keys=True, separators=(',', ':'), allow_nan=False).encode())
     if (members != expected or len(inventory) != len(rows) or accepted.get('inventory_sha256') != fingerprint
             or accepted.get('accepted_members') != len(expected)
@@ -292,7 +330,8 @@ def check_authority(manifest, read, snapshot_bytes=True):
     capture_ref = refs.get('capture')
     if manifest['profile'] == 'split':
         controller = load('controller')
-        if split_part(manifest, controller)[0]['capture'].get('parent_sha256'):
+        parent_gap = any(path.startswith('session/') for path in split_absent(manifest, controller))
+        if split_part(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
             # Early split manifests identify the primary generation only through the
             # retained host pointer. Explicit and implicit references must agree.
             ref, capture = committed_capture(manifest['run'], read)
