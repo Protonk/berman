@@ -18,7 +18,6 @@ import tempfile
 from uuid import uuid4
 
 from berman import config, custody, evidence, files, protocol, recipes, schemas
-from berman.archive.package import verify_edition
 
 
 class Controller:
@@ -47,26 +46,18 @@ class Controller:
             if db.execute('SELECT id FROM study').fetchone()[0] != self.collection:
                 raise ValueError('Collection identity differs from the controller ledger')
             if command == 'verify':
-                facts = self.run_state(db, request['run'])['facts']
-                result = {}
-                if 'preserve' not in facts:
+                state = self.run_state(db, request['run'])
+                if 'preserve' not in state['facts']:
                     raise ValueError('No preserved recording for this run')
-                recording = custody.verify_recording(self.root, facts['preserve'])
-                result['recording'] = {k: recording[k] for k in ('package_sha256', 'integrity', 'coverage')}
-                if 'publish' in facts:
-                    edition = facts['publish']
-                    result['edition'] = verify_edition(self.root / edition['archive_path'], edition['archive_sha256'])
-                later = []
-                for item in self.run_state(db, request['run']).get('supplements', []):
-                    if 'preserve' not in item['facts']:
-                        continue
-                    report = custody.verify_recording(self.root, item['facts']['preserve'])
-                    row = {'sequence': item['sequence']}
-                    row['recording'] = {k: report[k] for k in ('package_sha256', 'integrity', 'coverage')}
-                    if 'publish' in item['facts']:
-                        edition = item['facts']['publish']
-                        row['edition'] = verify_edition(self.root / edition['archive_path'], edition['archive_sha256'])
-                    later.append(row)
+                result = custody.verify_occurrence(self.root, state['run'], state['facts'])
+                later = [
+                    dict(
+                        sequence=item['sequence'],
+                        **custody.verify_occurrence(self.root, state['run'], item['facts'], item['sequence']),
+                    )
+                    for item in state.get('supplements', [])
+                    if 'preserve' in item['facts']
+                ]
                 if later:
                     result['supplements'] = later
                 return dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, result=result)
@@ -458,7 +449,7 @@ class Controller:
             blobs = {
                 name: self.store / 'objects' / digest for name, (_, digest) in members.items() if name not in absent
             }
-            result = custody.preserve_split_run(self.root, state, blobs, supplement=number)
+            result = custody.preserve_recording(self.root, state, blobs, supplement=number)
         elif command == 'publish':
             if 'preserve' not in facts:
                 raise ValueError('Publication requires a preserved recording')

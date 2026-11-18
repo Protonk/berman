@@ -5,12 +5,10 @@ import csv
 from datetime import datetime, timezone
 import io
 import json
-import re
-import tarfile
 from pathlib import Path
 
 from berman import evidence, files
-from berman.archive import package, streams
+from berman.archive import streams
 
 BUILDER = ("builder.py", "package.py", "streams.py")
 
@@ -63,7 +61,7 @@ def transcripts(manifest, originals, read, out):
                 "Unknown formats, unsupported records and private content remain in the original files.",
                 "Each block cites the original file digest, physical JSONL line and JSON pointer.", ""]
     formats = {row['path']: row['format'] for row in manifest['streams']}
-    authority = package.edition_path(manifest['run'], 'recording.json')
+    authority = evidence.MANIFEST
     chronology = []
     for path in sorted(originals):
         if path.endswith('.jsonl'):
@@ -108,36 +106,6 @@ def transcripts(manifest, originals, read, out):
               ['time_utc', 'recorded_time', 'kind', 'source_path', 'line_start', 'line_end', 'detail'])
 
 
-def artifact_indexes(originals, read, out):
-    """Index retained tar members and lexical environment paths without following them."""
-    tar_rows, references = [], []
-    path_pattern = re.compile(r"""/(?:opt/homebrew|private/tmp|tmp)/[^\s"'<>\\\x60]+""")
-    for path, row in sorted(originals.items()):
-        data = read(path)
-        if path.endswith('.tar'):
-            try:
-                with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
-                    for entry in archive:
-                        member = archive.extractfile(entry) if entry.isfile() else None
-                        tar_rows.append({'archive_path': path, 'archive_sha256': row['sha256'],
-                            'member': entry.name, 'kind': 'file' if member else 'other', 'size': entry.size,
-                            'sha256': files.digest(member.read()) if member else '', 'link_target': entry.linkname})
-            except tarfile.TarError:
-                continue  # A file named .tar remains part of the recording even if it cannot be indexed.
-        else:
-            try:
-                lines = data.decode('utf-8').splitlines()
-            except UnicodeError:
-                continue
-            for number, line in enumerate(lines, 1):
-                for ref in sorted({m.group().rstrip('.,;:)]}') for m in path_pattern.finditer(line)}):
-                    references.append({'source_path': path, 'source_line': number, 'original_path': ref,
-                        'archive_path': '', 'classification': 'external environment or path', 'target_in_archive': 'no',
-                        'limit': 'Lexical path reference; not an assertion that this path was accessed.'})
-    out.table('review/runtime-members.csv', tar_rows, ['archive_path', 'archive_sha256', 'member', 'kind', 'size', 'sha256', 'link_target'])
-    out.table('review/external-references.csv', references, ['source_path', 'source_line', 'original_path', 'archive_path', 'classification', 'target_in_archive', 'limit'])
-
-
 def render(manifest, read):
     """Index the assignment, notes and native streams while retaining every original."""
     out = Outputs()
@@ -145,26 +113,18 @@ def render(manifest, read):
     base = f'runs/{run}/'
     entries = [row for row in manifest['entries'] if row['path'] == base[:-1] or row['path'].startswith(base)]
     originals = {row['path']: row for row in entries if row['type'] == 'file'}
-    counts = Counter(row['type'] for row in entries)
     controller = json.loads(read(manifest['evidence']['controller']))
     connection = controller['connection']
     notes = sorted(p for p in originals if p.startswith(base + 'packet/notes/') and p.endswith(('.md', '.txt')))
     reader = [f'{connection.upper()} FIELDWORK: {run}', '',
-              f'Controller receipts: recordings/{run}/evidence/controller.json',
+              'Controller receipts: evidence/controller.json',
               'Recorded limitations:', *(manifest['coverage']['unknown'] or ['No explicit limitation recorded.']), '']
     capture, _ = evidence.primary_capture(manifest, controller, read)
     conversations = []
-    transcript = ''
     if capture:
         folder = capture.rsplit('/', 1)[0]
         transcript = folder + '/transcript.jsonl'
         conversations.extend(p for p in (transcript, folder + '/conversation.txt') if p in originals)
-    out.table('review/recording-layouts.csv', [{
-        'run': run,
-        'recording_protocol': 'berman.connector/1',
-        'participant_notes': ' | '.join(notes),
-        'captured_session': transcript,
-    }], ['run', 'recording_protocol', 'participant_notes', 'captured_session'])
     conversations.extend(sorted(p for p in originals if p.startswith(base + 'associated/') and p.endswith('/transcript.jsonl')))
     reader += ['Session files:', *(conversations or ['No session transcript supplied.']), '']
     for path in [base + 'packet/ASSIGNMENT.md', base + 'packet/INSTRUCTIONS.md', *notes]:
@@ -207,32 +167,26 @@ def render(manifest, read):
         item['duplicate_of'] = first if row['type'] == 'file' and first != row['path'] else ''
         inventory.append(item)
     out.table('manifest.csv', inventory, [*fields, 'duplicate_of'])
-    artifact_indexes(originals, read, out)
     transcripts(manifest, originals, read, out)
-    folder = Path(__file__).parent
-    identity = {'schema': 'berman.archive-edition/2', 'collection_id': manifest['collection_id'],
-                'edition': 'connections', 'namespace': package.PREFIX, 'connections': [connection],
-                'runs': [{'run': run, 'connection': connection, 'attribution': manifest['attribution']['basis'],
-                          'name': connection, 'harness': controller['assignment']['harness'], 'checkouts': [], 'readers': ['common']}],
-                'builder_sha256': {name: files.digest((folder / name).read_bytes()) for name in BUILDER},
-                'foundation_sha256': {name: files.digest((folder.parent / name).read_bytes()) for name in ('evidence.py', 'files.py')}}
-    out.put('review/EDITION.json', json.dumps(identity, ensure_ascii=False, indent=2) + '\n')
     out.put('ARCHIVE-GUIDE.txt', f"""BERMAN FIELDWORK
 Collection {manifest['collection_id']}, connection {connection}, {run}
 
 Begin with review/{run}.txt for the assignment, participant notes, session paths
 and recorded coverage. Original files are under {base}. The controller receipts
-are under recordings/{run}/evidence/.
+are under evidence/.
 
-review/recording-layouts.csv lists the participant notes and primary transcript.
 review/events.txt and review/decoded-blocks.jsonl cite the underlying transcript
 lines. review/transcript-map.csv and review/decoded-coverage.json describe which
 records the native decoders interpreted. review/chronology.csv indexes their
 recorded times. review/text-map.csv locates originals in review/artifacts.txt.
-review/runtime-members.csv indexes tar members. review/external-references.csv
-lists lexical references to external environment paths.
-
-edition-manifest.json pins the recording, members and reader identity.
+recording.json inventories the original bytes. edition-manifest.json pins that
+manifest, the reading aids and the modules that produced them.
 Verify a detached copy with berman archive --path FILE.
 """)
-    return out, {'original_files': counts['file'], 'directories': counts['directory'], 'symlinks': counts['symlink']}
+    return out
+
+
+def reader_identity():
+    folder = Path(__file__).parent
+    paths = [*(folder / name for name in BUILDER), *(folder.parent / name for name in ('evidence.py', 'files.py'))]
+    return {p.relative_to(folder.parent).as_posix(): files.digest(p.read_bytes()) for p in paths}

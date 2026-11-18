@@ -17,7 +17,8 @@ import zipfile
 
 from berman import files
 
-SCHEMA = 'berman.recording/2'
+SCHEMA = 'berman.recording/3'
+V2 = 'berman.recording/2'
 MANIFEST = 'recording.json'
 RUN = re.compile(r'run-[0-9]{3,6}\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
@@ -37,20 +38,18 @@ def relative(value):
     return value
 
 
-def identity(manifest):
-    return files.digest_json(manifest)
-
-
 def validate(manifest):
     """Structural and referential checks also available in standalone, dependency-free readers."""
-    if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
+    if not isinstance(manifest, dict) or manifest.get('schema') not in (V2, SCHEMA):
         raise ValueError(f'Expected {SCHEMA} manifest')
+    if not isinstance(manifest.get('streams'), list):
+        raise ValueError('Recording requires stream declarations')
     if not isinstance(manifest.get('collection_id'), str):
         raise ValueError('Recording needs an explicit collection UUID')
     uuid.UUID(manifest['collection_id'])
     if not isinstance(manifest.get('run'), str) or not RUN.fullmatch(manifest['run']):
         raise ValueError('Invalid recording run identity')
-    if manifest.get('profile') != 'split':
+    if manifest['schema'] == V2 and manifest.get('profile') != 'split':
         raise ValueError(f"Unsupported recording profile {manifest.get('profile')!r}; expected split")
     if not isinstance(manifest.get('entries'), list) or not manifest['entries']:
         raise ValueError('Recording has no inventoried members')
@@ -108,6 +107,15 @@ def validate(manifest):
             or stream['format'] not in ('codex-jsonl/1', 'claude-jsonl/1', 'unknown')
         ):
             raise ValueError('Invalid recording stream descriptor')
+    if manifest['schema'] == V2:
+        validate_v2_inventory(manifest, seen)
+    elif not isinstance(manifest.get('connection'), str) or not manifest['connection']:
+        raise ValueError('Recording needs its commissioned connection')
+    return manifest
+
+
+def validate_v2_inventory(manifest, seen):
+    """Check the additional inventory and attribution carried by a published split recording/2."""
     custody = manifest.get('custody', {}).get('inventory')
     if (
         not isinstance(custody, dict)
@@ -121,21 +129,12 @@ def validate(manifest):
         for name, item in seen.items()
         if name.startswith(base)
     }
-    if originals != {item['path']: item for item in custody['entries']}:
+    if len(originals) != len(custody['entries']) or originals != {item['path']: item for item in custody['entries']}:
         raise ValueError('Recording occurrence members and custody inventory disagree')
-    attribution = manifest.get('attribution')
-    if (
-        not isinstance(attribution, dict)
-        or 'connection' not in attribution
-        or not isinstance(attribution.get('basis'), str)
-    ):
-        raise ValueError('Recording needs an explicit connection attribution or unknown')
-    ref = attribution.get('evidence')
-    if ref is not None and (not isinstance(ref, str) or ref not in seen or seen[ref]['type'] != 'file'):
-        raise ValueError('Connection attribution refers to missing evidence')
-    if attribution['connection'] is not None and (not isinstance(attribution['connection'], str) or not ref):
-        raise ValueError('A connection attribution requires retained evidence')
-    return manifest
+    attribution = manifest['attribution']
+    if (not isinstance(attribution.get('connection'), str) or not isinstance(attribution.get('basis'), str)
+            or attribution.get('evidence') != manifest['evidence']['controller']):
+        raise ValueError('Recording connection attribution requires controller evidence')
 
 
 def mode(item):
@@ -175,7 +174,7 @@ def missing_line(row):
     return f'Observed on the host but not accepted into custody: {row["path"]} ({row["problem"]})'
 
 
-def split_part(manifest, controller):
+def collection_facts(manifest, controller):
     """The capture, acceptance, transfer map and declaration this split recording packages.
 
     A first recording packages the run's own facts. A supplement packages the one supplement
@@ -196,18 +195,18 @@ def split_part(manifest, controller):
     return item['facts'], item['transferred'], item['declaration']
 
 
-def split_absent(manifest, controller):
+def missing_members(manifest, controller):
     """Members the acceptance names as missing, by path. Their shape is checked with the authority."""
-    rows = split_part(manifest, controller)[0]['accept'].get('missing', [])
+    rows = collection_facts(manifest, controller)[0]['accept'].get('missing', [])
     if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('path'), str) for row in rows):
         raise ValueError('Split acceptance lists missing evidence in an unknown form')
     return {row['path']: row for row in rows}
 
 
-def check_split_authority(manifest, controller, ending, capture, read):
+def check_controller(manifest, controller, ending, capture, read):
+    connection = manifest['attribution']['connection'] if manifest['schema'] == V2 else manifest['connection']
     if (controller.get('collection_id') != manifest['collection_id'] or controller.get('run') != manifest['run']
-            or controller.get('connection') != manifest['attribution']['connection']
-            or manifest['attribution']['evidence'] != manifest['evidence']['controller']):
+            or controller.get('connection') != connection):
         raise ValueError('Split controller record and recording occurrence disagree')
     facts = controller['facts']
     declared = facts.get('ending')
@@ -216,7 +215,7 @@ def check_split_authority(manifest, controller, ending, capture, read):
     assignment = controller['assignment']
     if any(assignment.get(key) != controller[key] for key in ('run', 'collection_id', 'connection')):
         raise ValueError('Split assignment names another occurrence')
-    part, transferred, declaration = split_part(manifest, controller)
+    part, transferred, declaration = collection_facts(manifest, controller)
     supplement = manifest.get('supplement')
     sittings = controller.get('sittings', {})
     if not isinstance(sittings, dict):
@@ -244,7 +243,7 @@ def check_split_authority(manifest, controller, ending, capture, read):
                 or capture_receipt.get('sequence') != supplement['sequence']
                 or not isinstance(first, dict) or first.get('package_sha256') != supplement['follows_recording_sha256']):
             raise ValueError('Split supplement declaration, capture and first recording disagree')
-    absent = split_absent(manifest, controller)
+    absent = missing_members(manifest, controller)
     lines = manifest['coverage']['unknown']
     if any(path.startswith('session/') for path in absent):
         # The parent generation cannot be checked from an incomplete set of its files. The
@@ -262,8 +261,9 @@ def check_split_authority(manifest, controller, ending, capture, read):
         raise ValueError('Split recording omits native coverage limitations')
     rows = capture_receipt['members']
     inventory = {row['path']: (row['size'], row['sha256']) for row in rows}
-    members = {row['path']: (row['size'], row['sha256']) for row in manifest['custody']['inventory']['entries']
-               if row['type'] == 'file'}
+    base = f'runs/{manifest["run"]}/'
+    members = {row['path'][len(base):]: (row['size'], row['sha256']) for row in manifest['entries']
+               if row['type'] == 'file' and row['path'].startswith(base)}
     accepted = part['accept']
     # Evidence observed on the host and never accepted stays named: once in the acceptance,
     # with its length, digest and reason, and by exactly that statement in coverage.
@@ -299,13 +299,32 @@ def primary_capture(manifest, controller, read):
     """Return the primary generation established by this collection, including early split pointers."""
     capture_ref = manifest['evidence'].get('capture')
     capture = json.loads(read(capture_ref)) if capture_ref else None
-    parent_gap = any(path.startswith('session/') for path in split_absent(manifest, controller))
-    if split_part(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
+    parent_gap = any(path.startswith('session/') for path in missing_members(manifest, controller))
+    if collection_facts(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
         ref, capture = committed_capture(manifest['run'], read)
-        if capture_ref is not None and capture_ref != ref:
+        if capture_ref != ref and (manifest['schema'] == SCHEMA or capture_ref is not None):
             raise ValueError('Split manifest and native pointer select different captures')
         capture_ref = ref
     return capture_ref, capture
+
+
+def native_streams(manifest, controller, read):
+    """Only accepted transcripts attributed to this parent or its observed children have a native format."""
+    run = manifest['run']
+    files_by_path = {row['path']: row['sha256'] for row in manifest['entries'] if row['type'] == 'file'}
+    primary = manifest['evidence'].get('capture')
+    capture = collection_facts(manifest, controller)[0]['capture']
+    refs = [primary] if primary else []
+    refs.extend(f'runs/{run}/associated/{sid}/capture.json' for sid in capture.get('associated_sessions', []))
+    streams = []
+    native_format = controller['assignment']['harness'] + '-jsonl/1'
+    for ref in sorted(set(refs)):
+        path = str(PurePosixPath(ref).with_name('transcript.jsonl'))
+        if ref in files_by_path and path in files_by_path:
+            meta = json.loads(read(ref))
+            if meta.get('format') == native_format and meta.get('sha256') == files_by_path[path]:
+                streams.append({'path': path, 'format': native_format, 'basis': ref})
+    return streams
 
 
 def check_authority(manifest, read):
@@ -317,7 +336,9 @@ def check_authority(manifest, read):
             raise ValueError(f'Retained {key} must be an object')
     ending, controller = records['ending'], records['controller']
     capture_ref, capture = primary_capture(manifest, controller, read)
-    check_split_authority(manifest, controller, ending, capture, read)
+    check_controller(manifest, controller, ending, capture, read)
+    if manifest['schema'] == SCHEMA and manifest['streams'] != native_streams(manifest, controller, read):
+        raise ValueError('Recording stream declarations differ from attributed native captures')
     if not ending.get('reason') or not ending.get('declared_at_utc'):
         raise ValueError('Retained ending is not a declaration')
     if capture is not None and capture.get('run') != manifest['run']:
@@ -355,7 +376,7 @@ def inspect_package(data, expected_sha256=None):
         'schema': 'berman.recording-verification/1',
         'integrity': 'passed',
         'manifest': manifest,
-        'manifest_sha256': identity(manifest),
+        'manifest_sha256': files.digest_json(manifest),
         'package_sha256': digest,
         'bytes': len(data),
         'coverage': manifest['coverage'],
@@ -383,7 +404,7 @@ def verify_directory(root):
     return {
         'integrity': 'passed',
         'manifest': manifest,
-        'manifest_sha256': identity(manifest),
+        'manifest_sha256': files.digest_json(manifest),
         'coverage': manifest['coverage'],
         'collection_id': manifest['collection_id'],
         'run': manifest['run'],

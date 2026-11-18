@@ -69,7 +69,11 @@ class CustodyTests(unittest.TestCase):
         archive = self.root / pointer['path']
         archive.parent.mkdir(parents=True)
         shutil.copyfile(edition, archive)
-        target = self.root / package.pointer_path(pointer['selection'])
+        target = (
+            self.root
+            / 'archive/editions/selections'
+            / (files.digest(package.json_bytes(pointer['selection'])) + '.json')
+        )
         target.parent.mkdir()
         shutil.copyfile(FIXTURE / 'selection.json', target)
         with patch.object(custody.builder, 'render', side_effect=AssertionError('republished')):
@@ -87,72 +91,81 @@ class CustodyTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(archive.read(f'runs/{state["run"]}/{name}'))
                 blobs[name] = path
-        self.assertEqual(custody.preserve_split_run(self.root, state, blobs), receipt)
+        self.assertEqual(custody.preserve_recording(self.root, state, blobs), receipt)
         state['facts']['ending']['reason'] = 'A different ending'
         with self.assertRaisesRegex(ValueError, 'differs from requested preservation'):
-            custody.preserve_split_run(self.root, state, blobs)
+            custody.preserve_recording(self.root, state, blobs)
         self.assertEqual((self.root / receipt['relative_path']).read_bytes(), recording.read_bytes())
 
-    def test_old_recording_profiles_are_refused_before_writing(self):
-        with zipfile.ZipFile(FIXTURE / 'recording.zip') as z:
-            payload = {i.filename: (z.read(i), i.external_attr >> 16) for i in z.infolist()}
-        manifest = json.loads(payload['recording.json'][0])
-        for profile in ('native', 'historical-import'):
-            with self.subTest(profile=profile):
-                payload['recording.json'] = (files.json_bytes(dict(manifest, profile=profile)), stat.S_IFREG | 0o644)
-                old = self.base / 'old.zip'
-                old.write_bytes(package.make_zip(payload, ''))
-                dest = self.base / 'view'
-                with self.assertRaisesRegex(ValueError, profile):
-                    evidence.verify_package(old)
-                with self.assertRaisesRegex(ValueError, profile):
-                    evidence.materialize(old, dest)
-                with self.assertRaisesRegex(ValueError, profile):
-                    custody.import_recording(self.root, old, expected_sha256=files.digest(old.read_bytes()))
-                self.assertFalse(dest.exists())
-                self.assertFalse((self.root / 'custody').exists())
-        # Recreate a previously accepted occurrence with matching hashes and its original receipt.
-        digest = files.digest(old.read_bytes())
-        receipt = {
-            'schema': 'berman.custody-recording/1',
-            'collection_id': self.ident,
-            'run': manifest['run'],
-            'package_sha256': digest,
-            'manifest_sha256': files.digest_json(dict(manifest, profile=profile)),
-            'bytes': old.stat().st_size,
-            'coverage': manifest['coverage'],
-            'relative_path': f'custody/{manifest["run"]}/recording.zip',
-        }
-        stored = self.root / receipt['relative_path']
-        files.write(stored.parent / 'receipt.json', receipt)
-        shutil.copyfile(old, stored)
-        with self.assertRaisesRegex(ValueError, profile):
-            custody.publish_edition(self.root, receipt)
-        self.assertFalse((self.root / 'archive').exists())
+    def test_new_edition_pins_one_recording_and_each_reading_aid(self):
+        state, blobs = self.inputs()
+        recording = custody.preserve_recording(self.root, state, blobs)
+        published = custody.publish_edition(self.root, recording)
+        with zipfile.ZipFile(self.root / published['archive_path']) as edition:
+            payload = {
+                i.filename.removeprefix(package.PREFIX): (edition.read(i), i.external_attr >> 16)
+                for i in edition.infolist()
+            }
+        with zipfile.ZipFile(self.root / recording['relative_path']) as original:
+            for i in original.infolist():
+                self.assertEqual(payload[i.filename], (original.read(i), i.external_attr >> 16))
+            source = json.loads(original.read(evidence.MANIFEST))
+            self.assertEqual(source['schema'], 'berman.recording/3')
+            self.assertEqual(source['connection'], state['connection'])
+            manifest = json.loads(payload[package.MANIFEST][0])
+            self.assertEqual(manifest['schema'], 'berman.reading-edition/3')
+            self.assertEqual(manifest['recording_manifest_sha256'], files.digest(original.read(evidence.MANIFEST)))
+            self.assertEqual(manifest['reader_sha256'], custody.builder.reader_identity())
+            self.assertEqual(
+                set(original.namelist()) | {package.MANIFEST} | set(manifest['reading_aids']), set(payload)
+            )
+        self.assertEqual(
+            files.read(self.root / published['selection_pointer']),
+            {'schema': 'berman.edition-selection/2', 'sha256': published['archive_sha256']},
+        )
+        name = next(iter(blobs))
+        original_path = f'runs/{state["run"]}/{name}'
+        for key, replacement, problem in [
+            (original_path, (b'other', stat.S_IFREG | 0o600), 'Recording bytes'),
+            (original_path, (payload[original_path][0], stat.S_IFREG | 0o644), 'Recording mode'),
+            (original_path, None, 'membership'),
+            ('review/events.txt', (b'other', package.FILE_MODE), 'Reading aid bytes'),
+            ('review/unlisted.txt', (b'new member', package.FILE_MODE), 'membership'),
+            (evidence.MANIFEST, (files.json_bytes(source), package.FILE_MODE), 'different recording manifest'),
+            (
+                package.MANIFEST,
+                (files.json_bytes(dict(manifest, reader_sha256={})), package.FILE_MODE),
+                'reader source digests',
+            ),
+        ]:
+            with self.subTest(key=key, problem=problem):
+                changed = dict(payload)
+                if replacement is None:
+                    del changed[key]
+                else:
+                    changed[key] = replacement
+                with self.assertRaisesRegex(ValueError, problem):
+                    package.inspect_edition(package.make_zip(changed, package.PREFIX))
 
-    def test_detached_edition_refuses_inventory_authority_and_embedded_old_profiles(self):
-        with zipfile.ZipFile(FIXTURE / 'edition.zip') as z:
-            payload = {i.filename: (z.read(i), i.external_attr >> 16) for i in z.infolist()}
-        name = package.PREFIX + package.MANIFEST
-        original = json.loads(payload[name][0])
-        item = original['inputs']['recordings'][0]
-        for profile in ('historical-import', 'native', None):
-            value = deepcopy(original)
-            changed = dict(payload)
-            if profile is None:
-                value['inputs']['recordings'][0]['basis'] = 'historical inventory entry'
-                reason = 'requires a split recording manifest'
-            else:
-                ref = package.PREFIX + item['path']
-                data = files.json_bytes(dict(json.loads(payload[ref][0]), profile=profile))
-                changed[ref] = (data, payload[ref][1])
-                row = next(r for r in value['members'] if r['path'] == item['path'])
-                row.update(size=len(data), sha256=files.digest(data))
-                value['inputs']['recordings'][0]['sha256'] = row['sha256']
-                reason = profile
-            changed[name] = (files.json_bytes(value), payload[name][1])
-            with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, reason):
-                package.inspect_edition(package.make_zip(changed, ''))
+    def test_published_pointer_must_match_guest_custody_and_the_ledger(self):
+        state, blobs = self.inputs()
+        receipt = custody.preserve_recording(self.root, state, blobs)
+        published = custody.publish_edition(self.root, receipt)
+        facts = {'preserve': receipt, 'publish': dict(published, archive_sha256='0' * 64)}
+        with self.assertRaisesRegex(ValueError, 'publication receipt'):
+            custody.verify_occurrence(self.root, state['run'], facts)
+
+        # The other edition is valid, even for this run and collection, but has a different ending.
+        other = self.base / 'other'
+        files.write(other / 'collection.json', {'id': self.ident})
+        state['facts']['ending']['reason'] = 'Another declaration'
+        foreign = custody.publish_edition(other, custody.preserve_recording(other, state, blobs))
+        for key in ('archive_path', 'selection_pointer'):
+            shutil.copyfile(other / foreign[key], self.root / foreign[key])
+        with self.assertRaisesRegex(ValueError, 'different recording'):
+            custody.publish_edition(self.root, receipt)
+        with self.assertRaisesRegex(ValueError, 'different recording'):
+            custody.verify_occurrence(self.root, state['run'], {'preserve': receipt, 'publish': published})
 
     def test_detached_edition_checks_original_bytes_and_modes_without_a_supplied_digest(self):
         with zipfile.ZipFile(FIXTURE / 'edition.zip') as archive:
@@ -176,12 +189,12 @@ class CustodyTests(unittest.TestCase):
             patch.object(package, 'install', side_effect=stop_before_pointer),
             self.assertRaisesRegex(OSError, 'interrupted'),
         ):
-            custody.preserve_and_publish(self.root, state, blobs)
+            receipt = custody.preserve_recording(self.root, state, blobs)
+            custody.publish_edition(self.root, receipt)
         (installed,) = (self.root / 'archive/editions').glob('*.zip')
         first_digest = files.digest(installed.read_bytes())
-        receipt = custody.preserve_split_run(self.root, state, blobs)
         state['facts']['preserve'] = receipt
-        self.assertEqual(receipt, custody.preserve_split_run(self.root, state, blobs))
+        self.assertEqual(receipt, custody.preserve_recording(self.root, state, blobs))
         self.assertEqual(receipt['coverage']['unknown'], ['Missing parent transcript'])
         next(iter(blobs.values())).unlink()
         edition = custody.publish_edition(self.root, receipt)
@@ -195,11 +208,11 @@ class CustodyTests(unittest.TestCase):
         self.assertEqual(evidence.verify_package(standalone, receipt['package_sha256'])['integrity'], 'passed')
         self.assertEqual(package.verify_edition(copied, edition['archive_sha256'])['original_files'], 1)
         with zipfile.ZipFile(copied) as z:
-            prefix = 'berman-analysis/recordings/run-013/'
+            prefix = package.PREFIX
             saved = json.loads(z.read(prefix + 'evidence/controller.json'))
             self.assertEqual(saved['decision'], state['decision'])
             self.assertEqual(saved['facts']['capture'], state['facts']['capture'])
-            self.assertEqual(json.loads(z.read(prefix + 'manifest.json'))['coverage'], receipt['coverage'])
+            self.assertEqual(json.loads(z.read(prefix + evidence.MANIFEST))['coverage'], receipt['coverage'])
 
     def test_reject_mismatched_ending_acceptance_or_blob_before_commit(self):
         state, blobs = self.inputs()
@@ -213,12 +226,12 @@ class CustodyTests(unittest.TestCase):
                 changed = deepcopy(state)
                 changed['facts'][fact][key] = bad
                 with self.assertRaises(ValueError):
-                    custody.preserve_split_run(self.root, changed, blobs)
+                    custody.preserve_recording(self.root, changed, blobs)
                 self.assertFalse((self.root / 'custody/run-013').exists())
         path = next(iter(blobs.values()))
         path.write_bytes(b'x' * path.stat().st_size)
         with self.assertRaisesRegex(ValueError, 'Guest blob differs'):
-            custody.preserve_split_run(self.root, state, blobs)
+            custody.preserve_recording(self.root, state, blobs)
 
     def test_conflicting_concurrent_preservations_never_replace_the_winner(self):
         state, blobs = self.inputs()
@@ -226,7 +239,7 @@ class CustodyTests(unittest.TestCase):
         other['facts']['ending']['reason'] = 'Different declaration'
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [
-                pool.submit(custody.preserve_split_run, self.root, candidate, blobs) for candidate in (state, other)
+                pool.submit(custody.preserve_recording, self.root, candidate, blobs) for candidate in (state, other)
             ]
         self.assertEqual(sum(isinstance(call.exception(), ValueError) for call in futures), 1)
         receipt = next(call.result() for call in futures if not call.exception())
@@ -253,22 +266,23 @@ class CustodyTests(unittest.TestCase):
         state['facts']['accept'] = {'accepted_members': len(blobs), 'inventory_sha256': protocol.fingerprint(members)}
         capture['parent_sha256'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'parent transcript'):
-            custody.preserve_split_run(self.root, state, blobs)
+            custody.preserve_recording(self.root, state, blobs)
         capture['parent_sha256'] = meta['sha256']
-        result = custody.preserve_and_publish(self.root, state, blobs)
-        manifest = custody.verify_recording(self.root, result['recording'])['manifest']
+        receipt = custody.preserve_recording(self.root, state, blobs)
+        edition = custody.publish_edition(self.root, receipt)
+        manifest = custody.verify_recording(self.root, receipt)['manifest']
         self.assertIn(files.digest_json(meta), manifest['evidence']['capture'])
-        # Re-open the initial split format, which retained the committed native
-        # pointer but omitted the redundant top-level capture reference.
-        with zipfile.ZipFile(self.root / result['recording']['relative_path']) as original:
-            early = deepcopy(manifest)
-            early['evidence']['capture'] = None
-            evidence.check_authority(early, original.read)
-            early['evidence']['capture'] = early['evidence']['controller']
+        with zipfile.ZipFile(self.root / receipt['relative_path']) as original:
+            forged = deepcopy(manifest)
+            forged['streams'][0]['basis'] = forged['evidence']['controller']
+            with self.assertRaisesRegex(ValueError, 'stream declarations'):
+                evidence.check_authority(forged, original.read)
+            wrong = deepcopy(manifest)
+            wrong['evidence']['capture'] = wrong['evidence']['controller']
             with self.assertRaisesRegex(ValueError, 'different captures'):
-                evidence.check_authority(early, original.read)
+                evidence.check_authority(wrong, original.read)
         self.assertTrue(any(s['format'] == 'codex-jsonl/1' for s in manifest['streams']))
-        with zipfile.ZipFile(self.root / result['edition']['archive_path']) as z:
+        with zipfile.ZipFile(self.root / edition['archive_path']) as z:
             self.assertIn(b'packet/notes/work.md', z.read('berman-analysis/review/run-013.txt'))
 
     def test_stream_length_is_bounded_before_acceptance(self):

@@ -74,7 +74,7 @@ class PortableRecordingsTests(unittest.TestCase):
     def test_occurrences_keep_distinct_identity_even_when_their_content_is_equal(self):
         report = evidence.verify_package(self.preserved())
         changed = dict(report['manifest'], collection_id='d5de26f7-077c-491b-a3ec-a9c43d638eee')
-        self.assertNotEqual(evidence.identity(changed), report['manifest_sha256'])
+        self.assertNotEqual(files.digest_json(changed), report['manifest_sha256'])
         self.assertEqual(changed['entries'], report['manifest']['entries'])
 
     def test_package_membership_and_authority_are_checked_without_an_external_hash(self):

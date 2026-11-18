@@ -55,8 +55,7 @@ connected checkout.
 - A plan (`plans/NAME/plan.json`, schema `berman.research-plan/1`) is optional:
   an id, a connection and ordered steps, each with an id and a recipe.
   `commission --plan NAME` takes its next unstarted step. A commission with
-  `--recipe` neither consumes a step nor depends on the plan's `commitment` or
-  `relationships`, which are study annotations.
+  `--recipe` leaves the plan sequence available for future commissions.
 
 A record Berman would crash on or misread is refused with its file and the
 place of each problem, such as `documents must be an array`. Reading never
@@ -92,9 +91,9 @@ prepared assignment from the assigned checkout.
 
 ## Portable recordings
 
-Recordings use `berman.recording/2`. Their immutable manifest retains the
-collection UUID, run identity, exact relative membership, hashes, original
-filesystem metadata, stream formats, attribution evidence and lifecycle evidence.
+New recordings use `berman.recording/3`. Their immutable manifest retains the
+collection UUID, run identity, exact relative membership, hashes, portable
+filesystem modes, stream formats, attribution evidence and lifecycle evidence.
 A path occurrence belongs to that collection and run; equal bytes in another
 run do not become the same occurrence. A verified working copy may have new
 mtimes; its historical metadata remains data in `recording.json`.
@@ -134,9 +133,10 @@ berman archive --path /copies/edition.zip
 ```
 
 Published editions are immutable files under `archive/editions/SHA256.zip`.
-A selection pointer identifies the latest publication for an edition/connection/
-run selection. Each ZIP contains an edition manifest naming its inputs, reader
-identity, generated outputs and exact member hashes and modes.
+Each run and numbered supplement has an immutable selection pointer. In a
+`berman.reading-edition/3` ZIP, `recording.json` inventories the original
+members and links to the controller evidence. `edition-manifest.json` pins
+that manifest, every reading aid and the source modules that built the edition.
 
 Reading aids decode explicitly identified Codex and Claude streams into neutral
 blocks, preserving native roles and source physical lines/JSON pointers. Raw

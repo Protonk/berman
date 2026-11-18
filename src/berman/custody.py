@@ -190,7 +190,7 @@ def _commit(root, data, expected):
 
 
 def import_recording(root, source, *, expected_sha256, size=None):
-    """Accept one staged recording/2 ZIP, or exactly size bytes from a blocking binary stream."""
+    """Accept one staged guest recording ZIP, or exactly size bytes from a blocking binary stream."""
     if size is not None and (type(size) is not int or not 0 < size <= MAX_PACKAGE):
         raise ValueError('Invalid recording transfer length')
     if hasattr(source, 'read'):
@@ -212,7 +212,7 @@ def import_recording(root, source, *, expected_sha256, size=None):
     return _commit(Path(root), data, expected_sha256)
 
 
-def preserve_split_run(root, metadata, blobs, supplement=None):
+def preserve_recording(root, metadata, blobs, supplement=None):
     """Package a controller state and its accepted CAS paths. Retry with identical facts.
 
     `blobs` holds the accepted members only. A member the acceptance names as missing is left
@@ -300,7 +300,6 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
     parent_gap = any(name.startswith('session/') for name in absent)
     if capture.get('parent_sha256') and not parent_gap:
         refs['capture'], _ = evidence.committed_capture(run, lambda name: payload[name][0])
-    inventory = [dict(row, path=row['path'][len(base) + 1 :]) for row in entries if row['path'].startswith(base + '/')]
     coverage = list(capture.get('limitations', []))
     coverage.extend(f'No {key} receipt retained' for key in ('preparation', 'launch') if key not in facts)
     coverage.extend(evidence.missing_line(row) for _, row in sorted(absent.items()))
@@ -311,47 +310,18 @@ def preserve_split_run(root, metadata, blobs, supplement=None):
             f'Supplement {supplement} to {run}: later observations kept after the first collection froze. '
             'It neither repeats nor replaces that recording.'
         )
-    # Decode only transcripts explicitly attributed by a native capture record.
-    streams = []
-    for name in sorted(blobs):
-        if not name.endswith('.jsonl'):
-            continue
-        ref = str(Path(name).with_name('capture.json'))
-        fmt = 'unknown'
-        associated = Path(name).parts
-        native_source = refs['capture'] == f'{base}/{ref}' or (
-            len(associated) == 3
-            and associated[0] == 'associated'
-            and associated[1] in (capture.get('associated_sessions') or ())
-        )
-        if native_source and Path(name).name == 'transcript.jsonl' and ref in blobs:
-            meta = json.loads(payload[f'{base}/{ref}'][0])
-            if meta.get('format') in ('codex-jsonl/1', 'claude-jsonl/1') and meta.get('sha256') == observed[name][1]:
-                fmt = meta['format']
-        streams.append(
-            {'path': f'{base}/{name}', 'format': fmt, 'basis': f'{base}/{ref}' if fmt != 'unknown' else None}
-        )
     manifest = {
         'schema': evidence.SCHEMA,
-        'profile': 'split',
+        'connection': metadata['connection'],
         'run': run,
         'collection_id': metadata['collection_id'],
         'entries': entries,
         'evidence': refs,
         'coverage': {'unknown': coverage},
-        'streams': streams,
-        'attribution': {
-            'basis': 'retained controller assignment',
-            'evidence': refs['controller'],
-            'connection': metadata['connection'],
-        },
-        'custody': {
-            'inventory': {'run': run, 'current_root': base, 'entries': inventory},
-            'meaning': 'Accepted native file bytes. Modes describe the portable package.',
-        },
     }
     if supplement is not None:
         manifest['supplement'] = {'sequence': supplement, 'follows_recording_sha256': first['package_sha256']}
+    manifest['streams'] = evidence.native_streams(manifest, controller, lambda name: payload[name][0])
     raw_manifest = protocol.json_bytes(manifest)
     if len(raw_manifest) > MAX_MANIFEST or len(payload) >= MAX_MEMBERS:
         raise ValueError('Recording inventory exceeds custody bound')
@@ -364,29 +334,37 @@ def publish_edition(root, receipt):
     """Publish one verified custody occurrence as a standard, independently readable edition."""
     root = Path(root)
     data, report = _accepted(root, receipt)
-    request = package.selection(receipt['run'], receipt.get('supplement'))
     with package.publication_lock(root), zipfile.ZipFile(io.BytesIO(data)) as archive:
-        pointer = root / package.pointer_path(request)
-        if pointer.exists():
-            pinned, result = package.published(root, request)
-            sources = pinned['inputs']['recordings']
-            if len(sources) != 1 or sources[0]['sha256'] != files.digest(archive.read(evidence.MANIFEST)):
-                raise ValueError('Existing edition selects different recording authority')
-            result = dict(result, mode='published and verified')
-        else:
-            manifest = report['manifest']
-            generated, summary = builder.render(manifest, archive.read)
-            edition = package.seal(manifest, archive, generated, summary)
-            result = package.publish_locked(root, request, edition)
+        source_digest = files.digest(archive.read(evidence.MANIFEST))
+        result = package.existing_publication(root, receipt, source_digest)
+        if result is None:
+            aids = builder.render(report['manifest'], archive.read)
+            edition = package.seal(archive, aids, builder.reader_identity())
+            result = package.publish_locked(root, receipt, source_digest, edition)
+        pointer = root / result['selection_pointer']
         # SQLite can commit its publish fact as soon as this function returns.
         for directory in (pointer.parent, pointer.parent.parent, root / 'archive', root):
             _dirsync(directory)
-        return result
+        return dict(result, mode='published and verified')
 
 
-def preserve_and_publish(root, metadata, blobs):
-    receipt = preserve_split_run(root, metadata, blobs)
-    return {'recording': receipt, 'edition': publish_edition(root, receipt)}
+def verify_occurrence(root, run, facts, supplement=None):
+    """Verify the ledger receipts, recording, selection pointer and its edition as one occurrence."""
+    receipt = facts['preserve']
+    if receipt['run'] != run or receipt.get('supplement') != supplement:
+        raise ValueError('Custody receipt belongs to a different occurrence')
+    data, recording = _accepted(root, receipt)
+    result = {'recording': {key: recording[key] for key in ('package_sha256', 'integrity', 'coverage')}}
+    if 'publish' in facts:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            source_digest = files.digest(archive.read(evidence.MANIFEST))
+        edition = package.existing_publication(root, receipt, source_digest)
+        if edition is None or any(
+            edition[key] != facts['publish'][key] for key in ('archive_sha256', 'archive_path', 'selection_pointer')
+        ):
+            raise ValueError('Edition selection differs from the publication receipt')
+        result['edition'] = dict(edition, archive_path=str(root / edition['archive_path']))
+    return result
 
 
 def main(argv=None):
