@@ -379,18 +379,23 @@ def publish_edition(root, receipt):
             sources = pinned['inputs']['recordings']
             if len(sources) != 1 or sources[0]['sha256'] != files.digest(archive.read(evidence.MANIFEST)):
                 raise ValueError('Existing edition selects different recording authority')
-            return dict(result, mode='published and verified')
-        with tempfile.TemporaryDirectory(prefix='.reader-', dir=root / 'custody') as directory:
-            build = _build(Path(directory), archive, report['manifest'])
-            generated, summary = builder.render(build)
-            links = {
-                f'recordings/{receipt["run"]}/{row["path"]}': os.fsencode(row['target'])
-                for row in report['manifest']['entries']
-                if row['type'] == 'symlink'
-            }
-            payload, _ = package.seal(build, generated, summary, retained_links=links)
-            edition = package.make_zip(payload, build.edition.prefix)
-        return package.publish_locked(replace(build, root=root), edition)
+            result = dict(result, mode='published and verified')
+        else:
+            with tempfile.TemporaryDirectory(prefix='.reader-', dir=root / 'custody') as directory:
+                build = _build(Path(directory), archive, report['manifest'])
+                generated, summary = builder.render(build)
+                links = {
+                    f'recordings/{receipt["run"]}/{row["path"]}': os.fsencode(row['target'])
+                    for row in report['manifest']['entries']
+                    if row['type'] == 'symlink'
+                }
+                payload, _ = package.seal(build, generated, summary, retained_links=links)
+                edition = package.make_zip(payload, build.edition.prefix)
+            result = package.publish_locked(replace(build, root=root), edition)
+        # SQLite can commit its publish fact as soon as this function returns.
+        for directory in (pointer.parent, pointer.parent.parent, root / 'archive', root):
+            _dirsync(directory)
+        return result
 
 
 def preserve_and_publish(root, metadata, blobs):
