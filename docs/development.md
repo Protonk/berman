@@ -26,6 +26,11 @@ Tests create disposable repositories, synthetic studies, harness doubles and
 simulated callbacks. They do not spend model tokens or establish native capture.
 The installed `berman verify` checks package resources, dependencies and schemas.
 
+For a candidate on macOS and Linux, run `uv run berman ci --config scripts/ci/qualification.json`.
+It includes these source checks, builds the wheel, exercises a single assignment
+over SSH, and verifies its detached evidence. The same command accepts an
+optional live harness. [Mini-CI contract and setup](ci.md)
+
 ## Byte-sensitive files
 
 Each reading edition records the digests of the modules that built it. Keep the

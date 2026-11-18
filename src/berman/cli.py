@@ -35,6 +35,9 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('remote', help='operate a guest study (berman remote --help)')
     commands.add_parser('executor', help='manage native staging (berman executor --help)')
+    ci = commands.add_parser('ci', help='exercise this core checkout on a qualification Mac and Linux guest')
+    ci.add_argument('--config', required=True, type=Path, help='qualification SSH settings')
+    ci.add_argument('--live', choices=('codex', 'claude'), help='launch the named harness in this terminal')
     commands.add_parser('version', help='show the installed version and source identity')
     commands.add_parser('verify', help='verify the installed software')
     archive = commands.add_parser('archive', help='verify a published guest reading edition')
@@ -49,6 +52,13 @@ def main(argv=None):
             sub.add_argument('destination', type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'ci':
+            runner = Path(__file__).resolve().parents[2] / 'scripts/ci/run.py'
+            if not runner.is_file():
+                raise Decision('Run uv run berman ci from the core development checkout.')
+            return subprocess.call(
+                [sys.executable, '-I', runner, args.config.expanduser().resolve(), *([args.live] if args.live else [])]
+            )
         if args.command == 'version':
             print(json.dumps(verify.identity(), indent=2))
             return 0

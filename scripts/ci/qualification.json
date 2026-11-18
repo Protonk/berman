@@ -1,0 +1,4 @@
+{
+  "host": "lima-berman-research",
+  "ssh_config": "~/.lima/berman-research/ssh.config"
+}

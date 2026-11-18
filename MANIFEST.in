@@ -1,6 +1,7 @@
 graft docs
 graft examples
 include scripts/install-research-wheel
+graft scripts/ci
 graft tests
 include AGENTS.md uv.lock .python-version
 global-exclude __pycache__ *.py[cod] .DS_Store

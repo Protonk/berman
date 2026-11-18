@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,17 +14,29 @@ import uuid
 from berman import config, executor, files, protocol
 
 
+def ssh_client(settings):
+    host = settings['host']
+    if not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', host):
+        raise ValueError('Use a configured SSH host alias')
+    argv = ['ssh', '-T', '-oBatchMode=yes', '-oConnectTimeout=10']
+    if settings.get('ssh_config'):
+        argv += ['-F', str(Path(settings['ssh_config']).expanduser())]
+    return [*argv, '--', host]
+
+
 class Remote:
-    def __init__(self, settings):
+    def __init__(self, settings, *, controller_python='.local/berman/bin/python'):
         self.collection = protocol.identifier(settings['collection_id'])
         self.study = config.identity(settings['study'], 'study')
-        host = settings['host']
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', host):
-            raise ValueError('Use a configured SSH host alias')
-        self.argv = ['ssh', '-T', '-oBatchMode=yes', '-oConnectTimeout=10']
-        if settings.get('ssh_config'):
-            self.argv += ['-F', str(Path(settings['ssh_config']).expanduser())]
-        self.argv += ['--', host, '.local/berman/bin/python', '-I', '-m', 'berman.controller', '--study', self.study]
+        self.argv = [
+            *ssh_client(settings),
+            shlex.quote(controller_python),
+            '-I',
+            '-m',
+            'berman.controller',
+            '--study',
+            self.study,
+        ]
 
     def call(self, command, operation=None, body=None, **fields):
         request = dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, **fields)

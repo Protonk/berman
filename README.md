@@ -65,4 +65,4 @@ the example study. The operator guide covers status, resuming a sitting and
 closeout. [Operator guide](docs/connector.md) · [Native execution](docs/executor.md) · [Current limits](docs/limitations.md)
 
 For development, use the locked Python environment and the synthetic test
-studies. [Development guide](docs/development.md) · [MIT License](LICENSE)
+studies. [Development guide](docs/development.md) · [Mini-CI](docs/ci.md) · [MIT License](LICENSE)

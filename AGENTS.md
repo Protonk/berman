@@ -12,6 +12,9 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   change: `uv run ruff check`, `uv run ruff format --check`,
   `uv run lint-imports`, `uv run python -m unittest discover -s tests -t .` and
   `uv run berman verify`. Report their scope and omissions.
+- For integration across the Mac and Linux guest use the [mini-CI](docs/ci.md).
+  Keep its assignment and three acceptance questions stable. Add ordinary
+  regression coverage to the source suite. Live harness qualification is explicit.
 - Use this checkout's environment explicitly: `uv run berman`, `.venv/bin/berman`
   or `python -m berman` with the environment active. A workstation that runs a
   study may have another program named `berman` on PATH, such as a pinned older
