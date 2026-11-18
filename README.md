@@ -38,6 +38,9 @@ Engagements
 
 `berman cheatsheet --config FILE` selects a study other than the default.
 With no study connected it says how to check the installation and connect one.
+Its first line names the version that answered. A workstation can hold more
+than one installation, and the cheatsheet prints a full path instead of a bare
+`berman` whenever `PATH` would lead to a different one.
 
 ## Install
 

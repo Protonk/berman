@@ -11,6 +11,8 @@ renamed for that release when one is prepared.
   the cheatsheet then says so and reports the rest.
 - `prepare` prints the packet path and the launch command on stderr, beside the
   guest's receipt on stdout.
+- The mini-CI builds its candidate wheel through a source distribution, so a
+  stale `build/` directory can no longer put removed modules into it.
 - `status` without a run adds `harness`, `sittings` and `supplements` to each
   row.
 - `berman verify` reports `passed` and `checks` in its JSON. The `--software`

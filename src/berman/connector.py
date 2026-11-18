@@ -96,14 +96,15 @@ def programs(prefix=()):
 
     def word(path):
         found = shutil.which(path.name)
-        return path.name if found and Path(found).resolve() == path.resolve() else str(path)
+        return path.name if found and Path(found).resolve() == path.resolve() else cheatsheet.shown(path)
 
     script = Path(sys.argv[0])
     if script.name == 'berman-research' and script.is_file():
         return [word(script)], [word(script.resolve().parent / 'berman')]
     if script.name == 'berman' and script.is_file():
         return [word(script), *prefix], [word(script)]
-    return [sys.executable, '-m', 'berman', 'remote'], [sys.executable, '-m', 'berman']
+    python = cheatsheet.shown(sys.executable)
+    return [python, '-m', 'berman', 'remote'], [python, '-m', 'berman']
 
 
 class Operator:
@@ -402,6 +403,8 @@ def arguments():
         'cheatsheet', help='print the commands that apply to this study now, ready to paste; changes nothing'
     )
     front.add_argument('--json', action='store_true', help='machine-readable result')
+    # The front door takes its settings on either side of the word, as `berman cheatsheet --config FILE` does.
+    front.add_argument('--config', type=Path, default=argparse.SUPPRESS, help='connector settings for one study')
     commission = commands.add_parser('commission', help='reserve or recover one immutable guest assignment')
     commission.add_argument(
         '--request', required=True, help='a unique label for this research decision; reuse on retry'
@@ -472,7 +475,8 @@ def main(argv=None):
     args = arguments().parse_args(argv)
     try:
         if args.action == 'cheatsheet':
-            value = sheet(args.config)
+            # Answered before any settings are read: it has to work with no study configured.
+            value = sheet(args.config.expanduser())
             print(json.dumps(value, indent=2) if args.json else cheatsheet.text(value))
             return 0
         settings = files.read(args.config.resolve(strict=True))

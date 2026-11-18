@@ -38,34 +38,69 @@ any number of passing synthetic tests.
 
 ## Code map
 
-The package follows the three parts of the application.
+The package follows the three parts of the application. The table groups
+modules by concern; the import order between them is under
+[Boundaries](#boundaries).
 
 | Concern | Code | Notes |
 | --- | --- | --- |
-| Command line | `cli.py` (`berman`), `cheatsheet.py` | `cli.py` defines the standalone commands and hands `remote` and `executor` to their own parsers. `cheatsheet.py` builds the sheet as data; a test parses every command it prints. |
+| Command line | `cli.py` (`berman`), `cheatsheet.py`, `__main__.py` | `cli.py` defines the standalone commands and hands `remote` and `executor` to their own parsers. `cheatsheet.py` builds the sheet as data. |
 | Connection to the guest | `connector.py` (`berman-research`, `berman remote`), `protocol.py` | The connector turns each operator command into requests and calls the local executor. `protocol.py` is the envelope and inventory both sides share. [Protocol](protocol.md) |
-| Native capture and execution, macOS | `executor/` | `__init__.py` prepares, launches, collects and qualifies. `capture.py` routes hooks and stages transcripts. `checkout.py` runs project checks and snapshots documents. `sources.py` finds associated sessions. `snapshots.py` commits capture generations. `claude.py` and `codex.py` render reading copies. [Executor](executor.md) |
-| Research side, Linux guest | `controller.py`, `study.py`, `custody.py`, `evidence.py`, `archive/` | The controller owns the ledger and every lifecycle decision. `study.py` reads recipes and plans. `custody.py` seals recordings and publishes editions, using the recording contract in `evidence.py` and the edition builder in `archive/`. [Custody](custody.md) |
-| Foundations | `files.py`, `schemas/`, `installation.py`, `environment.py`, `verify.py` | File and digest helpers, JSON Schema validation, and the software identity. |
+| Native capture and execution, macOS | `executor/` | `__init__.py` prepares, launches, collects and qualifies, and holds the `berman executor` parser. `capture.py` routes hooks and stages transcripts. `checkout.py` runs project checks and snapshots documents. `sources.py` finds associated sessions. `snapshots.py` commits capture generations. `claude.py` and `codex.py` render reading copies. [Executor](executor.md) |
+| Research side, Linux guest | `controller.py`, `study.py`, `custody.py`, `evidence.py`, `archive/` | The controller owns the ledger and every lifecycle decision; its `main` is what the connector starts over SSH. `study.py` reads recipes and plans. `custody.py` seals recordings and publishes editions, using the recording contract in `evidence.py`. In `archive/`, `builder.py`, `package.py` and `streams.py` build and verify editions, and `edition_v2.py` reads the earlier edition format. [Custody](custody.md) |
+| Software identity | `verify.py`, `installation.py`, `environment.py` | What `berman verify` and `berman version` report. |
+| Foundations | `files.py`, `schemas/` | File and digest helpers, and JSON Schema validation. |
 
-To add or change a command: standalone commands are in `cli.arguments` and
-`cli.main`; operator commands are in `connector.arguments` and
-`Operator.perform`; a new guest command also needs a branch in
-`Controller.execute` or `Controller.advance` and a row in the
-[protocol table](protocol.md#requests-and-receipts). Add its line to
-`cheatsheet.py` if an operator would look for it there. Tests live beside the
-layer they drive: `tests/integration/test_cli.py`, `test_connector.py`,
-`test_controller.py`, `test_executor.py` and `test_custody.py`.
-`tests/unit/test_guidance.py` checks that every command and link in these
-documents exists.
+### Adding or changing a command
+
+- A standalone command of `berman` is declared in `cli.arguments` and handled
+  by its own branch in `cli.main`.
+- An operator command of `berman-research` is declared in
+  `connector.arguments` and handled in `Operator.perform`. A new guest command
+  also needs a branch in `Controller.execute` or `Controller.advance` and a row
+  in the [protocol table](protocol.md#requests-and-receipts).
+- `cheatsheet` is the one command in both. `cli.main` forwards
+  `berman cheatsheet` to `connector.main`, which answers it before reading any
+  settings, because it has to work with no study configured. A command that
+  must run without a study follows that pattern, not `Operator.perform`.
+- Add a line to `cheatsheet.py` if an operator would look for the command
+  there.
+
+Commands that return a record print JSON (`version`, `recording`, `archive`,
+and every operator command except `closeout`). `verify`, `cheatsheet` and
+`closeout` print text for a person and JSON with `--json`. `--config` comes
+before an operator command; `cheatsheet` also takes it afterwards.
+
+### What an installation contains
+
+The wheel carries the package's `.py` files and `schemas/*.json`, nothing
+else. `docs/`, `examples/` and `tests/` are in the source distribution only,
+so installed code cannot read them: text a command prints lives in a Python
+module. `berman verify` and `berman version` digest the installed `.py` and
+`.json` files, and the executor's receipts digest the `.py` files. A data file
+of any other type would be outside both identities.
 
 ## Boundaries
 
-Import Linter holds four contracts, declared in `pyproject.toml`:
+Import Linter holds four contracts. `pyproject.toml` is their authority; this
+is the layer order it declares, where a module may import only from lines
+below its own:
 
-- The layers above, top to bottom. The controller and the executor never
-  import each other: they run on different machines and meet only through
-  `protocol.py`.
+```text
+cli
+connector
+cheatsheet
+controller | executor | verify
+custody | study
+protocol
+evidence : archive
+files | installation | environment | schemas
+```
+
+Modules joined by `|` never import each other. So the controller and the
+executor never do: they run on different machines and meet only through
+`protocol.py`. The other three contracts:
+
 - The executor and everything it imports use the standard library only. Its
   hook runs on every turn of a fieldworker's session.
 - The archive builder uses the standard library only.
@@ -73,14 +108,16 @@ Import Linter holds four contracts, declared in `pyproject.toml`:
   `environment`.
 
 Every contract has a deliberate violation in `tests/unit/test_architecture.py`.
-Give each new module a layer and each new contract a violation.
+Give each new module a line in the layers and each new contract a violation.
 
 ### Byte-sensitive files
 
 Each reading edition records the digests of `archive/builder.py`,
 `archive/package.py` and `archive/streams.py`, the modules that built it. Keep
 them out of formatting-only changes; the formatter is configured never to touch
-them.
+them. The other files in the formatter's exclusion list in `pyproject.toml`
+were written before the formatter was adopted. Format one, and remove it from
+the list, when changing it.
 
 The executor records the digest of every installed module in each preparation
 and launch receipt. Any change to the package therefore gives an installation
@@ -96,11 +133,21 @@ members and receipts.
 
 ## Tests
 
-`tests/unit` and `tests/integration` use disposable repositories and studies.
-`tests/properties` runs Hypothesis over plan sequences, file preservation and
-deterministic packaging with fixed examples by default; run exploratory cases
-with `BERMAN_HYPOTHESIS_PROFILE=explore` and keep a failure as an ordinary
-regression test.
+Tests use disposable repositories and studies, harness doubles and simulated
+callbacks. Each module below drives the layer it is named for.
+
+| Tests | Cover |
+| --- | --- |
+| `integration/test_cli.py` | The standalone commands as subprocesses in an empty home, including the cheatsheet with no study and with an unreachable guest. |
+| `integration/test_connector.py` | Operator commands end to end against an in-process guest and a harness double. It also parses every command the cheatsheet prints with the real parsers. |
+| `integration/test_controller.py`, `test_custody.py`, `test_portable_recordings.py` | The guest: ledger and lifecycle, recordings and editions, and verifying and materializing copies. |
+| `integration/test_executor.py`, `test_bounded_collection.py` | The executor: preparation, sittings, hooks and collection; document snapshots and associated sessions. |
+| `integration/test_installation.py`, `support/wheel_smoke.py` | The example study through the installed entry points. |
+| `unit/test_architecture.py`, `test_boundaries.py` | The import contracts, each with a violation, and what they cannot express. |
+| `unit/test_guidance.py` | Every link and every command written in the README, AGENTS.md, the example and `docs/*.md` exists. It does not check that a command is documented. |
+| `unit/test_capture_readers.py`, `test_snapshot_retention.py`, `test_reading_editions.py` | Reading copies and hook recognition, capture generations, and edition contents. |
+| `unit/test_schemas.py`, `test_environment.py`, `test_ci.py`, `test_release_artifacts.py` | Record schemas, the dependency check, the mini-CI's own logic, and the contents of `dist/`. |
+| `properties/` | Hypothesis over plan sequences, file preservation and deterministic packaging. Examples are fixed by default; run exploratory cases with `BERMAN_HYPOTHESIS_PROFILE=explore` and keep a failure as an ordinary regression test. |
 
 `tests/fixtures/split-0.26.4/` holds a synthetic recording, edition and
 selection pointer in the `recording/2` and `reading-edition/2` formats, which

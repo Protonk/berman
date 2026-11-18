@@ -97,15 +97,18 @@ def main(argv=None):
 
             print(json.dumps(verify_edition(args.path), indent=2))
             return 0
-        if args.command != 'verify':
+        if args.command == 'verify':
+            result = verify.software()
+            if args.json:
+                print(json.dumps(result, indent=2))
+            else:
+                for name, check in result['checks'].items():
+                    print(f'{name} {"passed" if check["passed"] else "failed"}: {check["detail"]}')
+            return 0 if result['passed'] else 1
+        if args.command in ('remote', 'executor'):
+            # Reached only behind a global option; these two parse their own arguments.
             arguments().error(f'place {args.command} first to pass options to it')
-        result = verify.software()
-        if args.json:
-            print(json.dumps(result, indent=2))
-        else:
-            for name, check in result['checks'].items():
-                print(f'{name} {"passed" if check["passed"] else "failed"}: {check["detail"]}')
-        return 0 if result['passed'] else 1
+        raise RuntimeError(f'berman {args.command} is declared in arguments() and not handled in main()')
     except (
         OSError,
         ValueError,

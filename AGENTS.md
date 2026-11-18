@@ -43,7 +43,7 @@ in docs/development.md.
 - Before reporting a change run all five: `uv run ruff check`,
   `uv run ruff format --check`, `uv run lint-imports`,
   `uv run python -m unittest discover -s tests -t .` and `uv run berman verify`
-  (after `uv sync`). Say which ran and which did not.
+  (after `uv sync --locked`). Say which ran and which did not.
 - Those are synthetic. For the path from the Mac to the guest use the
   mini-CI (docs/ci.md). Keep its assignment and three questions as they are
   unless the integration contract itself is meant to change.

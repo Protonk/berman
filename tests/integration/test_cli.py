@@ -64,6 +64,13 @@ class StandaloneTests(unittest.TestCase):
         self.assertIn('-m berman cheatsheet --config ~/.config/berman/example.json', offered.stdout)
         self.assertNotIn('notes.json', offered.stdout)
 
+        # The operator program takes the settings on either side of the word.
+        for words in (
+            ['remote', '--config', str(folder / 'example.json'), 'cheatsheet'],
+            ['remote', 'cheatsheet', '--config', str(folder / 'example.json')],
+        ):
+            self.assertIn('study example in guest berman-test.invalid', self.berman(*words).stdout.splitlines()[0])
+
         done = self.berman('cheatsheet', '--config', str(folder / 'example.json'), '--json')
         self.assertEqual(0, done.returncode, done.stderr)
         sheet = json.loads(done.stdout)
