@@ -66,8 +66,9 @@ class QualificationTests(unittest.TestCase):
         with patch.object(ci, 'STATE', root):
             _, native = ci.binding(trial, {'executables': {'codex': sys.executable}})
         self.assertEqual(native['policy'], 'workspace-write')
-        review = [native['executable'], '--sandbox', 'workspace-write', '-C', native['project']]
-        status = [native['executable'], 'login', 'status']
+        executable = native['executable']
+        review = [executable, '--model', 'gpt-6-luna', '--sandbox', 'workspace-write', '-C', native['project']]
+        status = [executable, 'login', 'status']
         for status_code in (0, 1):
             with self.subTest(status_code=status_code), patch.object(ci.subprocess, 'run') as run:
                 run.side_effect = [None, subprocess.CompletedProcess(status, status_code)]
@@ -82,6 +83,17 @@ class QualificationTests(unittest.TestCase):
                     self.assertEqual(invocation.kwargs['cwd'], native['project'])
                 self.assertTrue(run.call_args_list[0].kwargs['check'])
                 self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
+
+    def test_only_live_claude_requests_haiku(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        trial = ci.Trial(root)
+        with patch.object(ci, 'STATE', root):
+            trial.update(worker='claude')
+            _, live = ci.binding(trial, {'executables': {'claude': sys.executable}})
+            trial.update(worker='deterministic')
+            _, fixture = ci.binding(trial, {})
+        self.assertEqual(live['model'], 'haiku')
+        self.assertNotIn('model', fixture)
 
     def test_failed_native_launch_and_failed_preservation_have_separate_receipts(self):
         trial = ci.Trial(Path(self.enterContext(tempfile.TemporaryDirectory())).resolve())

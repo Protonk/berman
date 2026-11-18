@@ -17,7 +17,9 @@ A host binding looks like this (supply the actual native paths).
 }
 ```
 
-The connection must match the assignment. Omit `policy` for the harness default. An explicit value names a native Codex sandbox mode or Claude permission mode. Project checks run as native host subprocesses in the checkout. Check arguments are strings. Berman resolves `{python}`, `{project}`, `{packet}` and
+The connection must match the assignment. Omit `policy` for the harness default. An explicit value names a native Codex sandbox mode or Claude permission mode. The optional `model` selects the native CLI's `--model` value for every sitting. Omit it to use the harness's configured model.
+
+Project checks run as native host subprocesses in the checkout. Check arguments are strings. Berman resolves `{python}`, `{project}`, `{packet}` and
 `{executable:NAME}` against the executor environment. Each check has a unique
 identifier, a nonempty argument list and an optional timeout of 1–120 seconds.
 The preparation receipt records their resolved arguments, return codes and output digests, the selected Git state and the observed document hashes. The harness process receives its ordinary environment. A custom home selects `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. An unset home variable stays unset when the binding selects the default home, which matters for Claude's login state.

@@ -165,7 +165,9 @@ def binding(trial, config):
         'project': str(trial.directory / 'checkout'),
     }
     if harness == 'codex':
-        native['policy'] = 'workspace-write'
+        native.update(policy='workspace-write', model='gpt-6-luna')
+    elif live == 'claude':
+        native['model'] = 'haiku'
     return harness, native
 
 
@@ -201,7 +203,8 @@ def codex_preflight(native, spool, directory):
         file=sys.stderr,
         flush=True,
     )
-    subprocess.run([executable, '--sandbox', native['policy'], '-C', project], env=env, cwd=project, check=True)
+    review = [executable, '--model', native['model'], '--sandbox', native['policy'], '-C', project]
+    subprocess.run(review, env=env, cwd=project, check=True)
     status = subprocess.run([executable, 'login', 'status'], env=env, cwd=project, stdin=subprocess.DEVNULL, timeout=30)
     if status.returncode:
         raise ValueError(
@@ -309,7 +312,7 @@ def engage(trial, config):
     op = connector.Operator(settings, remote)
     trial.step('connect to qualification collection')
     remote.call('status', run=None)
-    trial.update(candidate_verified=True)
+    trial.update(candidate_verified=True, requested_model=native.get('model'))
     if harness == 'codex':
         trial.step('review the qualification hooks and confirm Codex sign-in')
         codex_preflight(native, spool, trial.directory)
@@ -321,7 +324,7 @@ def engage(trial, config):
     trial.update(run=run)
     trial.step(f'prepare {run}')
     op.perform(Namespace(action='prepare', run=run))
-    trial.step(f'launch {run}')
+    trial.step(f'launch {run} with {native.get("model", "deterministic worker")}')
     launch_fixture(trial, op, assignment)
     trial.step(f'end, transfer, preserve and publish {run}')
     report = close_fixture(trial, op, run)

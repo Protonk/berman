@@ -144,6 +144,7 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(p, self.prepare())
         self.assertTrue(p['context']['files'][1]['missing'])
         launch = executor.launch(self.spool, self.op, one_turn=one_turn)
+        self.assertNotIn('--model', launch['intent']['argv'])
         self.assertEqual(launch['exit']['returncode'], 0)
         self.assertTrue(launch['session_id'])
         self.assertEqual(launch['intent']['one_turn'], one_turn)
@@ -280,6 +281,8 @@ class ExecutorTests(unittest.TestCase):
         p = self.prepare()
         with self.assertRaisesRegex(ValueError, 'differs'):
             executor.prepare(self.spool, dict(self.a, documents=[]), self.b)
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            executor.prepare(self.spool, self.a, dict(self.b, model='another-model'))
         hooks = files.read(self.home / 'hooks.json')
         hooks['hooks']['Stop'].append(hooks['hooks']['Stop'][0])
         files.write(self.home / 'hooks.json', hooks)
@@ -460,6 +463,7 @@ class ExecutorTests(unittest.TestCase):
         self.assertIn('exec', argv)
 
     def test_interactive_resume_arguments_and_a_first_sitting_that_bound_nothing(self):
+        self.b['model'] = 'fixture-model'
         for harness in ('claude', 'codex'):
             with self.subTest(harness=harness):
                 self.op = str(uuid4())
@@ -483,6 +487,9 @@ class ExecutorTests(unittest.TestCase):
                 self.assertEqual(first, executor.launch(self.spool, self.op))
                 self.assertEqual([first, second], executor.sitting_receipts(self.spool, self.op))
                 third = executor.launch(self.spool, self.op, resume=True, request='three')
+                for sitting in (first, second, third):
+                    args = sitting['intent']['argv']
+                    self.assertEqual(args[args.index('--model') + 1], self.b['model'])
                 argv = third['intent']['argv']
                 self.assertTrue(third['intent']['resumed_native_session'])
                 self.assertNotIn('--print', argv)

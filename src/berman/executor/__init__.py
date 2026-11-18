@@ -41,7 +41,8 @@ def check_assignment(a, binding):
         protocol.identifier(a[key])
     if not re.fullmatch(r'run-[0-9]{3,6}', a['run']) or not re.fullmatch(r'[a-z][a-z0-9-]*', a['connection']):
         raise ValueError('Invalid run or connection')
-    if not isinstance(binding, dict) or set(binding) - {'connection', 'project', 'home', 'executable', 'policy'}:
+    binding_fields = {'connection', 'project', 'home', 'executable', 'policy', 'model'}
+    if not isinstance(binding, dict) or set(binding) - binding_fields:
         raise ValueError('Invalid native binding')
     if a['connection'] != binding.get('connection') or a['harness'] not in capture.EVENTS:
         raise ValueError('Commission differs from the native connection or names an unsupported harness')
@@ -58,6 +59,11 @@ def check_assignment(a, binding):
     ):
         raise ValueError('Invalid project check argv')
     normalized = {'connection': a['connection'], 'policy': binding.get('policy')}
+    if 'model' in binding:
+        model = binding['model']
+        if not isinstance(model, str) or not model.isprintable() or not re.fullmatch(r'[^\s-]\S*', model):
+            raise ValueError('Expected a native model identifier')
+        normalized['model'] = model
     for key in ('project', 'home', 'executable'):
         path = Path(binding[key]).expanduser()
         if not path.is_absolute():
@@ -352,6 +358,7 @@ def launch_once(folder, spool, operation, one_turn, resume, prompt, request):
             raise ValueError('Prepared hook definition changed')
         bound = files.read(folder / 'session-id.json') if (folder / 'session-id.json').exists() else None
         policy = b.get('policy')
+        model = ['--model', b['model']] if 'model' in b else []
         if claude:
             # Claude resumes its reserved session only once a native transcript exists for it.
             native = False
@@ -361,7 +368,7 @@ def launch_once(folder, spool, operation, one_turn, resume, prompt, request):
                     native = True
                 except OSError, ValueError:
                     native = False
-            argv = [b['executable'], '--settings', str(folder / 'hooks.json')]
+            argv = [b['executable'], *model, '--settings', str(folder / 'hooks.json')]
             argv += ['--resume' if native else '--session-id', p['reserved_session_id']]
             if one_turn:
                 argv += ['--print']
@@ -380,7 +387,7 @@ def launch_once(folder, spool, operation, one_turn, resume, prompt, request):
         else:
             verify_hooks(files.read(Path(b['home']) / 'hooks.json'), template)
             native = bool(resume and bound)
-            options = ['-C', b['project'], *(['--sandbox', policy] if policy else []), '--add-dir', str(packet)]
+            options = [*model, '-C', b['project'], *(['--sandbox', policy] if policy else []), '--add-dir', str(packet)]
             if native and one_turn:
                 if not prompt:
                     raise ValueError('A one-turn resumed sitting needs --prompt')

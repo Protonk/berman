@@ -45,7 +45,9 @@ worker as `deterministic`. SSH, native file access by that process, transfer,
 custody, publication and detached verification are exercised.
 
 For access and capture evidence from an installed harness, select it explicitly
-in an ordinary interactive terminal. Each option runs the same assignment.
+in an ordinary interactive terminal. Codex uses `--model gpt-6-luna` for
+hook review and the assignment. Claude uses `--model haiku` for the assignment.
+The CI receipt records the requested model.
 
 ```sh
 uv run berman ci --config scripts/ci/qualification.json --live codex
