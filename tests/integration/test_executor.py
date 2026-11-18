@@ -112,7 +112,13 @@ class ExecutorTests(unittest.TestCase):
             connection='example',
             harness='codex',
             documents=['README.md', 'missing.txt'],
-            checks=[{'id': 'git_version', 'argv': ['{executable:git}', '--version'], 'stdout_contains': 'git version'}],
+            checks=[
+                {
+                    'id': 'git_read',
+                    'argv': ['{executable:git}', 'rev-parse', '--is-inside-work-tree'],
+                    'stdout_contains': 'true',
+                }
+            ],
             instructions='Read README.md. Write an observation in {{notes_directory}}.',
         )
         self.b = dict(
@@ -509,6 +515,12 @@ class ExecutorTests(unittest.TestCase):
         files.write(paths['started'], {'pid': other.pid, 'process_started': executor.process_identity(other.pid)})
         with self.assertRaisesRegex(ValueError, 'is still running without its launcher'):
             executor.launch(self.spool, self.op)
+        with (
+            patch.object(executor, 'process_identity', return_value=None),
+            self.assertRaisesRegex(ValueError, 'may still be running'),
+        ):
+            executor.launch(self.spool, self.op)
+        self.assertFalse(paths['exit'].exists())
         # The same pid with another start time is some other process that reused the number.
         files.write(paths['started'], {'pid': other.pid, 'process_started': 'Thu Jan  1 00:00:00 1970'})
         launch = executor.launch(self.spool, self.op)

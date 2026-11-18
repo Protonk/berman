@@ -284,14 +284,23 @@ def settle(folder, prepared, number):
     if started is None:
         note = 'The launcher ended before a native process was observed to start.'
     else:
-        pid, known = started.get('pid'), started.get('process_started')
-        now = process_identity(pid) if pid else None
-        if now and (known is None or now == known):
-            which = 'is still running' if known else 'may still be running (an older record without its start time)'
-            raise ValueError(
-                f'Sitting {number} has no recorded exit and its process {pid} {which} without its launcher. '
-                'Check that it is the native session, end it, then retry.'
-            )
+        pid, known = started['pid'], started.get('process_started')
+        if type(pid) is not int or pid <= 0:
+            raise ValueError('Invalid PID in native process start receipt')
+        try:
+            os.kill(pid, 0)  # Check existence without sending a signal.
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            raise ValueError(f'Cannot establish whether sitting {number} still owns process {pid}') from exc
+        else:
+            observed = process_identity(pid)
+            if known is None or observed is None or known == observed:
+                which = 'is still running' if known and known == observed else 'may still be running'
+                raise ValueError(
+                    f'Sitting {number} has no recorded exit and its process {pid} {which} without its launcher. '
+                    'Check that it is the native session, end it, then retry.'
+                )
         note = 'The launcher ended before it observed the native process exit.'
     return close_sitting(
         folder, prepared, number, {'returncode': None, 'unobserved': note, 'observed_at_utc': files.now()}
