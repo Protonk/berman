@@ -15,12 +15,12 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   this package. Never modify a study's pinned runtime from here.
 - Some files are identity as well as source: the frozen collector, everything
   an adapter's `implementation` list fingerprints, the archive builder, and the
-  probes and launcher scripts. Do not reformat them or fix style in them; a
+  execution probes. Do not reformat them or fix style in them; a
   byte change there costs renewed qualification or a rebuilt edition
   (docs/development.md#byte-sensitive-files).
 - `jsonschema` is imported only by `berman.schemas` and `rich` only by
   `berman.presentation.terminal`; `packaging` only by `berman.environment`.
-  Hooks, probes, launcher scripts and the archive
+  Hooks, probes and the archive
   builder import the standard library only. The Import Linter contracts in
   pyproject.toml hold this; add a violation case to
   tests/unit/test_architecture.py with any new contract, and give any new

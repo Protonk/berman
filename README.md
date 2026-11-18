@@ -5,8 +5,10 @@ A designated fieldworker does real project work and keeps an account of it.
 Berman prepares the assignment, checks access, captures the designated session
 and preserves its records for analysis.
 
-Ordinary development is separate from fieldwork. Research materials remain
-outside workers' access except for the assigned packet. Engagements begin by
+Ordinary development is separate from fieldwork. The research environment holds
+private plans, history and analysis outside the ordinary project checkout. A
+fieldworker receives an assignment and keeps notes. Recognizing the observation
+apparatus is compatible with continued participation. Engagements begin by
 research decision and end by an explicit declaration; a session callback alone
 never declares the research complete.
 
@@ -19,10 +21,9 @@ You can develop and test Berman using the included synthetic examples.
 Python 3.14 and Git are required. Berman has three runtime dependencies, which
 pip installs with it: `jsonschema` checks the structure of the records it reads
 and writes, `rich` lays out its output on a terminal, and `packaging` interprets
-the dependency requirements checked by software verification. Capture hooks, sandbox
+the dependency requirements checked by software verification. Capture hooks, execution
 probes and the archive builder use the standard library only. Native access and
-capture depend on separately installed Codex or Claude CLIs and their sandbox
-facilities; see [current limits](docs/limitations.md).
+capture depend on separately installed Codex or Claude CLIs; see [current limits](docs/limitations.md).
 
 Install from this checkout in a virtual environment:
 
@@ -77,15 +78,13 @@ manageable:
 
 | Repository | Responsibility |
 | --- | --- |
-| Core software | Workflow, capture, access controls, preservation, reading editions and tests. |
+| Core software | Workflow, native execution checks, capture, preservation, reading editions and tests. |
 | Fieldwork | Assignments, project connections, original recordings, inventories and installation evidence. |
 | Analysis | Questions, excerpts, comparisons and findings, linked to their fieldwork sources. |
 
 New operations record the software version, its source digests and the
 interpreter and dependency versions it ran with. Existing studies
-can retain a pinned runtime until an explicitly qualified upgrade. A separate
-analysis repository must remain within a denied research root or be covered by
-an equivalent qualified access policy.
+can retain a pinned runtime until an explicitly qualified upgrade. Keep analysis in its own research-side repository and transfer only the materials required for the assignment.
 
 The [development guide](docs/development.md) covers tests, packaging and
 compatibility. [Source provenance](docs/provenance/origin.json) records where this code began;

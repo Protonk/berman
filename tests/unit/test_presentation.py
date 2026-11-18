@@ -366,7 +366,7 @@ class TerminalTests(unittest.TestCase):
         # Every command the plain text prints on a line of its own, for this recorded situation.
         printed = plain.cheatsheet(result).splitlines()
         commands = [
-            line.strip().partition('    (launcher')[0] for line in printed if line.strip().startswith('berman --root')
+            line.strip().partition('    (harness')[0] for line in printed if line.strip().startswith('berman --root')
         ]
         self.assertGreater(len(commands), 15)
         narrow = shown('cheatsheet', result, width=40).splitlines()

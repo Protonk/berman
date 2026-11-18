@@ -2,7 +2,7 @@ Orchard (orchard, default connection)
   checkout: /synthetic/orchard
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     nothing outstanding; Choose a recipe with berman new --recipe NAME
@@ -13,7 +13,7 @@ Broken (broken)
   checkout: /synthetic/orchard
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     plan needs attention: Research plan is missing: plans/missing/plan.json
@@ -24,7 +24,7 @@ Exhausted (exhausted)
   checkout: /synthetic/orchard
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     nothing outstanding; Research plan complete-plan is complete
@@ -35,7 +35,7 @@ Open (open)
   checkout: /synthetic/orchard
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     run-011 is an open engagement. When the researcher says it has ended:

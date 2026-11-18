@@ -54,13 +54,13 @@
       "development": [
         {
           "harness": "codex",
-          "launcher": "/synthetic/bin/orchard-dev-codex",
+          "launcher": "/synthetic/bin/codex",
           "available": true,
           "command": "berman --root '/synthetic/study with spaces' dev --harness codex"
         },
         {
           "harness": "claude",
-          "launcher": "/synthetic/bin/orchard-dev-claude",
+          "launcher": "/synthetic/bin/claude",
           "available": false,
           "command": "berman --root '/synthetic/study with spaces' dev --harness claude"
         }
@@ -129,7 +129,7 @@
       "development": [
         {
           "harness": "codex",
-          "launcher": "/synthetic/bin/orchard-dev-codex",
+          "launcher": "/synthetic/bin/codex",
           "available": true,
           "command": "berman --root '/synthetic/study with spaces' dev --harness codex --connection copse"
         }

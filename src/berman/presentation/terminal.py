@@ -234,19 +234,12 @@ def development(screen, conn):
     title = 'Ordinary development'
     screen.line((title, HEADING), ' (no fieldwork record, no research-plan step; works from any directory):', depth=2)
     if not conn['development']:
-        screen.line('no development launcher is configured; use the harness directly from the checkout', depth=4)
+        screen.line('use the native harness directly from the checkout', depth=4)
         return
     for dev in conn['development']:
-        missing = None if dev['available'] else '    (launcher missing or not executable: ' + dev['launcher'] + ')'
+        missing = None if dev['available'] else '    (harness missing or not executable: ' + dev['launcher'] + ')'
         screen.command(dev['command'], 4, missing)
-    screen.line('after --: --model MODEL, --effort LEVEL, one quoted opening prompt', depth=4)
-    screen.line(
-        'Codex automatically rechecks changed installations before starting; '
-        'explicit checks exit without starting development (Claude uses a model session):',
-        depth=4,
-    )
-    for dev in conn['development']:
-        screen.command(dev['command'] + ' --check', 6)
+    screen.line('Pass native harness arguments after --. Use --check to print its version.', depth=4)
 
 
 def fieldwork(screen, conn):

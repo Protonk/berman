@@ -5,7 +5,6 @@ Lock order is connection, then affected runs in numeric order, then the short gl
 run allocation and shared inventory updates; slow work never holds the global lock.
 """
 import os
-import json
 import subprocess
 from copy import copy
 from pathlib import Path
@@ -548,19 +547,11 @@ class Workflow:
             os.chdir(previous_cwd)  # exec success never returns; failures and test doubles do.
 
     def dev(self, harness, args=(), connection=None):
-        """Ordinary development: no packet, no fieldwork assignment, no research-plan step.
-
-        The launcher runs in the connection's configured checkout, whatever the caller's directory;
-        the launcher itself still refuses any other root.
-        """
+        """Start the configured native binary in its checkout with the caller's environment."""
         conn = self.store.connection(connection)
-        launcher = (conn.entry.get('development') or {}).get(harness)
-        if not launcher:
-            raise Decision(f'No ordinary development launcher is configured for {conn.id} with {harness}. '
-                           f'Development needs no fieldwork assignment; configure connections.{conn.id}.development in berman.json')
-        path = self.store.path(launcher)
-        if not os.access(path, os.X_OK):
-            raise Decision(f'Development launcher is unavailable: {path}')
+        path = {'codex': self.store.codex, 'claude': self.store.claude}[harness]
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise Decision(f'Native {harness} binary is unavailable: {path}')
         if not conn.checkout.is_dir():
             raise Decision(f'The configured checkout for {conn.id} is not a directory: {conn.checkout}')
         return {'argv': [str(path), *args], 'cwd': str(conn.checkout), 'connection': conn.id}
@@ -569,16 +560,13 @@ class Workflow:
         """Task-specific preflight, without a reservation, model session, or historical audit."""
         conn = self.store.connection(connection)
         if development:
-            start = self.dev(development, ['--status'], conn.id)
+            start = self.dev(development, ['--version'], conn.id)
             done = subprocess.run(start['argv'], cwd=start['cwd'], capture_output=True, text=True, timeout=60)
             if done.returncode:
                 raise Decision('Development readiness needs a check: ' + (done.stdout or done.stderr).strip())
-            observed = json.loads(done.stdout)
-            if observed.get('ready') is not True:
-                raise Decision('Development launcher did not establish readiness')
             return {'state': 'ready-to-launch', 'connection': conn.id, 'task': 'development',
                     'next': self.command('dev', '--harness', development, '--connection', conn.id),
-                    'scope': 'Current installed launcher receipt and its fingerprints; starts no session.'}
+                    'version': done.stdout.strip(), 'scope': 'The native binary ran --version in the selected checkout.'}
         rows = self.within(self.rows(), conn)
         self.harness.preflight(conn)
         pending = [r['run'] for r in rows if r.get('reading_pending')]
@@ -609,7 +597,7 @@ class Workflow:
         """The commands a person types to start sessions now, per connection; read-only.
 
         Fieldwork commands follow the recorded situation: a ready packet, an open engagement, or the next
-        agreed role. Development commands come from the connection's configured launchers.
+        agreed role. Development commands start the native harness in the selected checkout.
         """
         def command(*words):
             return shlex.join(['berman', '--root', str(self.store.root), *words])
@@ -639,9 +627,7 @@ class Workflow:
                        and r.get('connection', self.store.legacy_connection) == conn.id]
             select = [] if conn.id == self.store.default_connection else ['--connection', conn.id]
             development = []
-            launchers = (conn.entry.get('development') or {}).items()
-            for harness, launcher in sorted(launchers, key=lambda item: (item[0] not in ('codex', 'claude'), item[0] != 'codex', item[0])):
-                path = self.store.path(launcher)
+            for harness, path in [('codex', self.store.codex), ('claude', self.store.claude)]:
                 development.append({'harness': harness, 'launcher': str(path), 'available': os.access(path, os.X_OK),
                                     'command': command('dev', '--harness', harness, *select)})
             several = len(fieldwork['ready']) > 1

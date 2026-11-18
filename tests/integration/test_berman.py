@@ -21,12 +21,12 @@ from berman import snapshots
 from berman.files import read, write
 from berman.capture.collector import MARKER
 from berman.workflow import Workflow
-from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
+from berman.harnesses.codex import COMMON_CHECKS, Codex
 from berman import preserve
 from berman import cli
 
 
-from tests.support.workspace import FixtureHarness, workspace, git_repository
+from tests.support.workspace import codex_environment, FixtureHarness, workspace, git_repository
 
 
 class WorkflowTests(unittest.TestCase):
@@ -181,23 +181,11 @@ class WorkflowTests(unittest.TestCase):
             self.workflow.new()
         self.assertEqual(len(self.store.discover()), 2)
 
-    def test_profile_only_exposes_assigned_packet(self):
-        import tomllib
-        policy = tomllib.loads(profile(self.store, 'run-123', self.project))
-        access = policy['permissions'][f'berman_{self.store.tag}_run_123']['filesystem']
-        self.assertEqual(access[str(self.store.root)], 'deny')
-        self.assertEqual(access[str(self.store.field)], 'deny')
-        self.assertEqual(access[str(self.store.field / 'run-123')], 'write')
-        self.assertEqual(access[str(self.project / '.git')], 'write')
-        self.assertNotIn('model', policy)
-
-    def test_unrelated_existing_profile_is_not_overwritten(self):
-        self.workflow.new()
-        conflict = self.home / (profile_name(self.store, 'run-001') + '.config.toml')
-        conflict.write_text('unrelated profile\n')
-        with self.assertRaisesRegex(Decision, 'Existing artifact differs'):
-            Codex(self.store).ensure('run-001', self.store.folder('run-001') / 'preparation')
-        self.assertEqual(conflict.read_text(), 'unrelated profile\n')
+    def test_codex_uses_native_policy_and_adds_only_the_assigned_packet(self):
+        first = self.workflow.new()
+        argv = Codex(self.store).argv(first['run'])
+        self.assertEqual(argv[:-1], [str(self.store.codex), '-C', str(self.project), '--add-dir', first['packet']])
+        self.assertNotIn('profile', self.store.record(first['run'])['harness'])
 
     def test_read_only_status_leaves_files_unchanged(self):
         self.workflow.new()
@@ -313,7 +301,8 @@ class WorkflowTests(unittest.TestCase):
         conn = sheet['connections'][0]
         self.assertEqual((conn['id'], conn['default'], conn['next_recipe'], conn['checkout']),
                          ('stewart', True, 'work-accounts', str(self.project)))
-        self.assertEqual((conn['development'], conn['commands']['launch'], conn['commands']['finish']), ([], [], []))
+        self.assertEqual([d['harness'] for d in conn['development']], ['codex', 'claude'])
+        self.assertEqual((conn['commands']['launch'], conn['commands']['finish']), ([], []))
         prefix = shlex.join(['berman', '--root', str(self.root)])
         self.assertEqual(conn['commands']['new'], prefix + ' new')
         self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
@@ -339,7 +328,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((code, err), (0, ''))
         self.assertIn(f'{first["run"]} is prepared and unstarted', out)
         self.assertIn('      ' + shlex.join(['berman', '--root', str(self.root), 'launch']) + '\n', out)
-        self.assertIn('no development launcher is configured', out)
+        self.assertIn('dev --harness codex', out)
         code, out, err = self.call_cli('cheatsheet')
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)['connections'][0]['fieldwork']['ready'], [first['run']])
@@ -350,7 +339,7 @@ class WorkflowTests(unittest.TestCase):
         launcher.write_text('#!/bin/sh\npwd\nprintf "%s\\n" "$@"\n')
         launcher.chmod(0o755)
         config = read(self.root / 'berman.json')
-        config['connections']['stewart']['development'] = dict.fromkeys(('codex', 'claude'), str(launcher))
+        config.update(codex=str(launcher), claude=str(launcher))
         write(self.root / 'berman.json', config)
         before = sorted(p.relative_to(self.root) for p in self.root.rglob('*'))
         for harness in ('codex', 'claude'):
@@ -361,14 +350,14 @@ class WorkflowTests(unittest.TestCase):
                                              '--root', str(self.root), 'dev', '--connection', 'stewart', *options],
                                             cwd=self.base, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout.splitlines()[-2:], [str(self.project), '--check'])
+                    self.assertEqual(result.stdout.splitlines()[-2:], [str(self.project), '--check' if '--' in options else '--version'])
         result = subprocess.run([sys.executable, '-I', '-B', '-m', 'berman', '--root', str(self.root),
-                                 'dev', '--harness', 'codex', '--check', '--', '--model', 'chosen',
+                                 'dev', '--harness', 'codex', '--', '--model', 'chosen',
                                  '--effort', 'high', '--', '--check is my prompt'],
                                 cwd=self.base, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines()[-8:],
-                         [str(self.project), '--check', '--model', 'chosen', '--effort', 'high', '--', '--check is my prompt'])
+        self.assertEqual(result.stdout.splitlines()[-7:],
+                         [str(self.project), '--model', 'chosen', '--effort', 'high', '--', '--check is my prompt'])
         self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
 
     def test_post_finalize_supplement_allows_continuation_then_explicit_finish(self):
@@ -505,12 +494,12 @@ class WorkflowTests(unittest.TestCase):
         harness = Codex(self.store)
         control = {'fingerprint': {'version': 1}, 'response': 'valid'}
         def invoke(argv, cwd=None, **kwargs):
-            if 'sandbox' in argv:
+            if '-I' in argv:
                 spec = read(Path(argv[-1]))
                 checks = {key: True for key in COMMON_CHECKS | {c['id'] for c in spec['project_checks']}}
                 if control['response'] == 'missing-check':
                     checks.pop('assigned_notes_writable')
-                observed = {'token': spec['token'], 'checks': checks}
+                observed = {'schema': 'berman.execution-probe/1', 'token': spec['token'], 'checks': checks}
                 if control['response'] == 'wrong-token':
                     observed['token'] = 'another-invocation'
                 if control['response'] == 'not-a-dict':
@@ -518,13 +507,7 @@ class WorkflowTests(unittest.TestCase):
                 if control['response'] == 'timeout':
                     raise subprocess.TimeoutExpired(argv, 90)
                 return subprocess.CompletedProcess(argv, 0, json.dumps(observed), '')
-            paths = ''.join(f'<entry access="deny" escalatable="false"><path>{p}</path></entry>'
-                            for p in (self.store.root, self.store.field))
-            paths += f'<entry access="write"><path>{self.store.field / run}</path></entry>'
-            paths += ''.join(f'<entry access="read"><path>{self.project / p}</path></entry>'
-                             for p in ('.agents', '.codex', '.aws'))
-            paths += f'<entry access="write"><path>{self.project / ".git"}</path></entry>'
-            return subprocess.CompletedProcess(argv, 0, json.dumps({'context': '<environment_context>' + paths}), '')
+            return subprocess.CompletedProcess(argv, 0, json.dumps(codex_environment(self.project, self.store.field / run)), '')
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
              mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: dict(control['fingerprint'])), \
              mock.patch.object(harness, 'invoke', side_effect=invoke) as calls, \

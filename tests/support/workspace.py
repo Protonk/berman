@@ -16,6 +16,15 @@ def direct_hooks():
                       for event, timeout in [('UserPromptSubmit', 3), ('Stop', 10), ('Interrupt', 3), ('SessionEnd', 3)]}}
 
 
+def codex_environment(project, packet):
+    """Native debug prompt-input message shape, including XML path escaping."""
+    from xml.sax.saxutils import escape
+    context = (f'<environment_context><cwd>{escape(str(project))}</cwd><filesystem><workspace_roots>'
+               f'<root>{escape(str(project))}</root><root>{escape(str(packet))}</root></workspace_roots>'
+               '<permission_profile type="managed"/></filesystem></environment_context>')
+    return [{'role': 'user', 'content': [{'type': 'input_text', 'text': context}]}]
+
+
 def workspace(root, base, project, documents=None, catalogue_runs=()):
     """A disposable workspace with the Stewart connection/recipes and its own test sequence."""
     (root / 'runs').mkdir(parents=True)

@@ -4,11 +4,8 @@ Orchard (orchard, default connection)
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
     berman --root '/synthetic/study with spaces' dev --harness codex
-    berman --root '/synthetic/study with spaces' dev --harness claude    (launcher missing or not executable: /synthetic/bin/orchard-dev-claude)
-    after --: --model MODEL, --effort LEVEL, one quoted opening prompt
-    Codex automatically rechecks changed installations before starting; explicit checks exit without starting development (Claude uses a model session):
-      berman --root '/synthetic/study with spaces' dev --harness codex --check
-      berman --root '/synthetic/study with spaces' dev --harness claude --check
+    berman --root '/synthetic/study with spaces' dev --harness claude    (harness missing or not executable: /synthetic/bin/claude)
+    Pass native harness arguments after --. Use --check to print its version.
 
   Fieldwork:
     run-007 needs attention: Invalid operation record: /synthetic/study/operations/run-007/operation.json: does not satisfy berman.operation/1: documents must be an array, not a string ("README.md"); see berman --root '/synthetic/study with spaces' status
@@ -36,7 +33,7 @@ Meadow (meadow)
   checkout: /synthetic/meadow
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     an operation is in progress on this connection; wait for it, then berman --root '/synthetic/study with spaces' status
@@ -48,9 +45,7 @@ Copse (copse)
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
     berman --root '/synthetic/study with spaces' dev --harness codex --connection copse
-    after --: --model MODEL, --effort LEVEL, one quoted opening prompt
-    Codex automatically rechecks changed installations before starting; explicit checks exit without starting development (Claude uses a model session):
-      berman --root '/synthetic/study with spaces' dev --harness codex --connection copse --check
+    Pass native harness arguments after --. Use --check to print its version.
 
   Fieldwork:
     nothing outstanding; Choose a recipe with berman new --recipe NAME
@@ -61,7 +56,7 @@ Heath (heath)
   checkout: /synthetic/heath
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     nothing outstanding; the next agreed role is work-reflections. Prepare it with:
@@ -74,7 +69,7 @@ Fen (fen)
   checkout: /synthetic/fen
 
   Ordinary development (no fieldwork record, no research-plan step; works from any directory):
-    no development launcher is configured; use the harness directly from the checkout
+    use the native harness directly from the checkout
 
   Fieldwork:
     run-009 is an open engagement. When the researcher says it has ended:

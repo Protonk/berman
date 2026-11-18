@@ -5,8 +5,8 @@ explicit support trial. What its receipt fingerprints is tiered by whether a cha
 alter what the fieldworker can see or what gets recorded (researcher's decision, 2 November
 2026, experiments/claude-receipt-tiers-2026-11-02):
 
-- stop: the hook template, the in-session implementation bytes, the launcher helpers readiness
-  imports, the policy keys of every local settings file, and the retained trial evidence;
+- stop: the hook template, the in-session implementation bytes, the native trial and probe
+  implementation, the policy keys of every local settings file, and the retained trial evidence;
 - warn: the Claude CLI binary and version, reported and recorded, with capture registration
   after the first reply as the positive check;
 - context: whole settings files and the project's declared checks, retained and not compared.
@@ -15,7 +15,6 @@ No interactive /hooks review is required: the installed CLI's browser omits flag
 so the trial's native hook events are the execution evidence (docs/limitations.md).
 """
 from berman.installation import PACKAGE, command as module_command
-import inspect
 import os
 from pathlib import Path
 import shlex
@@ -24,17 +23,14 @@ import subprocess
 from berman import files
 from berman.files import Decision, digest_json, read, write
 from berman.capture.claude import EVENTS
-from berman.harnesses.development.launch import allow_read_conflicts, checkout_git_fixture, claude_conflicts, claude_sources
 
 BASIS = 'hooks/verification/berman-claude.json'
-SCHEMA = 'berman.claude-verification/2'
-CONFIGURATION = 'berman.claude-configuration/2'
-# Settings keys that can change the fieldworker's wall or its hooks; the rest of a file is context.
+SCHEMA = 'berman.claude-verification/3'
+CONFIGURATION = 'berman.claude-configuration/3'
+# Settings keys that can change tool access or capture hooks; the rest of a file is context.
 POLICY_KEYS = ('permissions', 'sandbox', 'hooks', 'disableAllHooks', 'allowManagedHooksOnly',
                'strictPluginOnlyCustomization')
 HOOK_DISABLING = ('disableAllHooks', 'allowManagedHooksOnly', 'strictPluginOnlyCustomization')
-# Launcher functions readiness relies on, fingerprinted by their source rather than the whole file.
-HELPERS = (claude_sources, claude_conflicts, allow_read_conflicts, checkout_git_fixture)
 TIERS = {'stop': 'hook template, in-session implementation bytes, readiness helpers, settings policy keys '
                  '(' + ', '.join(POLICY_KEYS) + ') and retained trial evidence',
          'warn': 'Claude CLI binary path, version, size and modification time',
@@ -44,9 +40,8 @@ LIMITATION = ("The installed CLI's /hooks browser omits flag-supplied hooks, so 
 
 
 def definition():
-    return {'schema': 'berman.claude-hook-template/1', 'events': list(EVENTS),
+    return {'schema': 'berman.claude-hook-template/2', 'events': list(EVENTS),
             'entry': 'capture/claude_router.py',
-            'access_tools': ['Read', 'Edit', 'Write', 'NotebookEdit', 'Grep', 'Glob'],
             'installation': 'Per-launch --settings; run and workspace arguments bind each hook.',
             'capture': 'Only the reserved parent session; no stop continuation or completion inference.'}
 
@@ -56,26 +51,27 @@ def settings_path(store, run):
 
 
 def settings(store, record):
-    root, field, packet = str(store.root), str(store.field), record['packet']
+    root = str(store.root)
     command = module_command(python=store.runtime_python, module='berman.capture.claude_router')
     suffix = ['--root', root, '--run', record['run']]
     hooks = {event: [{'hooks': [{'type': 'command', 'command': shlex.join(command + ['capture'] + suffix),
                                'timeout': 20}]}] for event in EVENTS}
-    hooks['PreToolUse'] = [{'matcher': 'Read|Edit|Write|NotebookEdit|Grep|Glob', 'hooks': [
-        {'type': 'command', 'command': shlex.join(command + ['access'] + suffix), 'timeout': 5,
-         'onFailure': 'block'}]}]
-    return {'permissions': {'deny': [f'Read(/{root}/**)', f'Edit(/{root}/**)'],
-                            'additionalDirectories': [packet]},
-            'sandbox': {'enabled': True, 'failIfUnavailable': True, 'allowUnsandboxedCommands': False,
-                        'filesystem': {'denyRead': [root, field], 'allowRead': [packet],
-                                       'allowWrite': [packet, str(Path(record['project']) / '.git')]}},
-            'hooks': hooks}
+    return {'hooks': hooks}
+
+
+def claude_sources(home, project):
+    managed = Path('/Library/Application Support/ClaudeCode')
+    sources = [home / 'settings.json', home / 'settings.local.json', managed / 'managed-settings.json',
+               *sorted((managed / 'managed-settings.d').glob('*.json'))]
+    for directory in (project, *project.parents):
+        sources.extend(directory / '.claude' / name for name in ('settings.json', 'settings.local.json'))
+    return list(dict.fromkeys(sources))
 
 
 def helpers():
-    """Source digests of the launcher functions readiness imports; the rest of that file is not fingerprinted."""
-    return {f'harnesses/development/launch.py:{f.__name__}': files.digest(inspect.getsource(f).encode())
-            for f in HELPERS}
+    """Qualification also depends on the exact probe run inside the Claude session."""
+    return {name: files.digest((PACKAGE / name).read_bytes())
+            for name in ('harnesses/probe.py', 'harnesses/codex.py', 'harnesses/claude_support.py')}
 
 
 def policy_digest(value):
@@ -87,12 +83,10 @@ def policy_digest(value):
 def configuration(store, project):
     # Exclude our generated per-run file: its exact bytes are checked separately; this
     # fingerprint is reusable only for the same project, policy and ambient settings.
-    config = {'repo': str(project), 'denied': [str(store.root), str(store.field)],
-              'claude_settings_file': str(store.root / '.claude-fieldwork/not-an-installed-setting.json')}
-    sources = [path for path in claude_sources(config) if str(path) != config['claude_settings_file']]
+    sources = claude_sources(store.claude_home, Path(project))
     if store.claude_home != Path(os.environ.get('CLAUDE_CONFIG_DIR', str(Path.home() / '.claude'))).expanduser().resolve():
         raise Decision('CLAUDE_CONFIG_DIR differs from berman.json; launch from the recorded Claude installation')
-    issues = claude_conflicts(config)
+    issues = []
     present = {path: read(path) for path in sources if path.is_file()}
     for path, value in present.items():
         if any(value.get(key) for key in HOOK_DISABLING):
@@ -135,7 +129,7 @@ def harness_warnings(current, qualified):
     return [f'Claude CLI changed since qualification: {qualified.get("version")} at {qualified.get("binary")} is now '
             f'{current.get("version")} at {current.get("binary")}. Preparation proceeds on the qualified policy; '
             'capture registration after the first reply is the positive check, and only a new support trial '
-            're-establishes the denied-read control on this CLI.']
+            'qualifies tool use on this CLI.']
 
 
 def readiness(store, project=None):
@@ -144,10 +138,10 @@ def readiness(store, project=None):
     if not path.is_file():
         raise Decision('Claude fieldwork has no qualified per-launch hooks; prepare and qualify a berman-claude support trial')
     basis = read(path)
-    if basis.get('adapter') != 'berman-claude' or basis.get('schema') not in (SCHEMA, 'berman.claude-verification/1'):
+    if basis.get('adapter') != 'berman-claude' or basis.get('schema') not in (SCHEMA, 'berman.claude-verification/1', 'berman.claude-verification/2'):
         raise Decision('Invalid Claude fieldwork verification basis')
     if basis.get('schema') != SCHEMA:
-        raise Decision('Claude qualification predates tiered receipts; qualify the current installation in a new support trial')
+        raise Decision('Claude qualification predates capture-only launch settings; qualify the current installation in a new support trial')
     if basis.get('implementation_sha256') != adapters.implementation('berman-claude'):
         raise Decision('Claude in-session implementation changed; qualify the current bytes in a new support trial')
     if basis.get('helpers_sha256') != helpers():
@@ -177,8 +171,10 @@ class Claude:
     def preflight(self, connection):
         return readiness(self.store, connection.checkout)
 
-    def install_profile(self, run, project, evidence_root):
+    def prepare_settings(self, run, evidence_root):
         record = self.store.record(run)
+        if record['harness'].get('profile'):
+            raise Decision('This preparation selected historical launch settings. Use its pinned installation.')
         expected = files.json_bytes(settings(self.store, record))
         files.keep(settings_path(self.store, run), expected)
         files.keep(evidence_root / 'claude-settings.json', expected)
@@ -186,14 +182,14 @@ class Claude:
     def ensure(self, run, evidence_root):
         record = self.store.record(run)
         self.store.check_installation(record)
-        self.install_profile(run, Path(record['project']), evidence_root)
+        self.prepare_settings(run, evidence_root)
         qualified = readiness(self.store, record['project'])
         prior = evidence_root / 'readiness.json'
         result = {'passed': True, 'harness': 'claude', 'qualification': qualified,
                   'warnings': qualified['warnings'],
                   'settings_sha256': files.digest(settings_path(self.store, run).read_bytes()),
                   'configuration': configuration(self.store, record['project']),
-                  'scope': 'Same qualified policy and project; exact generated packet exception checked. No model request.'}
+                  'scope': 'Same qualified policy and project; exact per-launch hooks checked. No model request.'}
         reused = prior.exists() and read(prior) == result
         write(prior, result)
         return dict(result, reused=reused)
@@ -205,7 +201,7 @@ class Claude:
         if actual != files.json_bytes(settings(self.store, record)):
             raise Decision('Claude launch settings differ from the reserved policy')
         argv = [str(self.store.claude), '--settings', str(settings_path(self.store, run)),
-                '--session-id', record['harness']['session_id'], '--name', f'Berman fieldwork {run}']
+                '--add-dir', record['packet'], '--session-id', record['harness']['session_id'], '--name', f'Berman fieldwork {run}']
         if record['harness'].get('model'):
             argv += ['--model', record['harness']['model']]
         if prompt:

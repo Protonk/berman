@@ -36,8 +36,8 @@ ADAPTERS = {
         'layout': 'notes', 'entry': 'capture/claude_router.py',
         'definition': 'harnesses/claude.py', 'basis': 'hooks/verification/berman-claude.json',
         # The bytes that run in a fieldworker's session plus the module that generates its settings.
-        # Readiness fingerprints the launcher helpers it imports by function source (berman_claude.helpers).
-        'implementation': PACKAGE_IMPLEMENTATION + ('harnesses/__init__.py', 'harnesses/development/__init__.py',
+        # Readiness also fingerprints the code used to qualify native tool execution.
+        'implementation': PACKAGE_IMPLEMENTATION + ('harnesses/__init__.py',
                            'harnesses/claude.py', 'capture/claude_router.py', 'capture/router.py',
                            'capture/claude.py', 'capture/runtime.py',
                            'capture/collector.py', '_legacy/api.py',
@@ -93,6 +93,9 @@ def capture_entry(hook):
         argv = shlex.split(hook.get('command', ''))
     except ValueError:
         return None
+    if any(argv[i:i + 2] == ['-m', 'berman.executor'] and 'hook' in argv[i + 2:]
+           for i in range(len(argv) - 1)):
+        return 'berman.executor'
     if any(argv[i:i + 2] == ['-m', 'berman.capture.router'] for i in range(len(argv) - 1)):
         return 'berman.capture.router'
     for name in ('capture_session.py', 'berman_collector.py', 'berman_capture_router.py'):
@@ -220,6 +223,10 @@ def install(store, name):
         path = store.home / 'hooks.json'
         previous = files.regular(path).read_bytes() if path.exists() else None
         current = json.loads(previous) if previous else {'hooks': {}}
+        if any(capture_entry(hook) == 'berman.executor' for groups in current.get('hooks', {}).values()
+               for group in groups for hook in group.get('hooks', [])):
+            raise Decision('The host executor owns capture in this Codex home. Its registrations live in its spool; '
+                           'use a separate home for a local-workspace installation.')
         if installed_groups(current, template):
             try:
                 exclusive_definition(current, template)

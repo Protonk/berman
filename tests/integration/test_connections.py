@@ -19,8 +19,8 @@ from berman import snapshots, files
 from berman.files import read, write
 from berman.capture.collector import MARKER
 from berman.workflow import Workflow
-from berman.harnesses.codex import COMMON_CHECKS, Codex, profile, profile_name
-from tests.support.workspace import FixtureHarness, git_repository, workspace, direct_hooks
+from berman.harnesses.codex import COMMON_CHECKS, Codex
+from tests.support.workspace import codex_environment, FixtureHarness, git_repository, workspace, direct_hooks
 from berman.capture import adapters
 from berman.capture import collector as capture_collector
 from berman import recovery as fieldwork
@@ -288,7 +288,7 @@ class SecondConnectionTests(Base):
         record = self.store.record(one['run'])
         self.assertEqual(record['project'], str(self.base / 'orchard'))
         self.assertEqual(Codex(self.store).argv(one['run'])[:5],
-                         [str(self.store.codex), '-p', profile_name(self.store, one['run']), '-C', str(self.base / 'orchard')])
+                         [str(self.store.codex), '-C', str(self.base / 'orchard'), '--add-dir', one['packet']])
 
     def test_blocked_operation_is_visible_without_blocking_another_connection(self):
         one = self.workflow.new(connection='orchard')
@@ -311,17 +311,16 @@ class SecondConnectionTests(Base):
         self.reload()
         before = sorted(p.relative_to(self.root) for p in self.root.rglob('*'))
         self.assertEqual(self.workflow.dev('codex', ['--model', 'fixture']),
-                         {'argv': [str(launcher), '--model', 'fixture'], 'connection': 'stewart',
+                         {'argv': [str(self.store.codex), '--model', 'fixture'], 'connection': 'stewart',
                           'cwd': str(self.store.connection('stewart').checkout)})
         sheet = self.workflow.cheatsheet()['connections'][0]
-        self.assertEqual([d['harness'] for d in sheet['development']], ['codex'])
+        self.assertEqual([d['harness'] for d in sheet['development']], ['codex', 'claude'])
         self.assertEqual(sheet['development'][0]['available'], True)
         self.assertEqual(shlex.split(sheet['development'][0]['command']),
                          ['berman', '--root', str(self.root), 'dev', '--harness', 'codex'])
         self.assertEqual(sorted(p.relative_to(self.root) for p in self.root.rglob('*')), before)
         self.assertEqual(self.workflow.status()['connections']['stewart']['next_recipe'], 'work-accounts')
-        with self.assertRaisesRegex(Decision, 'No ordinary development launcher is configured for orchard'):
-            self.workflow.dev('codex', connection='orchard')
+        self.assertEqual(self.workflow.dev('codex', connection='orchard')['cwd'], str(self.base / 'orchard'))
 
 
 class ResearchPlanRelationshipTests(Base):
@@ -361,7 +360,7 @@ class AccessTests(Base):
         config = read(self.root / 'berman.json')
         config['connections']['orchard']['packet_root'] = str(self.base / 'orchard-packets')
         write(self.root / 'berman.json', config)
-        with self.assertRaisesRegex(Decision, 'shared denied packet root'):
+        with self.assertRaisesRegex(Decision, 'shared packet root'):
             Store(self.root)
         del config['connections']['orchard']['packet_root']
         write(self.root / 'berman.json', config)
@@ -381,27 +380,24 @@ class AccessTests(Base):
         with self.assertRaisesRegex(Decision, 'outside the shared packet root'):
             self.workflow.new(connection='orchard')
 
-    def test_profile_and_probe_cover_research_roots_unassigned_packet_and_assignment(self):
-        import tomllib
+    def test_project_checks_cannot_replace_another_observation(self):
+        from berman.harnesses.codex import project_checks
+        for ids in [('launch_policy_observed',), ('file_packet_read',), ('project_tool', 'project_tool')]:
+            with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, 'Invalid project check identity'):
+                project_checks([{'id': ident, 'argv': ['true']} for ident in ids], {})
+
+    def test_probe_runs_in_selected_checkout_with_only_assigned_packet(self):
         one = self.workflow.new(connection='orchard')
         project = self.base / 'orchard'
-        access = tomllib.loads(profile(self.store, one['run'], project))['permissions'][
-            f'berman_{self.store.tag}_{one["run"].replace("-", "_")}']['filesystem']
-        self.assertEqual({k: v for k, v in access.items() if v != 'read'},
-                         {str(self.root): 'deny', str(self.store.field): 'deny', str(self.store.field / one['run']): 'write', str(project / '.git'): 'write'})
         harness = Codex(self.store)
         seen = {}
         def invoke(argv, cwd=None, **kwargs):
-            if 'sandbox' in argv:
+            if '-I' in argv:
                 spec = read(Path(argv[-1]))
                 seen['spec'], seen['cwd'] = spec, cwd
                 checks = {k: True for k in COMMON_CHECKS | {c['id'] for c in spec['project_checks']}}
-                return subprocess.CompletedProcess(argv, 0, json.dumps({'token': spec['token'], 'checks': checks}), '')
-            paths = ''.join(f'<entry access="deny" escalatable="false"><path>{p}</path></entry>' for p in (self.root, self.store.field))
-            paths += f'<entry access="write"><path>{self.store.field / one["run"]}</path></entry>'
-            paths += ''.join(f'<entry access="read"><path>{project / p}</path></entry>' for p in ('.agents', '.codex', '.aws'))
-            paths += f'<entry access="write"><path>{project / ".git"}</path></entry>'
-            return subprocess.CompletedProcess(argv, 0, json.dumps({'context': '<environment_context>' + paths}), '')
+                return subprocess.CompletedProcess(argv, 0, json.dumps({'schema': 'berman.execution-probe/1', 'token': spec['token'], 'checks': checks}), '')
+            return subprocess.CompletedProcess(argv, 0, json.dumps(codex_environment(project, one["packet"])), '')
         folder = self.store.folder(one['run']) / 'preparation'
         with mock.patch.object(harness, 'hooks', return_value={'fixture': True}), \
              mock.patch.object(harness, 'fingerprint', side_effect=lambda *_: {'fixed': True}), \
@@ -410,8 +406,8 @@ class AccessTests(Base):
             self.assertTrue(harness.ensure(one['run'], folder)['passed'])
         spec = seen['spec']
         self.assertEqual(seen['cwd'], project)
-        self.assertEqual(set(spec['canaries']), {'berman', 'unassigned_packet'})
-        self.assertEqual(Path(spec['canaries']['unassigned_packet']).parent.parent, self.store.field)
+        self.assertNotIn('canaries', spec)
+        self.assertEqual(spec['packet'], one['packet'])
         self.assertEqual(spec['project_checks'], [])
         self.assertEqual(spec['reads'], ['GUIDE.md', 'notes/plan.txt'])
         # Stewart's declared project checks resolve to explicit argument lists.
@@ -503,6 +499,21 @@ class CollectorOwnershipTests(Base):
         unrouted = capture_collector.Collector(self.base / 'unrouted', self.home, self.root)
         unrouted.hook(dict(event, hook_event_name='Stop'))
         self.assertEqual(read(snapshots.resolve(Path(one['packet']) / 'session') / 'capture.json')['event'], 'Stop')
+
+    def test_local_install_cannot_replace_or_run_alongside_the_executor_router(self):
+        template = adapters.definition(self.store, 'berman-codex')
+        write(self.root / 'hooks/berman-capture.hooks.json', template)
+        installed = adapters.definition(self.store, 'berman-codex')
+        installed['hooks']['Stop'].append({'hooks': [{'type': 'command',
+            'command': '/path/python -I -B -m berman.executor --spool "/example spool" hook --home /example'}]})
+        path = self.home / 'hooks.json'
+        write(path, installed)
+        before = path.read_bytes()
+        with self.assertRaisesRegex(Decision, 'not exclusive'):
+            adapters.installed(self.store, 'berman-codex')
+        with self.assertRaisesRegex(Decision, 'host executor owns capture'):
+            adapters.install(self.store, 'berman-codex')
+        self.assertEqual(path.read_bytes(), before)
 
     def test_installation_waits_for_closed_captures_and_trust_needs_a_recorded_review(self):
         (self.root / 'hooks').mkdir(exist_ok=True)

@@ -117,7 +117,7 @@
           ]
         },
         "development": {
-          "description": "Development launchers by harness; each is read as a path when that launcher is used.",
+          "description": "Historical development wrapper paths. Current native development uses the configured harness executable.",
           "type": [
             "object",
             "null"

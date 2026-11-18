@@ -1,7 +1,7 @@
 """Maintenance verification: each check reports one fact, and the result names what remains unestablished.
 
 Passing tests establish neither hook trust nor native capture, recorded trust is not native capture,
-and none of them is native sandbox access. By default verify runs non-interactive, read-only
+and none of them is a native execution check. By default verify runs non-interactive, read-only
 checks; recordings and archive checks perform full reads and can be slow. For the actual-CLI
 /hooks review with record-trust and a native support trial, it reports their recorded results
 and never performs them.
@@ -58,12 +58,11 @@ MEANING = {
     'recordings': 'Preserved originals match their inventory; capture, migration and ending evidence agree; '
                   'recording ZIPs exist and match their recorded hashes and exact inventoried contents. '
                   'Missing historical authority is unestablished, never invented. No files are changed.',
-    'native-access': 'The native Codex sandbox gives each configured Codex connection its intended access, checked '
+    'native-access': 'The host can use each configured Codex checkout and packet, and Codex renders their launch policy, checked '
                      'with diagnostic instructions in disposable roots; no study assignment is supplied.',
 }
 NOT_COVERED = [
     'Developer regression tests (run separately from the source checkout).',
-    "The installed development launchers' --check (docs/development-launchers.md).",
     'The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their '
     'recorded result. Claude needs no review (docs/limitations.md).',
     'A native support trial; verify reports only a recorded successful capture.',
@@ -91,15 +90,15 @@ TRIAL_NEXT = ("A native support trial for {name}, with the researcher's approval
 FIXTURE = 'native-check-fixture'
 DIAGNOSTIC_RECIPE = 'native-access-diagnostic'
 ACCESS_ONLY = 'Native access only; hook trust and native capture are reported separately by berman verify.'
-ACCESS_EVIDENCE = ('readiness.json', 'profile.config.toml', 'checks', 'ASSIGNMENT.md', 'INSTRUCTIONS.md')
+ACCESS_EVIDENCE = ('readiness.json', 'checks', 'ASSIGNMENT.md', 'INSTRUCTIONS.md')
 ACCESS_SCOPE = ('Disposable Berman, packet and Codex configuration roots (only config.toml and hooks.json copied); real '
                 'Codex checkouts with their selected documents and declared project checks; each connection prepared '
                 'by direct assignment of diagnostic instructions, without study plans or recipes. No model request, '
                 'session registration or real engagement.')
 ACCESS_NOT_ESTABLISHED = [
     'Hook trust and native capture; berman verify reports them separately as hook-trust:* and native-capture:*.',
-    'Access with the real packet root, Codex home and profiles; every real berman new and launch rechecks it.',
-    'Delivery of a study assignment or its instructions; diagnostic instructions exercise the same access policy.',
+    'Access with the real packet root and Codex home; every real berman new and launch rechecks it.',
+    'Delivery of a study assignment or its instructions; diagnostic instructions exercise the same checkout and packet.',
     'A model request, Codex folder trust or a live session.',
 ]
 
@@ -334,7 +333,7 @@ def disposable_workspace(store, base, names, synthetic):
 
     No verification evidence, run, catalogue entry, credential, session or registry is copied, so
     nothing here can stand for the real workspace's history or its capture readiness. Study plans
-    and recipes are neither loaded nor copied; diagnostic instructions exercise the real access policy.
+    and recipes are neither loaded nor copied; diagnostic instructions exercise the native checkout and packet.
     """
     root, home = base / 'berman', base / 'codex'
     reserved = [Path('recipes') / DIAGNOSTIC_RECIPE]
@@ -423,9 +422,9 @@ def native_access(store, folder, connections=None, synthetic=True, harness=None)
         raise Decision(f'A configured connection is named {FIXTURE}; check it with synthetic=False')
     claude = [n for n in names if store.connections[n].capture == 'berman-claude']
     if connections is not None and claude:
-        raise Decision('Claude native access uses an explicit bounded berman-claude support trial, not the Codex sandbox probe')
+        raise Decision('Claude native access uses an explicit bounded berman-claude support trial, not the Codex checkout probe')
     names = [n for n in names if n not in claude]
-    report = {'schema': 'berman.native-access-check/1', 'checked_at_utc': files.now(), 'scope': ACCESS_SCOPE,
+    report = {'schema': 'berman.native-access-check/2', 'checked_at_utc': files.now(), 'scope': ACCESS_SCOPE,
               'codex': str(store.codex), 'codex_version': None, 'python': str(store.python),
               'harness_sha256': {rel: files.digest((PACKAGE / rel).read_bytes())
                                  for rel in ('harnesses/codex.py', 'harnesses/probe.py')},
@@ -638,5 +637,5 @@ def software(skip=(), code=PACKAGE):
             'not_established': [], 'not_covered': [
                 'Developer regression tests (run separately from the source checkout).',
                 'Workspace records, preserved evidence and reading editions.',
-                'Installed launchers, hook trust, native capture and native access.'],
+                'Native harness execution, hook trust and native capture.'],
             'record': None, 'meaning': 'Software checks only. No workspace or native installation was verified.'}

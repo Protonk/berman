@@ -1,9 +1,4 @@
-"""Codex fieldwork access, reusable native checks, and launch verification.
-
-Common access checks cover Berman, the shared packet root, an unassigned packet location and the
-assigned-packet exception. A connection's own project checks are declared as data in its
-description and run inside the same sandbox invocation.
-"""
+"""Codex fieldwork launch and native checkout diagnostics."""
 import json
 import os
 from pathlib import Path
@@ -12,65 +7,47 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+import xml.etree.ElementTree as ET
 
 from berman.capture import adapters
 from berman import files
 from berman.files import Decision, keep, read, write
 from berman.installation import PACKAGE
-from berman.harnesses.development.launch import checkout_git_fixture
 
-PROTECTED = ('.agents', '.codex', '.aws')
-CANARIES = ('berman', 'unassigned_packet')
 COMMON_CHECKS = {'project_read', 'workspace_write', 'cat_positive_control', 'rg_positive_control', 'git_read',
-                 'git_disposable_commit', 'assigned_instructions_readable', 'assigned_notes_writable',
-                 *(f'{kind}_{label}' for label in CANARIES for kind in (
-                     'python_read_denied', 'cat_read_denied', 'recursive_search_denied', 'symlink_read_denied'))}
+                 'git_disposable_commit', 'assigned_instructions_readable', 'assigned_notes_writable'}
 PLACEHOLDER = re.compile(r'\{(python|project|fixture|packet|executable:[a-z][a-z0-9-]*)\}')
 
 
-def profile_name(store, run):
-    """Distinct per workspace and run, so another workspace or connection cannot replace it."""
-    return f'berman-{store.tag}-{run}'
-
-
-def profile(store, run, project):
-    permission = f'berman_{store.tag}_{run.replace("-", "_")}'
-    access = {str(store.root): 'deny', str(store.field): 'deny', str(store.field / run): 'write'}
-    access[str(project / '.git')] = 'write'
-    access.update({str(project / name): 'read' for name in PROTECTED})
-    return '\n'.join([
-        '# Berman fieldwork profile; selected only by its explicit profile name.',
-        f'default_permissions = "{permission}"', '', '[tui]',
-        'terminal_title = ["app-name", "thread", "project"]', '',
-        f'[permissions.{permission}]', 'extends = ":workspace"', '',
-        f'[permissions.{permission}.filesystem]',
-        *(f'{json.dumps(path)} = {json.dumps(mode)}' for path, mode in access.items()), ''])
+def launch_options(record):
+    if record['harness'].get('profile'):
+        raise Decision('This preparation selected a historical Berman profile. Use its pinned installation.')
+    return ['-C', record['project'], '--add-dir', record['packet']]
 
 
 def permission_context(output):
-    selected = []
-
-    def visit(value):
-        if isinstance(value, str):
-            if '<environment_context>' in value or '<permissions instructions>' in value:
-                selected.append(value)
-        elif isinstance(value, dict):
-            for item in value.values():
-                visit(item)
-        elif isinstance(value, list):
-            for item in value:
-                visit(item)
-    visit(json.loads(output))
-    return '\n'.join(selected)
+    """Take the harness's environment message, which includes its rendered permission profile."""
+    messages = json.loads(output)
+    if not isinstance(messages, list):
+        raise ValueError('Codex prompt input must be a message list')
+    contexts = [block['text'] for message in messages if isinstance(message, dict) and message.get('role') == 'user'
+                for block in message.get('content', []) if isinstance(block, dict)
+                and isinstance(block.get('text'), str) and block['text'].startswith('<environment_context>')]
+    if len(contexts) != 1:
+        raise ValueError('Codex did not report one unambiguous environment context')
+    return contexts[0]
 
 
 def project_checks(declared, values):
     """Resolve a connection's declared checks into explicit argument lists."""
     resolved = []
+    reserved = COMMON_CHECKS | {'shell_exit_zero', 'launch_policy_observed', 'configuration_unchanged',
+                                'file_project_read', 'file_packet_read', 'exact_execution_probe_observed'}
     for check in declared:
         ident = check['id']
-        if ident in COMMON_CHECKS or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', ident):
+        if ident in reserved or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', ident):
             raise ValueError(f'Invalid project check identity: {ident}')
+        reserved.add(ident)
 
         def substitute(match):
             key = match.group(1)
@@ -131,10 +108,8 @@ class Codex:
         store = self.store
         version = self.invoke([str(self.binary), '--version'], project, check=True, timeout=20).stdout.strip()
         paths = [store.home / 'config.toml', store.home / 'hooks.json',
-                 store.home / (profile_name(store, run) + '.config.toml'),
                  Path('/etc/codex/config.toml'), Path('/etc/codex/requirements.toml'),
                  PACKAGE / 'harnesses/codex.py', PACKAGE / 'harnesses/probe.py',
-                 PACKAGE / 'harnesses/development/launch.py',
                  *(PACKAGE / rel for rel in adapters.ADAPTERS[adapter]['implementation'])]
         paths += [p / '.codex/config.toml' for p in (project, *project.parents)]
         paths += [rule for folder in {p.parent / 'rules' for p in paths if p.suffix == '.toml'}
@@ -146,21 +121,11 @@ class Codex:
                 'project_checks': checks,
                 'files': {str(p): files.digest(p.read_bytes()) if p.is_file() else None for p in paths}}
 
-    def install_profile(self, run, project, evidence_root):
-        config = profile(self.store, run, project).encode()
-        # A bounded, resource-specific lock for the shared harness home; no check runs under it.
-        with self.store.lock('installation', 'codex-profiles', wait=10):
-            keep(self.store.home / (profile_name(self.store, run) + '.config.toml'), config)
-        keep(evidence_root / 'profile.config.toml', config)
-
     def ensure(self, run, evidence_root):
-        record, project, adapter, checks = self.context(run)
-        self.install_profile(run, project, evidence_root)
-        return self.access_check(run, evidence_root, self.hooks(adapter))
-
-    def access_check(self, run, evidence_root, hooks=None):
         store = self.store
         record, project, adapter, checks = self.context(run)
+        base = [str(self.binary), *launch_options(record)]
+        hooks = self.hooks(adapter)
         packet = store.field / run
         if record.get('packet', str(packet)) != str(packet) or packet.parent != store.field or packet.is_symlink():
             raise Decision(f'{run}: the assigned packet must be directly within the shared packet root {store.field}')
@@ -176,28 +141,22 @@ class Codex:
         evidence.mkdir(parents=True)
         token = 'berman-probe-' + uuid.uuid4().hex
         result = {'passed': False, 'fingerprint': before, 'hooks': hooks, 'checked_at_utc': files.now(),
-                  'scope': 'Native sandbox and rendered permission context; no model request or fieldwork registration.',
+                  'scope': 'Host checkout, tools and packet, with Codex rendering the launch policy. Live tool use requires a session.',
                   'evidence': str(evidence)}
         try:
-            with tempfile.TemporaryDirectory(prefix='.berman-check-', dir=project) as temporary, \
-                 tempfile.TemporaryDirectory(prefix='.berman-unassigned-', dir=store.field) as other, \
-                 checkout_git_fixture(project, Path(temporary)):
+            with tempfile.TemporaryDirectory(prefix='.berman-check-', dir=project) as temporary:
                 fixture = Path(temporary)
-                canaries = {'berman': evidence / 'denied-marker.txt', 'unassigned_packet': Path(other) / 'denied-marker.txt'}
-                for path in canaries.values():
-                    path.write_text(token + '\n')
                 shutil.copyfile(PACKAGE / 'harnesses/probe.py', fixture / 'probe.py')
                 rg = shutil.which('rg')
                 if not rg:
                     raise Decision('The native check needs the existing rg executable')
                 values = {'python': str(self.python), 'project': str(project), 'fixture': str(fixture), 'packet': str(packet)}
                 payload = {'repo': str(project), 'packet': str(packet), 'fixture': str(fixture), 'token': token,
-                           'canaries': {k: str(v) for k, v in canaries.items()}, 'rg': rg,
+                           'rg': rg,
                            'reads': [d for d in record['documents'] if (project / d).is_file()],
                            'project_checks': project_checks(checks, values)}
                 write(fixture / 'spec.json', payload)
-                base = [str(self.binary), '-p', profile_name(store, run), '-C', str(project)]
-                argv = [*base, 'sandbox', '--', str(self.python), '-I', '-B', str(fixture / 'probe.py'), str(fixture / 'spec.json')]
+                argv = [str(self.python), '-I', '-B', str(fixture / 'probe.py'), str(fixture / 'spec.json')]
                 write(evidence / 'invocation.json', argv)
                 write(evidence / 'spec.json', payload)
                 p = self.invoke(argv, project, timeout=max(90, 30 + sum(c['timeout'] for c in payload['project_checks'])))
@@ -206,24 +165,26 @@ class Codex:
                 observed = json.loads(p.stdout.splitlines()[-1])
                 expected = COMMON_CHECKS | {c['id'] for c in payload['project_checks']}
                 if (not isinstance(observed, dict) or not isinstance(observed.get('checks'), dict)
-                        or observed.get('token') != token or set(observed['checks']) != expected
+                        or observed.get('schema') != 'berman.execution-probe/1' or observed.get('token') != token or set(observed['checks']) != expected
                         or any(type(v) is not bool for v in observed['checks'].values())):
                     raise Decision('Native probe result is incomplete or belongs to another invocation')
                 checks_seen = observed['checks']
                 checks_seen['shell_exit_zero'] = p.returncode == 0
-                p = self.invoke([*base, 'debug', 'prompt-input'], project, timeout=60)
+                policy_argv = [*base, 'debug', 'prompt-input']
+                write(evidence / 'policy-invocation.json', policy_argv)
+                p = self.invoke(policy_argv, project, timeout=60)
                 context = permission_context(p.stdout) if p.returncode == 0 else ''
                 keep(evidence / 'permission-context.txt', context.encode())
                 keep(evidence / 'context.stderr', p.stderr.encode())
-                checks_seen['rendered_denials'] = all(f'<entry access="deny" escalatable="false"><path>{path}</path></entry>' in context
-                                                      for path in (store.root, store.field))
-                checks_seen['rendered_packet_write'] = f'<entry access="write"><path>{packet}</path></entry>' in context
-                checks_seen['rendered_git_write'] = f'<entry access="write"><path>{project / ".git"}</path></entry>' in context
-                checks_seen['protected_configuration_paths'] = all(f'<entry access="read"><path>{project / name}</path></entry>' in context
-                                                                   for name in PROTECTED)
+                environment = ET.fromstring(context)
+                policy = environment.find('filesystem/permission_profile')
+                checks_seen['launch_policy_observed'] = (
+                    environment.tag == 'environment_context' and environment.findtext('cwd') == str(project)
+                    and str(packet) in [node.text for node in environment.findall('filesystem/workspace_roots/root')]
+                    and policy is not None and bool(policy.get('type')))
                 checks_seen['configuration_unchanged'] = before == self.fingerprint(run, project, adapter, checks)
                 result.update(checks=checks_seen, passed=all(checks_seen.values()))
-        except (OSError, ValueError, IndexError, subprocess.SubprocessError) as exc:
+        except (OSError, ValueError, IndexError, ET.ParseError, subprocess.SubprocessError) as exc:
             result['error'] = f'{type(exc).__name__}: {exc}'
         write(evidence / 'result.json', result)
         write(receipt, result)
@@ -233,7 +194,7 @@ class Codex:
 
     def argv(self, run):
         record, project, adapter, checks = self.context(run)
-        return [str(self.binary), '-p', profile_name(self.store, run), '-C', str(project),
+        return [str(self.binary), *launch_options(record),
                 files.regular(self.store.field / run / 'ASSIGNMENT.md').read_text()]
 
 

@@ -60,9 +60,7 @@ select = ["E4", "E7", "E9", "F", "B"]
 "src/berman/capture/runtime.py" = ["B904"]
 "src/berman/harnesses/claude.py" = ["F401"]
 "src/berman/harnesses/codex.py" = ["B023"]
-"src/berman/harnesses/development/launch.py" = ["B904"]
 # Closures made and called within one loop iteration, as mock side effects.
-"tests/compatibility/test_launchers.py" = ["B023"]
 "tests/integration/test_support.py" = ["B023"]
 # Tests written before the formatter, which join short statements on one line.
 "tests/compatibility/test_fieldwork.py" = ["E701", "E702"]
@@ -94,9 +92,6 @@ exclude = [
     "src/berman/harnesses/__init__.py",
     "src/berman/harnesses/claude.py",
     "src/berman/harnesses/codex.py",
-    "src/berman/harnesses/development/__init__.py",
-    "src/berman/harnesses/development/launch.py",
-    "src/berman/harnesses/development/probe.py",
     "src/berman/harnesses/probe.py",
     "src/berman/installation.py",
     # Written before the formatter. Remove a file from this list when formatting it.
@@ -105,7 +100,6 @@ exclude = [
     "src/berman/cli.py",
     "src/berman/config.py",
     "src/berman/harnesses/claude_support.py",
-    "src/berman/harnesses/development/install.py",
     "src/berman/lifecycle.py",
     "src/berman/preserve.py",
     "src/berman/recipes.py",
@@ -118,7 +112,6 @@ exclude = [
     "tests/compatibility/test_build_archive.py",
     "tests/compatibility/test_capture_session.py",
     "tests/compatibility/test_fieldwork.py",
-    "tests/compatibility/test_launchers.py",
     "tests/integration/test_berman.py",
     "tests/integration/test_claude.py",
     "tests/integration/test_connection_repairs.py",
@@ -155,7 +148,7 @@ layers = [
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman._legacy",
     "berman.evidence : berman.snapshots : berman.archive",
-    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.harnesses.probe | berman.harnesses.development",
+    "berman.files | berman.installation | berman.environment | berman.schemas | berman.presentation | berman.harnesses.probe",
 ]
 broken_contract_guidance = """
 A lower layer may not import a higher one. Modules joined by ':' may import each
@@ -195,9 +188,9 @@ packaging."""
 
 [[tool.importlinter.contracts]]
 id = "scripts"
-name = "Sandbox probes and development launcher scripts are self-contained"
+name = "Native execution probe is self-contained"
 type = "forbidden"
-source_modules = ["berman.harnesses.probe", "berman.harnesses.development"]
+source_modules = ["berman.harnesses.probe"]
 forbidden_modules = ["jsonschema", "rich", "packaging"]
 broken_contract_guidance = """
 These files are copied out of the package and run as scripts, by an interpreter

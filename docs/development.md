@@ -49,9 +49,9 @@ defect requires a change, and then say what the change costs.
 | Files | What their bytes identify | Cost of a change |
 | --- | --- | --- |
 | `src/berman/_legacy/capture_session.py` | The frozen historical collector. | Never changed. |
-| Each adapter's `implementation` list in `capture/adapters.py`: the hook entry points and what they import, `installation.py`, `files.py`, `harnesses/claude.py`; and four launcher helpers fingerprinted by their source | Hook trust and native capture. | Renewed qualification in every adopting study. |
+| Each adapter's `implementation` list in `capture/adapters.py`: the hook entry points and what they import, `installation.py`, `files.py`, `harnesses/claude.py`; and the probe and assessment modules fingerprinted by Claude qualification | Hook trust and native capture. | Renewed qualification in every adopting study. |
 | `src/berman/archive/*.py` | A reading edition's reader identity. | New editions name new reader bytes; published editions verify independently. |
-| `harnesses/codex.py`, `harnesses/probe.py`, `harnesses/development/launch.py`, `harnesses/development/probe.py` | Access receipts and installed launcher copies. | Rechecked automatically, or on reinstallation. |
+| `harnesses/codex.py`, `harnesses/probe.py` | Native checkout and policy receipts. | Rechecked when their fingerprint changes. |
 
 Ruff never formats these files, and a test keeps them on the formatter's
 exemption list. Lint findings in them that are only style are ignored per file
@@ -79,7 +79,7 @@ families and bugbear.
 | `layers` | Command line, then orchestration (`workflow`, `verify`, `support`, `harnesses.claude_support`), then operations, then `records`, then `config` and `lifecycle`, then the capture path, then foundations that import nothing else in the package. |
 | `hooks` | Hook entry points, and everything they import, load no third-party package. |
 | `archive` | The archive builder uses the standard library only. |
-| `scripts` | Sandbox probes and development launcher scripts are self-contained. |
+| `scripts` | The copied execution probe uses the standard library. |
 | `lifecycle` | Lifecycle facts are evaluated without filesystem or process access. |
 | `frozen` | Only `capture/collector.py` loads the frozen collector. |
 | `presentation` | Only the command line imports `berman.presentation`. |
@@ -264,7 +264,7 @@ its tag.
 | `schemas/` | Packaged record schemas and their validation. |
 | `recipes.py`, `preserve.py`, `recovery.py` | Preparation, retained records and explicit low-level recovery. |
 | `capture/` | Exclusive session routing, collector adapters and locking. |
-| `harnesses/` | Access policies, native checks, Claude settings and optional development launchers. |
+| `harnesses/` | Native checkout checks, fieldwork launch arguments and Claude capture settings. |
 | `archive/` | Selection, reading aids and deterministic packaging, including historical readers. |
 | `installation.py`, `verify.py` | Installed resources, diagnostics and qualification receipts. |
 | `tests/` | Unit, integration, compatibility and property tests with synthetic fixtures and shared helpers. |
@@ -272,7 +272,7 @@ its tag.
 Workspace paths come from the selected Store. Installed resources come from the
 package. Recorded launch commands and hooks name the installed interpreter and
 use isolated module execution. The operator's cheatsheet uses `berman` on PATH
-with an explicit workspace root. Probes are copied into disposable sandboxes.
+with an explicit workspace root. The probe runs in a disposable project fixture.
 
 ## Compatibility and qualification
 

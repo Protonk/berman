@@ -119,8 +119,7 @@ class Store:
         self.home = self.path(workspace['codex_home'])
         self.python = self.path(workspace['python'])
         # Hook commands run the installed package in isolated mode, so they name an interpreter that
-        # has it. Probes and project checks run inside the fieldworker's sandbox, where the
-        # workspace is denied, and keep the general interpreter above.
+        # has it. Project checks use the configured general interpreter above.
         self.runtime_python = self.path(workspace.get('runtime_python', workspace['python']))
         self.codex = self.path(workspace['codex'])
         self.claude = self.path(workspace.get('claude', '~/.local/bin/claude'))
@@ -232,7 +231,7 @@ class Store:
         result = {'id': 'claude' if claude else 'codex',
                   'binary': str(self.claude if claude else self.codex),
                   'home': str(self.claude_home if claude else self.home),
-                  'python': str(self.python), 'profile': f'berman-{self.tag}-{run}'}
+                  'python': str(self.python)}
         if self.runtime_python != self.python:
             result['runtime_python'] = str(self.runtime_python)
         if claude:

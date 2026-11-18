@@ -17,28 +17,27 @@ their original installation before adoption. Berman reads completed historical
 requests unchanged; it does not infer a reserved assignment for a pending old
 request. New requests reserve the target before declaring the previous ending.
 
-Native access verification checks all configured Codex connections using a
-diagnostic recipe in disposable roots, including connections without plans. A
-passing diagnostic establishes the checked sandbox access with those instructions,
-not that a study assignment was supplied, that hooks are trusted or that native
-capture works. No fieldworker or model is launched by this diagnostic.
+The local-workspace Codex diagnostic uses the actual checkout and temporary
+packet and configuration directories. The configured Python runs positive file,
+Git and project-tool checks on the host. Codex renders the permission context
+using the same checkout and assigned-packet arguments as launch. These are
+distinct observations. A model executing tools and hooks requires a separate
+native session. The disposable configuration copies config.toml and hooks.json;
+live policy can differ.
 
-Native sandbox access is primarily developed for macOS. Ordinary development
-launchers remain a Stewart-specific compatibility adapter, described in
-[their guide](development-launchers.md). Named fieldwork connections
-are configurable independently of those launchers.
+The project must be a Git checkout with a commit. The diagnostic makes a
+disposable repository inside its temporary project fixture for a Git write.
+A linked worktree or external service can need its own declared project checks.
+Ordinary development starts the native binary under the operator's chosen
+policy. [Ordinary development on macOS](development-launchers.md)
 
-A connected target must be an existing Git checkout with a commit. Linked
-worktrees, external Git metadata, containers and external services need explicit
-access and evidence arrangements. The current Codex fieldworker profile protects
-the project's .agents, .codex and .aws directories. Git metadata is writable;
-the native probe commits in disposable metadata inside the real checkout's .git.
-No real index, object or reference is changed by the check.
-
-Blinding currently denies the fieldwork workspace and live packet root. Keep
-analysis and any historical research ledger inside the denied workspace, or
-qualify an expanded access policy before using a different physical arrangement.
-Separating Git ownership alone grants no additional access protection.
+Research plans, prior analysis and fieldwork history belong in the research
+environment. The executor needs the assigned packet and space for working
+notes. Keep the research trees outside project searches, including configured
+search roots or symlinks followed by project tools. A participant who inspects
+installed hooks may recognize the study. Record consequential exposure and
+the researcher's response alongside the engagement; discovery alone leaves
+its status intact.
 
 Claude uses per-launch hooks. Qualification is based on native hook events; the
 CLI's hook browser has not demonstrated a review of flag-supplied hooks. The

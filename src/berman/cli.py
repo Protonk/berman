@@ -72,7 +72,7 @@ def main(argv=None):
         sub.add_argument('--connection', help='connection to operate within; an explicit --run determines its own')
         return sub
     ready = selecting('ready', 'check readiness for the next task without assigning or starting a session')
-    ready.add_argument('--development', choices=('codex', 'claude'), help='check the installed developer launcher receipt')
+    ready.add_argument('--development', choices=('codex', 'claude'), help='run the native binary with --version in the checkout')
     new = selecting('new', 'settle authorized preservation and prepare the next fieldworker')
     new.add_argument('--repeat', metavar='RUN', help='repeat the retained instructions of this run with fresh project context')
     new.add_argument('--recipe', help='directly assign this recipe; on retry, check the retained recipe id')
@@ -93,9 +93,8 @@ def main(argv=None):
     cancel.add_argument('--run')
     dev = selecting('dev', 'start ordinary development; creates no fieldwork assignment and consumes no plan step')
     dev.add_argument('--harness', choices=('codex', 'claude'), required=True)
-    dev.add_argument('--check', action='store_true', help='verify the development launcher without starting development; '
-                     'Claude uses a short model session')
-    dev.add_argument('arguments', nargs=argparse.REMAINDER, help='options forwarded to the configured development launcher')
+    dev.add_argument('--check', action='store_true', help='run the native harness with --version')
+    dev.add_argument('arguments', nargs=argparse.REMAINDER, help='options forwarded to the native harness')
     capture = commands.add_parser('capture', help='capture adapter installation and verification')
     capture_commands = capture.add_subparsers(dest='capture_command', required=True)
     readiness = capture_commands.add_parser('readiness', help='check an adapter against its recorded verification basis')
@@ -119,10 +118,10 @@ def main(argv=None):
     support = commands.add_parser('support-trial', help='native capture support trials; never research, and they '
                                                         'consume no research-plan step')
     support_commands = support.add_subparsers(dest='support_command', required=True)
-    for name, help_text in (('prepare', 'reserve a support identity and prepare its packet, project and profile'),
+    for name, help_text in (('prepare', 'reserve a support identity and prepare its packet and project'),
                             ('launch', 'start the one interactive session inside a recorded terminal'),
                             ('collect', 'verify the native capture, then finalize and preserve it in the trial folder'),
-                            ('cleanup', 'retire the closed registration, keep the profile, remove an empty project')):
+                            ('cleanup', 'retire the closed registration and remove an empty project')):
         sub = support_commands.add_parser(name, help=help_text)
         sub.add_argument('--evidence', required=True, metavar='experiments/NAME',
                          help='the trial folder under experiments/; new for prepare')
@@ -142,7 +141,7 @@ def main(argv=None):
     verification.add_argument('--skip', action='append', default=[], choices=verify.SKIPPABLE,
                               help='leave a slow check unrun (repeatable); the verdict is then incomplete')
     verification.add_argument('--native-access', action='store_true',
-                              help='also run the real Codex sandbox check for each connection in disposable roots')
+                              help='also run the checkout and Codex policy check for each connection in disposable roots')
     verification.add_argument('--record', metavar='experiments/NAME',
                               help='keep the result and raw receipts in this new folder under experiments/')
     args = parser.parse_args(argv)
@@ -225,7 +224,9 @@ def main(argv=None):
         elif args.command == 'dev':
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
             if args.check:
-                arguments = ['--check', *arguments]
+                if arguments:
+                    raise Decision('Use --check alone to report the native harness version')
+                arguments = ['--version']
             start = workflow.dev(args.harness, arguments, args.connection)
             os.chdir(start['cwd'])
             print(f'Ordinary development in {start["cwd"]} ({start["connection"]}); no fieldwork record is made.', flush=True)

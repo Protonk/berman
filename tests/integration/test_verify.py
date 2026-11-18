@@ -17,14 +17,14 @@ import unittest
 from unittest import mock
 
 from berman.files import Decision, digest, digest_json, json_bytes, read, write
-from berman.harnesses.codex import COMMON_CHECKS, PROTECTED
+from berman.harnesses.codex import COMMON_CHECKS
 from berman.records import Store
 from berman.installation import PACKAGE as ROOT
 from berman.capture import adapters
 from berman import cli
 from berman import verify
 from berman.presentation import plain
-from tests.support.workspace import workspace
+from tests.support.workspace import codex_environment, workspace
 from tests.integration.test_connections import Base
 
 BUILT = {'mode': 'verified', 'archive_path': 'archive/stewart-runs.zip', 'zip_members': 12, 'archive_sha256': '0' * 64}
@@ -113,9 +113,9 @@ class Fixture:
 
 
 class Simulated(verify.Disposable):
-    """Answers the access check's Codex invocations as a native sandbox would; no binary runs.
+    """Simulates the checkout probe and Codex's rendered launch policy.
 
-    failing names probe checks reported false; during(harness, project) runs inside the sandbox call.
+    failing names probe checks reported false; during(harness, project) runs during the checkout probe.
     """
 
     def __init__(self, store, failing=(), during=None):
@@ -128,21 +128,16 @@ class Simulated(verify.Disposable):
     def invoke(self, argv, cwd, **kwargs):
         if argv[1:] == ['--version']:
             return subprocess.CompletedProcess(argv, 0, 'codex-cli 0.0.0-fixture\n', '')
-        project = Path(argv[argv.index('-C') + 1])
-        packet = self.store.field / argv[argv.index('-p') + 1].removeprefix(f'berman-{self.store.tag}-')
-        if 'sandbox' in argv:
+        project = Path(cwd)
+        if '-I' in argv:
             if self.during:
                 self.during(self, project)
             spec = read(Path(argv[-1]))
             checks = {name: name not in self.failing for name in COMMON_CHECKS | {c['id'] for c in spec['project_checks']}}
-            result = {'schema': 'berman.access-probe/1', 'token': spec['token'], 'checks': checks}
+            result = {'schema': 'berman.execution-probe/1', 'token': spec['token'], 'checks': checks}
             return subprocess.CompletedProcess(argv, 0 if all(checks.values()) else 1, json.dumps(result) + '\n', '')
-        entries = [f'<entry access="deny" escalatable="false"><path>{path}</path></entry>'
-                   for path in (self.store.root, self.store.field)]
-        entries.append(f'<entry access="write"><path>{packet}</path></entry>')
-        entries.append(f'<entry access="write"><path>{project / ".git"}</path></entry>')
-        entries += [f'<entry access="read"><path>{project / name}</path></entry>' for name in PROTECTED]
-        return subprocess.CompletedProcess(argv, 0, json.dumps({'input': ['<permissions instructions>' + ''.join(entries)]}), '')
+        packet = argv[argv.index('--add-dir') + 1]
+        return subprocess.CompletedProcess(argv, 0, json.dumps(codex_environment(project, packet)), '')
 
 
 class VerifyTests(Fixture, Base):
@@ -171,7 +166,7 @@ class VerifyTests(Fixture, Base):
         self.assertTrue(all(c['required'] for name, c in checks.items() if not name.endswith(':berman-claude')))
         self.assertFalse(checks['hook-trust:berman-claude']['required'])
         self.assertEqual((result['python'], result['python_version']), (str(self.store.python), 'Python 3.14.0'))
-        self.assertEqual(len(result['not_covered']), 4)
+        self.assertEqual(result['not_covered'], verify.NOT_COVERED)
         self.assertIsNone(result['record'])
         self.assertFalse(any('unittest' in argv for argv, _ in self.runner.calls))
         self.assertFalse((self.root / '.berman-locks').exists())
@@ -512,7 +507,7 @@ class NativeAccessTests(Fixture, Base):
         self.assertEqual(self.tree(folder), before)
         self.assertFalse((self.root / 'operations').exists())
         self.assertEqual((report['schema'], report['access_passed'], report['disposable_roots_removed']),
-                         ('berman.native-access-check/1', True, True))
+                         ('berman.native-access-check/2', True, True))
         connections = report['connections']
         self.assertEqual([(name, c['source'], c['capture_adapter'], c['run'], c['recipe']) for name, c in connections.items()],
                          [('stewart', 'real', 'berman-codex', 'run-001', verify.DIAGNOSTIC_RECIPE),
@@ -564,10 +559,10 @@ class NativeAccessTests(Fixture, Base):
             for name in ('stewart', 'orchard'):
                 self.assertEqual(seen['definitions'][name], self.store.connections[name].definition)
 
-    def test_failing_sandbox_is_reported_with_its_evidence(self):
+    def test_failing_packet_write_is_reported_with_its_evidence(self):
         folder = self.root / 'experiments/native-2'
         report = self.check('experiments/native-2', connections=['orchard'], synthetic=False,
-                            harness=partial(Simulated, failing={'python_read_denied_berman'}))
+                            harness=partial(Simulated, failing={'assigned_notes_writable'}))
         self.assertEqual(list(report['connections']), ['orchard'])
         entry = report['connections']['orchard']
         self.assertEqual((entry['access_passed'], entry['checkout_unchanged'], entry['run'], entry['recipe'], entry['evidence']),
@@ -576,7 +571,7 @@ class NativeAccessTests(Fixture, Base):
         (result,) = (folder / 'orchard/checks').glob('*/result.json')
         self.assertEqual(entry['error'], f'Decision: Native access check did not pass. Details: {result}')
         receipt = read(folder / 'orchard/readiness.json')
-        self.assertEqual((receipt['passed'], receipt['checks']['python_read_denied_berman']), (False, False))
+        self.assertEqual((receipt['passed'], receipt['checks']['assigned_notes_writable']), (False, False))
         self.assertEqual((report['access_passed'], read(folder / 'report.json')), (False, report))
         self.assertTrue(report['disposable_roots_removed'])
         with self.assertRaisesRegex(Decision, 'Unknown connection nowhere'):

@@ -1,22 +1,17 @@
-# Development launcher compatibility adapter
+# Ordinary development on macOS
 
-These launchers isolate ordinary Stewart development from research roots.
-Their installer and probes retain Stewart-specific project checks and executable
-names. They are optional compatibility code, not a generic installation step.
-The fieldwork workflow uses separately configured named connections.
+Run Codex or Claude from the project checkout using the normal harness and
+credentials. Fieldwork packets and capture registration belong to designated
+assignments. An ordinary developer can select the harness's usual permissions.
 
-The offline suite runs with the developer tests in `tests/compatibility/`. The
-optional installer is `python -m berman.harnesses.development.install`. Installing these launchers and
-running their native --check commands are separate actions. An existing study
-can retain its pinned installation while developing the standalone core.
+For a local workspace configuration, `berman dev --harness codex` or
+`berman dev --harness claude` starts its configured native binary in the
+selected checkout with the terminal's environment. Pass native options after
+`--`. Use `--check` alone to run the same binary with `--version`.
 
-For another project, supply suitable checks and qualify its actual access policy
-before adopting an adapted launcher. Include the fieldwork, analysis and live
-packet locations in the denied research roots. The core software tests do not
-establish a native blinding boundary.
-
-`--status` reads the current receipt and reports whether its fingerprint still
-matches; it starts no session and renews no check. Codex fingerprints include
-execpolicy rule files beside the active configuration layers. Fieldworker probes
-and developer probes both exercise disposable Git metadata inside the real
-checkout's Git directory. The real index, objects and references are not used.
+Prior releases could install `stewart-dev-*` commands, a Codex permissions
+profile and Claude settings. Those files and their receipts describe that
+installation. The current dev command bypasses the old per-connection
+`development` wrapper paths. A shell alias or project script that invokes
+an old wrapper directly will still use its old policy until its owner changes
+the invocation.

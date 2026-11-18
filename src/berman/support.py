@@ -2,7 +2,7 @@
 
 A trial's identity (run-900101 to run-900199) is reserved by an immutable marker,
 operations/<run>/operation.json with purpose support-trial, written once under the global lock
-before any packet, profile or project exists, so discovery never takes it for research. The
+before any packet or project exists, so discovery never takes it for research. The
 trial's changing state and its evidence live in a new folder under experiments/ (trial.json). Two
 acts need an operator, both inside launch's recorded terminal: the actual-CLI /hooks review and
 the one-reply session. collect verifies what was captured and preserves the packet in the trial's
@@ -21,7 +21,7 @@ import uuid
 from berman.capture import adapters
 from berman import files, snapshots
 from berman.files import Decision, digest_json, keep, read, write
-from berman.harnesses.codex import Codex
+from berman.harnesses.codex import Codex, launch_options
 from berman.lifecycle import SESSION_MATERIAL
 from berman.records import checked
 from berman.verify import evidence_folder
@@ -66,7 +66,7 @@ def expected_reply(run):
 
 def command(store, record):
     """The Codex invocation a trial launches, from its immutable marker."""
-    return [str(store.codex), '--no-daemon', '--no-alt-screen', '-p', record['harness']['profile'], '-C', record['project']]
+    return [str(store.codex), '--no-daemon', '--no-alt-screen', *launch_options(record)]
 
 
 def claim(store, folder, run=None):
@@ -97,7 +97,7 @@ def claim(store, folder, run=None):
         record['harness'].get('profile'), expected_reply(found)) == (
         rel + '/trial.json', trial.get('adapter'), trial.get('packet'), trial.get('project'), trial.get('profile'),
         trial.get('expected_reply'))
-    if not marked or not isinstance(record.get('project'), str) or not isinstance(record['harness'].get('profile'), str):
+    if not marked or not isinstance(record.get('project'), str):
         raise Decision(f'{found}: no support reservation marker agrees with {rel}/trial.json; both were left unchanged. '
                        f'Inspect {store.folder(found) if record else store.operations}')
     if record['packet'] != str(store.field / found):
@@ -175,6 +175,8 @@ def reserve(store, folder, adapter, facts):
         claimed = [run for run, t in store.support_trials.items() if t['record']['support_trial'] == rel + '/trial.json']
         if claimed:
             run, record = claimed[0], store.support_trials[claimed[0]]['record']
+            if record['harness'].get('profile'):
+                raise Decision('Recover this historical support reservation with its pinned installation')
             if record['capture']['adapter'] != adapter:
                 raise Decision(f'{run} was reserved for {record["capture"]["adapter"]} in this folder, not {adapter}')
         else:
@@ -191,7 +193,7 @@ def reserve(store, folder, adapter, facts):
         trial = {'schema': SCHEMA, 'run': run, 'adapter': adapter, 'phase': 'reserved',
                  'purpose': 'Native support trial; consumes no research-plan step.', 'evidence': rel,
                  'operation_record': relative(store, store.folder(run) / 'operation.json'),
-                 'packet': record['packet'], 'project': record['project'], 'profile': record['harness']['profile'],
+                 'packet': record['packet'], 'project': record['project'],
                  'expected_reply': expected_reply(run), 'reserved_at_utc': record['reserved_at_utc'],
                  **facts}
         write(folder / 'trial.json', trial)
@@ -199,7 +201,7 @@ def reserve(store, folder, adapter, facts):
 
 
 def prepare(store, path, adapter, harness=None):
-    """Reserve a support identity, then prepare its packet, disposable project and opt-in profile.
+    """Reserve a support identity, then prepare its packet and disposable project.
 
     Resumable while the trial is reserved; a trial in any later phase is never prepared again.
     """
@@ -230,6 +232,7 @@ def prepare(store, path, adapter, harness=None):
             raise Decision('Capture code changed after this trial was reserved; clean it up and prepare a new trial '
                            'in a new folder')
         a = adapters.ADAPTERS[adapter]
+        argv = command(store, record)
         project, packet = Path(record['project']), Path(record['packet'])
         project.mkdir(mode=0o700, exist_ok=True)
         files.safe_directory(project)
@@ -240,8 +243,7 @@ def prepare(store, path, adapter, harness=None):
             fieldwork.prepare(store.collector_for(record), run, project,
                               ['notes'], source, recording_protocol=fieldwork.SUPPORT_PROTOCOL, marker=a['marker'],
                               layout=a['layout'], connection=fieldwork.SUPPORT_CONNECTION)
-        harness.install_profile(run, project, folder)
-        trial.update(phase='prepared', prepared_at_utc=files.now(), instructions=source.name, argv=command(store, record))
+        trial.update(phase='prepared', prepared_at_utc=files.now(), instructions=source.name, argv=argv)
         write(folder / 'trial.json', trial)
     return dict(trial, next=next_step(store, trial))
 
@@ -285,12 +287,9 @@ def launch(store, path, model=None, max_budget_usd=None):
             raise Decision(f'A session already registered {run} outside launch, so it is not launched. Collect it with '
                            f'berman support-trial collect --evidence {trial["evidence"]} --allow-incomplete REASON (it '
                            'demonstrates no capture), and prepare another trial in a new folder')
-        installed = store.home / (record['harness']['profile'] + '.config.toml')
-        if files.regular(installed).read_bytes() != files.regular(folder / 'profile.config.toml').read_bytes():
-            raise Decision(f'{installed} differs from the prepared profile; inspect it before launching')
+        argv = ['/usr/bin/script', '-q', str(terminal), *command(store, record)]
         text = guide(trial)
         keep(folder / 'LAUNCH.txt', text.encode())
-        argv = ['/usr/bin/script', '-q', str(terminal), *command(store, record)]
         trial.update(phase='launching', launch={'requested_at_utc': files.now(), 'argv': argv, 'terminal': terminal.name})
         write(folder / 'trial.json', trial)
     print(text, flush=True)
@@ -501,7 +500,7 @@ def disposable(folder, trial, record):
 def cleanup(store, path, reason):
     """Close a trial: retire its registration or retain its unused packet, and remove an empty disposable project.
 
-    The opt-in profile is retained, and Codex configuration is never edited. Idempotent.
+    Cleanup leaves harness configuration alone and can be retried.
     """
     if not reason or not reason.strip():
         raise Decision('Describe why this support trial is being cleaned up')
@@ -522,7 +521,8 @@ def cleanup(store, path, reason):
             result['unused_packet'] = unused(store, folder, trial, collector)
             phase = 'abandoned'
         result.update(disposable(folder, trial, record))
-        result.update(opt_in_profile_retained=trial['profile'])
+        if trial.get('profile'):  # Preserve the cleanup receipt for a historical trial.
+            result['opt_in_profile_retained'] = trial['profile']
         if trial['adapter'] == 'berman-claude':
             result['limitations'] = 'Per-launch settings retained; no shared Claude settings were installed or edited.'
         else:

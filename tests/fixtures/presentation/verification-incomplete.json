@@ -78,7 +78,7 @@
       "summary": "Not selected",
       "next": "berman verify --native-access",
       "details": {},
-      "meaning": "The native Codex sandbox gives each connection's assignment its intended access, checked in disposable roots."
+      "meaning": "Host tools exercised the checkout and packet, and Codex rendered the launch policy."
     }
   },
   "failed": [],
@@ -93,7 +93,6 @@
   ],
   "not_covered": [
     "Developer regression tests (run separately from the source checkout).",
-    "The installed development launchers' --check (docs/development-launchers.md).",
     "The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).",
     "A native support trial; verify reports only a recorded successful capture."
   ],

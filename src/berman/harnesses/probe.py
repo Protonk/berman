@@ -1,36 +1,9 @@
-"""Run inside the native sandbox: common access checks, then a connection's declared project checks.
-
-Common checks never print protected contents. Project checks are explicit argument lists from a
-researcher-controlled connection description; their exit status (and optional output text) is
-recorded as a boolean.
-"""
-import errno
+"""Exercise the checkout, packet and declared tools; report only checks performed by this invocation."""
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-
-
-def denied(checks, label, path, fixture, rg, token):
-    try:
-        path.read_bytes()
-    except OSError as exc:
-        checks[f'python_read_denied_{label}'] = exc.errno in (errno.EACCES, errno.EPERM)
-    else:
-        checks[f'python_read_denied_{label}'] = False
-    alias = fixture / f'alias-{label}'
-    alias.symlink_to(path)
-    try:
-        alias.read_bytes()
-    except OSError as exc:
-        checks[f'symlink_read_denied_{label}'] = exc.errno in (errno.EACCES, errno.EPERM)
-    else:
-        checks[f'symlink_read_denied_{label}'] = False
-    p = subprocess.run(['/bin/cat', str(path)], capture_output=True)
-    checks[f'cat_read_denied_{label}'] = p.returncode != 0 and not p.stdout
-    p = subprocess.run([rg, '--hidden', '--no-ignore', '-l', token, str(path.parent)], capture_output=True)
-    checks[f'recursive_search_denied_{label}'] = p.returncode == 2 and not p.stdout
 
 
 def run(spec):
@@ -46,14 +19,12 @@ def run(spec):
     p = subprocess.run([spec['rg'], '-l', 'development write', str(output)], capture_output=True)
     checks['rg_positive_control'] = p.returncode == 0 and bool(p.stdout)
     output.unlink()
-    for label, name in spec['canaries'].items():
-        denied(checks, label, Path(name), fixture, spec['rg'], spec['token'])
     env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
     p = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--show-toplevel'], env=env, capture_output=True)
     checks['git_read'] = p.returncode == 0 and Path(os.fsdecode(p.stdout).strip()).resolve() == repo
-    # The worktree is disposable; its separate metadata lives inside the real checkout's .git.
-    # No real index, reference, hook, object or working file is touched.
+    # Use a fresh repository so the probe never edits the checkout's refs or index.
     probe = fixture / 'git-probe'
+    subprocess.run(['git', 'init', '-q', str(probe)], check=True, capture_output=True)
     (probe / 'file.txt').write_text('probe\n')
     added = subprocess.run(['git', '-C', str(probe), 'add', 'file.txt'], capture_output=True)
     p = subprocess.run(['git', '-C', str(probe), '-c', 'user.name=Berman probe', '-c', 'user.email=probe@invalid',
@@ -73,7 +44,7 @@ def run(spec):
         p = subprocess.run(check['argv'], capture_output=True, timeout=check['timeout'])
         checks[check['id']] = p.returncode == 0 and (
             'stdout_contains' not in check or check['stdout_contains'].encode() in p.stdout)
-    return {'schema': 'berman.access-probe/1', 'token': spec['token'], 'checks': checks}
+    return {'schema': 'berman.execution-probe/1', 'token': spec['token'], 'checks': checks}
 
 
 if __name__ == '__main__':

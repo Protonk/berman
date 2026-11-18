@@ -14,7 +14,7 @@ from berman.harnesses import claude
 from berman.harnesses import claude_support as support
 from berman import support as support_trials
 from berman.capture.claude import MARKER, render
-from berman.capture.claude_router import access
+from berman.capture.claude_router import route
 from berman.files import Decision, read, write
 from berman.records import Store
 from tests.support.workspace import workspace, git_repository
@@ -113,20 +113,13 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual((snapshots.resolve(self.packet / 'session') / 'transcript.jsonl').read_bytes(), frozen)
         self.assertIn(b'later', (snapshots.resolve(Path(result['path']) / 'session') / 'transcript.jsonl').read_bytes())
 
-    def test_file_tools_cover_aliases_ancestors_and_packet_exception(self):
-        def allowed(tool, **args):
-            return not access({'tool_name': tool, 'tool_input': args, 'cwd': str(self.project)}, self.root, self.record)
-        self.assertTrue(allowed('Read', file_path=str(self.packet / 'INSTRUCTIONS.md')))
-        self.assertTrue(allowed('Grep', path=str(self.packet), pattern='anything'))
-        self.assertTrue(allowed('Read', file_path='README.md'))
-        self.assertFalse(allowed('Read', file_path=str(self.root / 'secret')))
-        self.assertFalse(allowed('Write', file_path=str(self.store.field / 'run-999/notes/new')))
-        self.assertFalse(allowed('Grep', path=str(self.root.parent), pattern='anything'))
-        self.assertFalse(allowed('Glob', path=str(self.project), pattern='../berman/**'))
-        alias = self.project / 'alias'
-        alias.symlink_to(self.root)
-        self.assertFalse(allowed('Read', file_path=str(alias / 'secret')))
-        self.assertFalse(allowed('Read', file_path=str(self.root).upper() + '/secret'))
+    def test_capture_router_ignores_child_and_registers_reserved_parent(self):
+        event = {'session_id': self.sid, 'hook_event_name': 'UserPromptSubmit', 'cwd': str(self.project),
+                 'prompt': MARKER + self.run, 'transcript_path': str(self.source)}
+        self.assertEqual(route(dict(event, session_id='child'), self.root, self.run), {})
+        self.assertFalse((self.packet / 'session').exists())
+        route(event, self.root, self.run)
+        self.assertEqual(self.collector.status(self.run)['binding']['session_id'], self.sid)
 
     def test_source_refuses_symlink_and_outside_home(self):
         alias = self.source.parent / 'alias.jsonl'
@@ -146,7 +139,7 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual((messages, malformed, identities), (['answer'], [2], {self.sid}))
 
     def test_native_assessment_requires_actual_matching_calls(self):
-        result = {'schema': 'berman.access-probe/1', 'token': 'token', 'checks': {'check': True}}
+        result = {'schema': 'berman.execution-probe/1', 'token': 'token', 'checks': {'check': True}}
         stream = json.dumps({'message': {'content': [{'type': 'text', 'text': json.dumps(result)}]}})
         self.assertFalse(support.assess(stream, 'probe', 'token', {'check'}, {})['passed'])
         rows = [{'message': {'content': [{'type': 'tool_use', 'id': '1', 'name': 'Bash', 'input': {'command': 'probe'}}]}},
@@ -155,22 +148,22 @@ class ClaudeTests(unittest.TestCase):
         self.assertTrue(support.assess(stream, 'probe', 'token', {'check'}, {})['passed'])
         rows[0]['message']['content'][0]['input']['dangerouslyDisableSandbox'] = True
         self.assertFalse(support.assess('\n'.join(json.dumps(r) for r in rows), 'probe', 'token', {'check'}, {})['passed'])
-        spec = {'tool': 'Grep', 'input': {'path': '/denied', 'pattern': 'token'}, 'allowed': False}
-        rows[0]['message']['content'][0] = {'type': 'tool_use', 'id': '2', 'name': 'Grep', 'input': spec['input']}
+        spec = {'tool': 'Read', 'input': {'file_path': '/fixture/marker'}}
+        rows[0]['message']['content'][0] = {'type': 'tool_use', 'id': '2', 'name': 'Read', 'input': spec['input']}
         rows[1]['message']['content'][0] = {'type': 'tool_result', 'tool_use_id': '2', 'is_error': True,
-                                          'content': 'Error: No such tool available: Grep'}
-        observed = support.assess('\n'.join(json.dumps(r) for r in rows), 'probe', 'token', {'check'}, {'denial': spec})
-        self.assertFalse(observed['checks']['denial'])
+                                          'content': 'Error opening token'}
+        observed = support.assess('\n'.join(json.dumps(r) for r in rows), 'probe', 'token', {'check'}, {'read': spec})
+        self.assertFalse(observed['checks']['read'])
 
     def test_new_needs_explicit_qualification_and_generated_settings_match(self):
         with self.assertRaisesRegex(Decision, 'no qualified'):
             claude.readiness(self.store, self.project)
         settings_path = claude.settings_path(self.store, self.run)
         settings = read(settings_path)
-        self.assertEqual(settings['sandbox']['filesystem']['allowRead'], [str(self.packet)])
-        self.assertFalse(settings['sandbox']['allowUnsandboxedCommands'])
-        self.assertEqual(settings['hooks']['PreToolUse'][0]['hooks'][0]['onFailure'], 'block')
-        settings['sandbox']['enabled'] = False
+        self.assertEqual(set(settings), {'hooks'})
+        self.assertEqual(set(settings['hooks']), set(claude.EVENTS))
+        self.assertNotIn('PreToolUse', settings['hooks'])
+        settings['hooks'].pop('Stop')
         write(settings_path, settings)
         with self.assertRaisesRegex(Decision, 'differ'):
             claude.Claude(self.store).argv(self.run)
@@ -186,7 +179,6 @@ class ClaudeTests(unittest.TestCase):
         self.store.claude = Path(sys.executable)
         with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.store.claude_home)}), \
              mock.patch.object(claude, 'claude_sources', return_value={settings_file: None}), \
-             mock.patch.object(claude, 'claude_conflicts', return_value=[]), \
              mock.patch.object(claude.subprocess, 'run', return_value=mock.Mock(stdout='fixture version')):
             return claude.configuration(self.store, self.project)
 
@@ -258,12 +250,12 @@ class ClaudeTests(unittest.TestCase):
     def test_readiness_stops_on_implementation_helpers_evidence_and_old_schema(self):
         qualified = {'schema': claude.CONFIGURATION, 'policy': {}, 'harness': {}, 'context': {}}
         self.qualify(qualified, schema='berman.claude-verification/1', hook_review='fixture')
-        with self.assertRaisesRegex(Decision, 'predates tiered receipts'):
+        with self.assertRaisesRegex(Decision, 'predates capture-only launch settings'):
             claude.readiness(self.store)
         self.qualify(qualified, implementation_sha256={'capture/claude_router.py': 'other'})
         with self.assertRaisesRegex(Decision, 'in-session implementation changed'):
             claude.readiness(self.store)
-        self.qualify(qualified, helpers_sha256={'harnesses/development/launch.py:claude_sources': 'other'})
+        self.qualify(qualified, helpers_sha256={'harnesses/probe.py': 'other'})
         with self.assertRaisesRegex(Decision, 'helpers changed'):
             claude.readiness(self.store)
         evidence = self.root / 'experiments/fixture/evidence.txt'
@@ -276,8 +268,7 @@ class ClaudeTests(unittest.TestCase):
             claude.readiness(self.store)
         self.qualify(qualified)
         self.assertEqual(claude.readiness(self.store)['tiers'], claude.TIERS)
-        self.assertNotIn('harnesses/development/launch.py', adapters.ADAPTERS['berman-claude']['implementation'])
-        self.assertIn('harnesses/development/launch.py:allow_read_conflicts', claude.helpers())
+        self.assertIn('harnesses/probe.py', claude.helpers())
 
 
 if __name__ == '__main__':

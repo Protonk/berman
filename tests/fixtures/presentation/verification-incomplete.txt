@@ -17,6 +17,5 @@ Not run: archive, native-access
 Not established: hook-trust:berman-codex, native-capture:berman-codex, native-capture:berman-claude (optional)
 Never checked by berman verify:
   Developer regression tests (run separately from the source checkout).
-  The installed development launchers' --check (docs/development-launchers.md).
   The actual-CLI /hooks review and berman capture record-trust for the Codex adapters; verify reports only their recorded result. Claude needs no review (docs/limitations.md).
   A native support trial; verify reports only a recorded successful capture.

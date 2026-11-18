@@ -59,17 +59,12 @@ def cheatsheet(result):
         lines += [title, '  checkout: ' + conn['checkout'], '']
         lines.append('  Ordinary development (no fieldwork record, no research-plan step; works from any directory):')
         if not conn['development']:
-            lines.append('    no development launcher is configured; use the harness directly from the checkout')
+            lines.append('    use the native harness directly from the checkout')
         for dev in conn['development']:
-            note = '' if dev['available'] else '    (launcher missing or not executable: ' + dev['launcher'] + ')'
+            note = '' if dev['available'] else '    (harness missing or not executable: ' + dev['launcher'] + ')'
             lines.append('    ' + dev['command'] + note)
         if conn['development']:
-            lines.append('    after --: --model MODEL, --effort LEVEL, one quoted opening prompt')
-            lines.append(
-                '    Codex automatically rechecks changed installations before starting; '
-                'explicit checks exit without starting development (Claude uses a model session):'
-            )
-            lines += ['      ' + dev['command'] + ' --check' for dev in conn['development']]
+            lines.append('    Pass native harness arguments after --. Use --check to print its version.')
         lines.append('')
         commands, fieldwork = conn['commands'], conn['fieldwork']
         recipe_choice = not conn['next_recipe'] and not (

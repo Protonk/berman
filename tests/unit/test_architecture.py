@@ -38,7 +38,7 @@ VIOLATIONS = (
     ('layers', 'archive/select.py', 'from berman import records'),
     ('layers', 'files.py', 'from berman import installation'),
     ('layers', 'schemas/__init__.py', 'from berman import files'),
-    ('layers', 'harnesses/development/launch.py', 'from berman import files'),
+    ('layers', 'harnesses/probe.py', 'from berman import files'),
     ('hooks', 'capture/runtime.py', 'import rich'),
     ('hooks', 'files.py', 'import jsonschema'),
     ('hooks', 'files.py', 'import packaging.requirements'),
@@ -47,7 +47,7 @@ VIOLATIONS = (
     ('archive', 'archive/package.py', 'import packaging'),
     ('scripts', 'harnesses/probe.py', 'import jsonschema'),
     ('scripts', 'harnesses/probe.py', 'import packaging'),
-    ('scripts', 'harnesses/development/launch.py', 'import rich'),
+    ('scripts', 'harnesses/probe.py', 'import rich'),
     ('lifecycle', 'lifecycle.py', 'import subprocess'),
     ('lifecycle', 'lifecycle.py', 'from berman import files'),
     ('frozen', 'config.py', 'from berman._legacy import capture_session'),
@@ -72,10 +72,10 @@ raise SystemExit(cli.lint_imports(config_filename=sys.argv[2], limit_to_contract
 BYTE_SENSITIVE = (
     {rel for adapter in ADAPTERS.values() for rel in adapter['implementation']}
     | {'archive/' + name for name in builder.BUILDER}
-    | {'harnesses/codex.py', 'harnesses/probe.py', 'harnesses/development/launch.py', 'harnesses/development/probe.py'}
+    | {'harnesses/codex.py', 'harnesses/probe.py', 'harnesses/claude_support.py'}
 )
 # Copied out of the package and run as files by an interpreter that may lack Berman.
-SCRIPTS = ('harnesses/probe.py', 'harnesses/development/launch.py', 'harnesses/development/probe.py')
+SCRIPTS = ('harnesses/probe.py',)
 
 
 def lint(parent, *contracts):

@@ -87,17 +87,14 @@ supplemented or migrated; the opening line it used registers nothing and
 answers with a notice. The single-project `berman.configuration/1` file it
 belonged to is no longer read.
 
-berman.json names two interpreters. `python` runs access probes and a
-connection's project checks inside the fieldworker's sandbox, where the
-workspace is denied, so it must lie outside the workspace and packet root.
-`runtime_python` is the interpreter that has this package and its dependencies
-installed; generated hook commands name it and run in isolated mode. The hooks
-themselves load only the standard library and Berman's capture modules. `init`
-records the active package interpreter in both settings; configure `python` for
-sandbox access while keeping `runtime_python` pinned to the package environment.
-Older configurations without `runtime_python` fall back to `python`. A virtual
-environment inside the denied workspace is a suitable `runtime_python`: hooks
-run from the harness, outside the sandbox.
+In the local-workspace workflow, `python` runs the checkout and tool probe.
+`runtime_python` runs the installed Berman package for capture hooks and falls
+back to `python` when omitted. Codex starts in the checkout with the assigned
+packet added via `--add-dir`. Claude receives the packet
+and a per-launch settings file containing capture callbacks. Both use their
+native permission settings. A preparation from a release that generated
+research-denial profiles belongs to its pinned runtime. Finish or retire it
+there before switching. Historical receipts and recordings keep their bytes.
 
 Before fieldwork, write the workspace's hook template with
 `berman capture definition --adapter berman-codex --write`, install it with
@@ -149,7 +146,7 @@ for ordinary closeout.
 An interrupted command is retried by running the same command again: it
 allocates no second run and declares no second ending.
 `berman supplement --reason TEXT` retains later activity after a frozen capture.
-Use the workflow rather than manually repeating profile, packet or migration steps.
+Use the workflow rather than manually repeating packet or migration steps.
 
 An open engagement requires the existing choice when preparing another:
 `berman new --recipe NAME --keep-open` retains it, and
@@ -324,8 +321,8 @@ human messages. Original Markdown/physical-line citations remain usable.
 
 `berman ready` checks the selected connection's assignment and capture preflight
 without reserving a run. `berman ready --development codex` and
-`berman ready --development claude` check the installed launcher receipts without
-starting a model session. Preparation and launch still perform their own native
+`berman ready --development claude` run the configured native binary with `--version` in its checkout.
+Preparation and launch still perform their own native
 access checks. `berman verify` remains the separate comprehensive maintenance
 audit; historical gaps do not become prerequisites for starting an ordinary task.
 

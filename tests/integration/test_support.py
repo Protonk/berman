@@ -40,7 +40,7 @@ MARKER_KEYS = {'schema', 'run', 'phase', 'purpose', 'support_trial', 'reserved_a
 
 
 class FakeCodex(Codex):
-    """The real profile installation; a Codex invocation is answered without running Codex."""
+    """Only the Codex version is simulated."""
 
     def invoke(self, argv, cwd, **kwargs):
         if argv[1:] != ['--version']:
@@ -113,7 +113,7 @@ class ReservationTests(SupportBase):
         self.assertEqual(set(marker), MARKER_KEYS)
         self.assertEqual((marker['purpose'], marker['phase'], marker['support_trial'], marker['capture']['adapter']),
                          ('support-trial', 'support-trial', 'experiments/trial/trial.json', 'berman-codex'))
-        self.assertEqual(marker['harness']['profile'], trial['profile'])
+        self.assertNotIn('profile', marker['harness'])
         self.assertEqual(trial['codex_version'], 'codex-cli 0.0.0-fixture')
         self.assertTrue(trial['readiness_at_preparation']['ready'])
         packet = Path(trial['packet'])
@@ -121,8 +121,8 @@ class ReservationTests(SupportBase):
         self.assertEqual(read(packet / 'run.json')['schema'], 'berman.run-preparation/1')
         self.assertTrue((packet / 'ASSIGNMENT.md').read_text().startswith('Berman-Fieldwork-Run: run-900101\n'))
         self.assertIn('reply exactly BERMAN_SUPPORT_TRIAL_OK_900101', (packet / 'INSTRUCTIONS.md').read_text())
-        self.assertEqual((self.home / (trial['profile'] + '.config.toml')).read_bytes(),
-                         (self.folder() / 'profile.config.toml').read_bytes())
+        self.assertFalse(list(self.home.glob('*.config.toml')))
+        self.assertNotIn('-p', trial['argv'])
         self.assertTrue((Path(trial['project']) / '.git').is_dir())
         self.assertEqual(Path(trial['project']).parent, self.base / 'tmp')
         rows = self.store.discover()
@@ -154,7 +154,7 @@ class ReservationTests(SupportBase):
                     with Store(self.root).lock('global'):
                         pass
                 seen.update(packet=Path(record['packet']).exists(), project=Path(record['project']).exists(),
-                            profile=(self.home / (record['harness']['profile'] + '.config.toml')).exists())
+                            profile=bool(list(self.home.glob('*.config.toml'))))
             return keep(path, data)
 
         def preparing(collector, run, *args, **kwargs):
@@ -220,7 +220,7 @@ class ReservationTests(SupportBase):
         trial = read(self.folder() / 'trial.json')
         self.assertEqual((done, trial['phase']), (['abandoned'], 'abandoned'))
         self.assertFalse(Path(trial['packet']).exists() or Path(trial['project']).exists())
-        self.assertFalse((self.home / (trial['profile'] + '.config.toml')).exists())
+        self.assertFalse(list(self.home.glob('*.config.toml')))
         self.assertIsNone(read(self.folder() / 'cleanup.json')['unused_packet'])
 
     def test_a_folder_holding_another_trial_json_is_never_treated_as_a_trial(self):
@@ -382,7 +382,7 @@ class LaunchTests(SupportBase):
             support.launch(self.store, 'experiments/trial')
             self.assertEqual(os.environ['CODEX_HOME'], str(self.home))
         expected = ['/usr/bin/script', '-q', str(folder / 'native.terminal'), str(self.store.codex), '--no-daemon',
-                    '--no-alt-screen', '-p', trial['profile'], '-C', trial['project']]
+                    '--no-alt-screen', '-C', trial['project'], '--add-dir', trial['packet']]
         execv.assert_called_once_with('/usr/bin/script', expected)
         recorded = read(folder / 'trial.json')
         self.assertEqual((recorded['phase'], recorded['launch']['argv'], recorded['launch']['terminal']),
@@ -493,7 +493,7 @@ class CollectionTests(SupportBase):
 
     def test_a_session_started_without_launch_is_collected_as_incomplete_and_cleaned_up(self):
         trial = self.prepare()
-        event, _ = self.session(trial)  # Codex started outside launch with the installed profile.
+        event, _ = self.session(trial)  # Codex started outside launch in the prepared checkout.
         listed = self.workflow.status()['support_trials'][0]
         self.assertEqual(listed['next'], 'berman support-trial collect --evidence experiments/trial --allow-incomplete '
                                          'REASON; a session registered without launch, so this trial demonstrates no capture')
@@ -608,7 +608,7 @@ class CollectionTests(SupportBase):
 class CleanupTests(SupportBase):
     STATE = {'berman-codex': 'berman-capture'}
 
-    def test_cleanup_retires_the_registration_keeps_the_profile_and_removes_an_empty_project(self):
+    def test_cleanup_retires_the_registration_removes_an_empty_project(self):
         for adapter in (n for n, a in adapters.ADAPTERS.items() if a['harness'] == 'codex'):
             with self.subTest(adapter=adapter):
                 self.retires(adapter)
@@ -645,9 +645,9 @@ class CleanupTests(SupportBase):
         self.assertEqual((result['phase'], result['support_registry_retired'], result['empty_disposable_project_removed']),
                          ('cleaned', str(registry), trial['project']))
         self.assertFalse(Path(trial['project']).exists())
-        self.assertTrue((self.home / (trial['profile'] + '.config.toml')).is_file())
-        self.assertEqual((result['opt_in_profile_retained'], result['unused_packet'], result['project_retained'],
-                          result['open_turn_at_retirement']), (trial['profile'], None, None, None))
+        self.assertFalse(list(self.home.glob('*.config.toml')))
+        self.assertEqual((result['unused_packet'], result['project_retained'],
+                          result['open_turn_at_retirement']), (None, None, None))
         self.assertEqual(result['codex_config_sha256'], {'at_preparation': None, 'at_cleanup': None})
         self.assertEqual(read(folder / 'cleanup.json'), {k: v for k, v in result.items() if k != 'phase'})
         files = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}

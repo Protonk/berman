@@ -47,7 +47,7 @@ class Connection:
         self.id = identity(ident, 'connection')
         if any(key in entry for key in PACKET_ROOT_KEYS):
             raise Decision(f'Connection {ident} names its own packet location. All packets stay in the shared '
-                           'denied packet root; separate roots are a deferred access-policy migration')
+                           'packet root used by local session discovery')
         self.store = store
         self.entry = entry
         self.definition_path = store.path(entry['definition'])

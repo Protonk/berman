@@ -400,7 +400,7 @@ class ResearcherInputTests(RecordTests):
         write(self.root / 'berman.json', value)
         self.load()
         self.assertEqual(self.command('status')[0], 0)
-        self.assertEqual(self.workflow.dev('codex', (), 'tools')['argv'], [str(launcher)])
+        self.assertEqual(self.workflow.dev('codex', (), 'tools')['argv'], [str(self.store.codex)])
         self.assertEqual(self.workflow.new()['connection'], 'stewart')  # Fieldwork elsewhere is unaffected.
         with self.assertRaisesRegex(Decision, 'No assignment selected for connection tools; choose a recipe'):
             self.workflow.new(connection='tools')
