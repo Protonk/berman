@@ -1,6 +1,7 @@
 """Drive real subprocess and hook entry points with disposable native homes and synthetic transcripts."""
 
 import concurrent.futures
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -26,9 +27,12 @@ argv = sys.argv[1:]
 if argv == ['--version']:
     print('synthetic harness 1')
     raise SystemExit(0)
-claude = '--session-id' in argv
+claude = '--session-id' in argv or '--resume' in argv
+resumed = '--resume' in argv or 'resume' in argv
 home = Path(os.environ['CLAUDE_CONFIG_DIR' if claude else 'CODEX_HOME'])
-sid = argv[argv.index('--session-id') + 1] if claude else 'parent-session'
+sid = argv[argv.index('--resume' if '--resume' in argv else '--session-id') + 1] if claude else 'parent-session'
+if resumed and not claude:
+    assert argv[argv.index('resume') + 1] == sid or sid in argv, argv
 settings = Path(argv[argv.index('--settings') + 1]) if claude else home / 'hooks.json'
 hooks = json.loads(settings.read_text())['hooks']
 packet = Path(argv[argv.index('--add-dir') + 1])
@@ -46,8 +50,14 @@ else:
     child = src.parent / 'rollout-child.jsonl'
     child_data = {'type': 'session_meta', 'payload': {'id': 'child', 'parent_thread_id': sid}}
 src.parent.mkdir(parents=True, exist_ok=True)
-src.write_text(json.dumps(first) + '\n')
-if not claude:
+if resumed:
+    assert src.exists(), 'a resumed sitting continues an existing native session'
+    with src.open('a') as out:
+        out.write(json.dumps({'sessionId': sid, 'type': 'assistant', 'message': {'role': 'assistant', 'content': 'again'}}
+                             if claude else {'type': 'response_item', 'payload': {'text': 'again'}}) + '\n')
+else:
+    src.write_text(json.dumps(first) + '\n')
+if not claude and not resumed:
     with src.open('a') as out:
         out.write(json.dumps({'type': 'turn_context', 'payload': {'sandbox_policy': {'type': 'workspace-write'}}}) + '\n')
 child.parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +172,8 @@ class ExecutorTests(unittest.TestCase):
     def test_claude_one_turn(self):
         launch = self.exercise('claude', one_turn=True, child='agent-child')
         self.assertIn('--print', launch['intent']['argv'])
-        self.assertIn('--max-turns', launch['intent']['argv'])
+        # Berman adds no turn cap of its own to a native run.
+        self.assertNotIn('--max-turns', launch['intent']['argv'])
         self.assertFalse((self.home / 'settings.json').exists())
 
     def test_interactive_default_missing_primary_bytes(self):
@@ -230,12 +241,47 @@ class ExecutorTests(unittest.TestCase):
         files.write(self.home / 'hooks.json', hooks)
         with self.assertRaisesRegex(ValueError, 'exclusive'):
             executor.launch(self.spool, self.op)
-        with patch.object(protocol, 'MEMBER_LIMIT', 1), self.assertRaisesRegex(ValueError, 'count limit'):
-            executor.collect(self.spool, self.op, self.ending)
-        (Path(p['packet']) / 'notes' / 'link').symlink_to(self.executable)
-        with self.assertRaisesRegex(ValueError, 'Symlink'):
-            executor.collect(self.spool, self.op, self.ending)
-        self.assertFalse((capture.operation_dir(self.spool, self.op) / 'collection').exists())
+        self.assertTrue(p['packet'])
+
+    def test_unreadable_members_are_omitted_and_named_not_fatal(self):
+        p = self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        notes = Path(p['packet']) / 'notes'
+        (notes / 'link').symlink_to(self.executable)
+        os.mkfifo(notes / 'pipe')
+        (notes / 'large.bin').write_bytes(b'x' * 300_000)
+        with patch.object(protocol, 'FILE_LIMIT', 200_000):
+            frozen = executor.collect(self.spool, self.op, self.ending)
+        kinds = {row['path']: row['kind'] for row in frozen['omitted']}
+        self.assertEqual(
+            {'packet/notes/link': 'symlink', 'packet/notes/pipe': 'special', 'packet/notes/large.bin': 'bound'},
+            {k: v for k, v in kinds.items() if k.startswith('packet/notes/')},
+        )
+        large = next(row for row in frozen['omitted'] if row['path'] == 'packet/notes/large.bin')
+        self.assertIn(files.digest(b'x' * 300_000), large['detail'])
+        inventory = protocol.inventory(frozen['members'])
+        self.assertIn('packet/notes/account.md', inventory)
+        self.assertIn('omitted.json', inventory)
+        self.assertNotIn('packet/notes/link', inventory)
+        self.assertTrue(any('packet/notes/link (symbolic link to' in text for text in frozen['limitations']))
+        self.assertEqual(frozen, executor.collect(self.spool, self.op, self.ending))
+
+    def test_member_bound_keeps_receipts_and_names_what_it_left(self):
+        self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        with patch.object(protocol, 'MEMBER_LIMIT', 6):
+            frozen = executor.collect(self.spool, self.op, self.ending)
+        names = [row['path'] for row in frozen['members']]
+        self.assertEqual(6, len(names))
+        self.assertTrue(
+            {'launch.json', 'assignment.json', 'preparation.json', 'hooks.json', 'omitted.json'} <= set(names)
+        )
+        self.assertTrue(frozen['omitted'])
+        self.assertTrue(
+            any('further members omitted' in t or 'Omitted from this collection' in t for t in frozen['limitations'])
+        )
+        # The callback names stay in the manifest even when their files did not fit.
+        self.assertEqual(frozen['events'], ['UserPromptSubmit', 'Stop', 'SessionEnd'])
 
     def test_relocated_source_displaced_revision_and_policy_mismatch(self):
         self.b['policy'] = 'read-only'
@@ -267,21 +313,123 @@ class ExecutorTests(unittest.TestCase):
         self.assertFalse(q['passed'])
         self.assertEqual(['default'], q['observed_policy'])
 
-    def test_late_hook_and_replaced_transcript_are_not_new_parent_evidence(self):
+    def test_callback_after_exit_is_staged_and_replaced_transcript_is_not_parent_evidence(self):
         self.a['harness'] = 'claude'
         p = self.prepare()
         executor.launch(self.spool, self.op)
         folder = capture.operation_dir(self.spool, self.op)
         sid = p['reserved_session_id']
         path = next((self.home / 'projects').glob('*/*.jsonl'))
-        # A callback for a resumed harness after the observed exit is outside this launch.
+        # The engagement is still open after the launched process exits. A later callback from
+        # the bound parent is kept, with its own verified generation.
         self.assertEqual(
             {}, capture.route(self.spool, self.home, dict(session_id=sid, hook_event_name='Stop'), self.op)
         )
-        self.assertEqual(3, len(list((folder / 'events').glob('*.json'))))
+        self.assertEqual(4, len(list((folder / 'events').glob('*.json'))))
+        self.assertEqual(
+            {}, capture.route(self.spool, self.home, dict(session_id=str(uuid4()), hook_event_name='Stop'), self.op)
+        )
+        self.assertEqual(4, len(list((folder / 'events').glob('*.json'))))
         source = path.read_bytes()
         path.write_bytes(source.replace(sid.encode(), str(uuid4()).encode()))
         manifest = executor.collect(self.spool, self.op, self.ending)
         self.assertEqual(files.digest(source), manifest['parent_sha256'])
+        self.assertEqual(manifest['events'], ['UserPromptSubmit', 'Stop', 'SessionEnd', 'Stop'])
         self.assertTrue(any('identity differs' in msg for msg in manifest['limitations']))
         self.assertFalse(executor.qualify(self.spool, self.op, self.ending)['checks']['closeout_parent_observed'])
+
+    def resume_case(self, harness):
+        self.a['harness'] = harness
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, 'Nothing to resume'):
+            executor.launch(self.spool, self.op, resume=True)
+        first = executor.launch(self.spool, self.op, one_turn=True)
+        with self.assertRaisesRegex(ValueError, 'needs --prompt'):
+            executor.launch(self.spool, self.op, one_turn=True, resume=True)
+        second = executor.launch(self.spool, self.op, one_turn=True, resume=True, prompt='continue the work')
+        self.assertEqual(2, second['sitting'])
+        self.assertTrue(second['intent']['resumed_native_session'])
+        self.assertEqual(second['intent']['argv'][-1], 'continue the work')
+        self.assertEqual(first['session_id'], second['session_id'])
+        # A plain launch stays a replay of the first sitting and starts nothing.
+        self.assertEqual(first, executor.launch(self.spool, self.op, one_turn=True))
+        self.assertEqual([first, second], executor.sitting_receipts(self.spool, self.op))
+        frozen = executor.collect(self.spool, self.op, self.ending)
+        self.assertEqual(frozen['events'], ['UserPromptSubmit', 'Stop', 'SessionEnd'] * 2)
+        self.assertIn('sittings.json', protocol.inventory(frozen['members']))
+        q = executor.qualify(self.spool, self.op, self.ending)
+        self.assertEqual(2, q['sittings'])
+        self.assertTrue(q['checks']['later_sittings_observed'])
+        return second
+
+    def test_claude_resumed_sitting_keeps_staging(self):
+        second = self.resume_case('claude')
+        self.assertIn('--resume', second['intent']['argv'])
+        self.assertNotIn('--session-id', second['intent']['argv'])
+
+    def test_codex_resumed_sitting_keeps_staging(self):
+        second = self.resume_case('codex')
+        argv = second['intent']['argv']
+        self.assertEqual(argv[argv.index('resume') + 1], 'parent-session')
+        self.assertIn('exec', argv)
+
+    def test_callbacks_after_collection_wait_for_a_supplement(self):
+        self.a['harness'] = 'claude'
+        p = self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        folder = capture.operation_dir(self.spool, self.op)
+        first = executor.collect(self.spool, self.op, self.ending)
+        sid = p['reserved_session_id']
+        source = next((self.home / 'projects').glob('*/*.jsonl'))
+        with source.open('a') as out:
+            out.write(
+                '{"sessionId": "%s", "type": "assistant", "message": {"role": "assistant", "content": "later"}}\n' % sid
+            )
+        capture.route(self.spool, self.home, dict(session_id=sid, hook_event_name='Stop'), self.op)
+        self.assertEqual(3, len(list((folder / 'events').glob('*.json'))))
+        self.assertEqual(1, len(list((folder / 'late' / 'events').glob('*.json'))))
+        declaration = str(uuid4())
+        with self.assertRaisesRegex(ValueError, 'earlier supplement'):
+            executor.collect(self.spool, self.op, declaration, supplement=2)
+        later = executor.collect(self.spool, self.op, declaration, supplement=1)
+        self.assertEqual((1, declaration, self.ending), (later['sequence'], later['supplement_id'], later['ending_id']))
+        self.assertEqual(['Stop'], later['events'])
+        self.assertNotEqual(first['parent_sha256'], later['parent_sha256'])
+        self.assertEqual(later, executor.collect(self.spool, self.op, declaration, supplement=1))
+        self.assertEqual(first, executor.collect(self.spool, self.op, self.ending))
+        self.assertFalse((folder / 'late').exists())
+        path = executor.payload_path(self.spool, self.op, declaration, 'packet/notes/account.md', supplement=1)
+        self.assertTrue(path.is_file())
+        # Nothing staged since: the next supplement says so instead of looking like a session.
+        again = executor.collect(self.spool, self.op, str(uuid4()), supplement=2)
+        self.assertTrue(any('closeout observation only' in text for text in again['limitations']))
+
+    def test_dead_launcher_is_settled_as_an_unobserved_exit(self):
+        self.prepare()
+        folder = capture.operation_dir(self.spool, self.op)
+        gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+        gone.wait()
+        paths = capture.sitting_files(folder, 1)
+        files.write(paths['intent'], {'one_turn': False})
+        files.write(paths['started'], {'pid': gone.pid})
+        launch = executor.launch(self.spool, self.op)
+        self.assertIsNone(launch['exit']['returncode'])
+        self.assertIn('unobserved', launch['exit'])
+        files.write(capture.sitting_files(folder, 1)['exit'], launch['exit'])
+        frozen = executor.collect(self.spool, self.op, self.ending)
+        self.assertTrue(any('without its launcher observing' in text for text in frozen['limitations']))
+
+    def test_damaged_staging_is_reported_per_member(self):
+        self.prepare()
+        executor.launch(self.spool, self.op, one_turn=True)
+        frozen = executor.collect(self.spool, self.op, self.ending)
+        self.assertEqual([], executor.damaged(self.spool, self.op, self.ending))
+        collection = capture.operation_dir(self.spool, self.op) / 'collection' / 'payload'
+        (collection / 'packet/notes/account.md').write_bytes(b'altered')
+        (collection / 'hooks.json').unlink()
+        self.assertEqual(
+            ['hooks.json', 'packet/notes/account.md'],
+            [row['path'] for row in executor.damaged(self.spool, self.op, self.ending)],
+        )
+        # A frozen manifest is still returned: the loss is per member, found at transfer.
+        self.assertEqual(frozen, executor.collect(self.spool, self.op, self.ending))

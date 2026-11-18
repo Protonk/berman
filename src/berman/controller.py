@@ -1,4 +1,10 @@
-"""One SSH invocation processes one v1 command against a guest-owned study."""
+"""One SSH invocation processes one v1 command against a guest-owned study.
+
+The ledger holds one state per run. Its first collection lives in `facts` and `transferred`.
+Each later supplement has its own declaration, facts and transfer map under `supplements`, and
+is addressed by the request's `supplement` number. Host receipts for later sittings are kept in
+`sittings`. Nothing here reads a host path.
+"""
 
 import argparse
 from contextlib import closing
@@ -10,6 +16,7 @@ import sqlite3
 import sys
 import tempfile
 from types import SimpleNamespace
+from uuid import uuid4
 
 from berman import config, custody, evidence, files, protocol, recipes, schemas
 from berman.archive.package import verify_edition
@@ -52,18 +59,31 @@ class Controller:
                 if 'publish' in facts:
                     edition = facts['publish']
                     result['edition'] = verify_edition(self.root / edition['archive_path'], edition['archive_sha256'])
+                later = []
+                for item in self.run_state(db, request['run']).get('supplements', []):
+                    if 'preserve' not in item['facts']:
+                        continue
+                    report = custody.verify_recording(self.root, item['facts']['preserve'])
+                    row = {'sequence': item['sequence']}
+                    row['recording'] = {k: report[k] for k in ('package_sha256', 'integrity', 'coverage')}
+                    if 'publish' in item['facts']:
+                        edition = item['facts']['publish']
+                        row['edition'] = verify_edition(self.root / edition['archive_path'], edition['archive_sha256'])
+                    later.append(row)
+                if later:
+                    result['supplements'] = later
                 return dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, result=result)
             if command in ('assignment', 'closeout'):
                 state = self.run_state(db, request['run'])
                 value = state['assignment']
                 if command == 'closeout':
-                    ending = state['facts'].get('ending')
-                    if not ending:
+                    _, _, anchor = self.part(state, request.get('supplement'))
+                    if not anchor:
                         raise ValueError('The engagement has no researcher ending declaration')
-                    value = dict(collection_id=self.collection, run=state['run'], operation=ending['operation'])
+                    value = dict(collection_id=self.collection, run=state['run'], operation=anchor['operation'])
                 return dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, result=value)
             if command == 'status':
-                return self.status(db, request.get('run'))
+                return self.status(db, request.get('run'), request.get('supplement'))
             operation = protocol.identifier(request['operation'])
             digest = protocol.fingerprint(request)
             previous = db.execute('SELECT * FROM operations WHERE id=?', (operation,)).fetchone()
@@ -71,7 +91,20 @@ class Controller:
                 if previous['request'] != digest:
                     raise ValueError('Operation identity reused for different input')
                 if command == 'transfer':
-                    self.receive(body, request['size'], request['sha256'])
+                    # A replayed transfer also restores an object the store has since lost or
+                    # damaged. The receipt stays the original; the repair is its own ledger entry.
+                    outcome = self.receive(body, request['size'], request['sha256'])
+                    if outcome != 'present':
+                        state = self.run_state(db, request['run'])
+                        state.setdefault('repairs', []).append(
+                            {
+                                'at': files.now(),
+                                'path': request['path'],
+                                'sha256': request['sha256'],
+                                'outcome': outcome,
+                            }
+                        )
+                        self.save(db, state)
                 return json.loads(previous['receipt'])
             if command == 'commission':
                 state = self.commission(db, request)
@@ -79,10 +112,7 @@ class Controller:
             else:
                 state = self.run_state(db, request['run'])
                 result = self.advance(state, command, request, body)
-            db.execute(
-                'INSERT INTO runs VALUES (?,?) ON CONFLICT(number) DO UPDATE SET state=excluded.state',
-                (int(state['run'][4:]), json.dumps(state)),
-            )
+            self.save(db, state)
             receipt = {
                 'protocol': protocol.VERSION,
                 'collection_id': self.collection,
@@ -97,6 +127,48 @@ class Controller:
             return receipt
 
     @staticmethod
+    def save(db, state):
+        db.execute(
+            'INSERT INTO runs VALUES (?,?) ON CONFLICT(number) DO UPDATE SET state=excluded.state',
+            (int(state['run'][4:]), json.dumps(state)),
+        )
+
+    @staticmethod
+    def part(state, number):
+        """The facts, transfer map and declaration of the first collection, or of one supplement."""
+        if number is None:
+            return state['facts'], state['transferred'], state['facts'].get('ending')
+        items = state.get('supplements', [])
+        if type(number) is not int or not 1 <= number <= len(items):
+            raise ValueError('Unknown supplement')
+        item = items[number - 1]
+        return item['facts'], item['transferred'], item['declaration']
+
+    def object_problem(self, transferred, name, size, digest):
+        """Why an observed member is not verified guest bytes, or None when it is."""
+        if transferred.get(name) != digest:
+            return 'never transferred'
+        path = self.store / 'objects' / digest
+        if not path.is_file():
+            return 'transferred, then absent from the guest store'
+        if path.stat().st_size != size or protocol.hash_file(path) != digest:
+            return 'transferred, then damaged in the guest store'
+        return None
+
+    def outstanding(self, members, transferred):
+        """Members the host should send: never transferred, or no longer present at the right size."""
+        result = []
+        for row in members:
+            path = self.store / 'objects' / row['sha256']
+            if (
+                transferred.get(row['path']) != row['sha256']
+                or not path.is_file()
+                or path.stat().st_size != row['size']
+            ):
+                result.append(row['path'])
+        return result
+
+    @staticmethod
     def run_state(db, run):
         if not evidence.RUN.fullmatch(run):
             raise ValueError('Invalid run')
@@ -105,25 +177,41 @@ class Controller:
             raise ValueError('Unknown run')
         return json.loads(row['state'])
 
-    def status(self, db, run):
+    def status(self, db, run, supplement=None):
         if not run:
             runs = [json.loads(row[0]) for row in db.execute('SELECT state FROM runs ORDER BY number')]
             result = [{'run': s['run'], 'connection': s['connection'], 'facts': list(s['facts'])} for s in runs]
         else:
             state = self.run_state(db, run)
-            facts = state['facts']
+            facts, transferred, _ = self.part(state, supplement)
+            members = facts.get('capture', {}).get('members', [])
             result = dict(
                 run=run,
                 connection=state['connection'],
                 facts=list(facts),
                 capture_limits=facts.get('capture', {}).get('limitations'),
                 exposures=len(state.get('exposures', [])),
-                observed=[row['path'] for row in facts.get('capture', {}).get('members', [])],
-                transferred=state['transferred'],
+                observed=[row['path'] for row in members],
+                transferred=transferred,
+                outstanding=self.outstanding(members, transferred),
                 accepted=facts.get('accept'),
                 preserved=facts.get('preserve'),
                 published=facts.get('publish'),
+                sittings=1 + len(state.get('sittings', {}))
+                if 'launch' in state['facts']
+                else len(state.get('sittings', {})),
+                supplements=[
+                    {
+                        'sequence': item['sequence'],
+                        'reason': item['declaration']['reason'],
+                        'facts': list(item['facts']),
+                    }
+                    for item in state.get('supplements', [])
+                ],
+                repairs=state.get('repairs', []),
             )
+            if supplement is not None:
+                result['supplement'] = supplement
         return {'protocol': protocol.VERSION, 'command': 'status', 'collection_id': self.collection, 'result': result}
 
     def commission(self, db, request):
@@ -228,26 +316,92 @@ class Controller:
                 raise ValueError('Transfer length or SHA-256 mismatch')
             stage.flush()
             os.fsync(stage.fileno())
+            outcome = 'stored'
             try:
                 os.link(stage.name, final)
             except FileExistsError:
-                if protocol.hash_file(final) != digest:
-                    raise ValueError('Retained object failed hash verification') from None
+                if protocol.hash_file(final) == digest:
+                    outcome = 'present'
+                else:
+                    # Keep the damaged bytes for inspection under a name no command reads.
+                    os.replace(final, objects / f'.damaged-{digest}-{uuid4().hex}')
+                    os.link(stage.name, final)
+                    outcome = 'replaced damaged bytes'
             directory = os.open(objects, os.O_RDONLY)
             try:
                 os.fsync(directory)
             finally:
                 os.close(directory)
+            return outcome
 
     def advance(self, state, command, request, body):
-        facts = state['facts']
-        transferred = state['transferred']
+        number = request.get('supplement')
+        facts, transferred, anchor = self.part(state, number)
+        if command == 'sitting':
+            # A later sitting of the same engagement: another native process, the same commission.
+            count = request.get('number')
+            if type(count) is not int or count < 2:
+                raise ValueError('A later sitting is numbered from 2')
+            later = state.setdefault('sittings', {})
+            if str(count) in later:
+                raise ValueError('sitting already recorded; replay its original operation')
+            self.check_receipt(state, 'launch', request['observation'])
+            if request['observation'].get('sitting') != count:
+                raise ValueError('Native receipt names another sitting')
+            later[str(count)] = request['observation']
+            return {'observed': 'sitting', 'number': count}
+        if command == 'supplement':
+            # Later activity after a frozen collection. It adds a collection; it rewrites nothing.
+            if 'capture' not in state['facts']:
+                raise ValueError('A supplement follows the first frozen collection')
+            if not isinstance(request.get('reason'), str) or not request['reason'].strip():
+                raise ValueError('A supplement requires a reason')
+            items = state.setdefault('supplements', [])
+            declaration = {
+                'sequence': len(items) + 1,
+                'reason': request['reason'],
+                'at': files.now(),
+                'operation': request['operation'],
+            }
+            items.append(
+                {'sequence': declaration['sequence'], 'declaration': declaration, 'facts': {}, 'transferred': {}}
+            )
+            return declaration
+        if command == 'exposure':
+            if not isinstance(request.get('account'), str) or not request['account'].strip():
+                raise ValueError('Record what became visible and how it was handled')
+            item = {'at': files.now(), 'account': request['account'], 'operation': request['operation']}
+            state.setdefault('exposures', []).append(item)
+            return item
         if command in facts:
             raise ValueError(f'{command} already recorded; replay its original operation')
-        if command in ('preparation', 'launch', 'capture'):
-            self.observe(state, request)
-            result = {'observed': command}
-        elif command == 'ending':
+        if command in ('preparation', 'launch', 'ending') and number is not None:
+            raise ValueError(f'{command} belongs to the engagement, not to a supplement')
+        if command in ('preparation', 'launch'):
+            if command == 'launch' and 'preparation' not in facts:
+                raise ValueError('A launch needs its preparation receipt')
+            self.check_receipt(state, command, request['observation'])
+            facts[command] = request['observation']
+            return {'observed': command}
+        if command == 'capture':
+            if not anchor:
+                raise ValueError('Closeout collection needs an explicit ending')
+            observation = request['observation']
+            self.check_receipt(state, 'collection', observation)
+            if observation.get('ending_id') != state['facts']['ending']['operation']:
+                raise ValueError('Native collection names a different ending')
+            if number is None:
+                if 'supplement_id' in observation:
+                    raise ValueError('A supplement collection needs its supplement number')
+            elif observation.get('supplement_id') != anchor['operation'] or observation.get('sequence') != number:
+                raise ValueError('Native collection names a different supplement')
+            limitations = observation.get('limitations')
+            if not isinstance(limitations, list) or not all(isinstance(item, str) for item in limitations):
+                raise ValueError('Native collection requires explicit coverage limitations')
+            protocol.inventory(observation['members'])
+            facts['capture'] = observation
+            return {'observed': command}
+        if command == 'ending':
             if not isinstance(request.get('reason'), str) or not request['reason'].strip():
                 raise ValueError('A researcher ending requires a reason')
             result = {'reason': request['reason'], 'at': files.now(), 'operation': request['operation']}
@@ -262,61 +416,63 @@ class Controller:
                 self.receive(body, *members[name])
                 transferred[name] = request['sha256']
                 return {'transferred': name, 'sha256': transferred[name]}
+            # Acceptance is the guest's own reading of its bytes. A member that never arrived, or
+            # that the store has lost, is named. The researcher may accept the rest with a reason.
+            missing = []
             for name, (size, digest) in members.items():
-                path = self.store / 'objects' / digest
-                if transferred.get(name) != digest or path.stat().st_size != size or protocol.hash_file(path) != digest:
-                    raise ValueError(f'Unverified or missing transfer: {name}')
+                problem = self.object_problem(transferred, name, size, digest)
+                if problem:
+                    missing.append({'path': name, 'size': size, 'sha256': digest, 'problem': problem})
+            reason = request.get('missing_reason')
+            if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+                raise ValueError('Accepting incomplete evidence requires a reason')
+            if missing and reason is None:
+                names = ', '.join(f'{row["path"]} ({row["problem"]})' for row in missing[:5])
+                more = f' and {len(missing) - 5} more' if len(missing) > 5 else ''
+                raise ValueError(
+                    f'Unverified or missing transfer: {names}{more}. Transfer again, '
+                    'or accept what arrived by giving a reason for the missing evidence'
+                )
+            if reason is not None and not missing:
+                raise ValueError('Every observed member is verified; accept without a missing-evidence reason')
             result = {
-                'accepted_members': len(members),
+                'accepted_members': len(members) - len(missing),
                 'inventory_sha256': protocol.fingerprint(facts['capture']['members']),
                 'at': files.now(),
             }
-        elif command == 'exposure':
-            if not isinstance(request.get('account'), str) or not request['account'].strip():
-                raise ValueError('Record what became visible and how it was handled')
-            item = {'at': files.now(), 'account': request['account'], 'operation': request['operation']}
-            state.setdefault('exposures', []).append(item)
-            return item
+            if missing:
+                result.update(missing=missing, missing_reason=reason)
         elif command == 'preserve':
             if 'accept' not in facts:
                 raise ValueError('Preservation requires accepted evidence')
-            members = {name: self.store / 'objects' / digest for name, digest in transferred.items()}
-            result = custody.preserve_split_run(self.root, state, members)
+            if number is not None and 'preserve' not in state['facts']:
+                raise ValueError('Preserve the first collection before its supplement')
+            absent = {row['path'] for row in facts['accept'].get('missing', [])}
+            members = protocol.inventory(facts['capture']['members'])
+            blobs = {
+                name: self.store / 'objects' / digest for name, (_, digest) in members.items() if name not in absent
+            }
+            result = custody.preserve_split_run(self.root, state, blobs, supplement=number)
         elif command == 'publish':
             if 'preserve' not in facts:
                 raise ValueError('Publication requires a preserved recording')
             result = custody.publish_edition(self.root, facts['preserve'])
         else:
             raise ValueError(f'Unknown command: {command}')
-        if command not in ('preparation', 'launch', 'capture'):
-            facts[command] = result
+        facts[command] = result
         return result
 
-    def observe(self, state, request):
-        kind = request['command']
-        facts = state['facts']
-        if kind == 'launch' and 'preparation' not in facts:
-            raise ValueError('A launch needs its preparation receipt')
-        if kind == 'capture' and 'ending' not in facts:
-            raise ValueError('Closeout collection needs an explicit ending')
-        observation = request['observation']
+    @staticmethod
+    def check_receipt(state, schema, observation):
+        """A host receipt must name this commission and the exact assignment bytes it acted on."""
         assignment = state['assignment']
         for key in ('run', 'collection_id', 'operation', 'connection', 'harness'):
             if observation.get(key) != assignment[key]:
                 raise ValueError(f'Native receipt {key} mismatch')
         if observation.get('assignment_sha256') != files.digest_json(assignment):
             raise ValueError('Native receipt names different assignment bytes')
-        schema = 'collection' if kind == 'capture' else kind
         if observation.get('schema') != f'berman.{schema}/1':
             raise ValueError('Unknown native receipt schema')
-        if kind == 'capture':
-            if observation.get('ending_id') != facts['ending']['operation']:
-                raise ValueError('Native collection names a different ending')
-            limitations = observation.get('limitations')
-            if not isinstance(limitations, list) or not all(isinstance(item, str) for item in limitations):
-                raise ValueError('Native collection requires explicit coverage limitations')
-            protocol.inventory(observation['members'])
-        facts[kind] = observation
 
 
 def main(argv=None):

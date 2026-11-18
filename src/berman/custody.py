@@ -113,12 +113,23 @@ def _dirsync(path):
         os.close(fd)
 
 
+def _place(run, supplement=None):
+    """Where one custody occurrence lives: the run's first recording, or a numbered supplement."""
+    if supplement is None:
+        return f'custody/{run}'
+    if type(supplement) is not int or supplement < 1:
+        raise ValueError('Invalid supplement number')
+    return f'custody/{run}/supplements/{supplement:04d}'
+
+
 def _receipt(report):
     keys = ('collection_id', 'run', 'package_sha256', 'manifest_sha256', 'bytes', 'coverage')
+    supplement = (report['manifest'].get('supplement') or {}).get('sequence')
     return {
         'schema': 'berman.custody-recording/1',
         **{key: report[key] for key in keys},
-        'relative_path': f'custody/{report["run"]}/recording.zip',
+        **({'supplement': supplement} if supplement is not None else {}),
+        'relative_path': f'{_place(report["run"], supplement)}/recording.zip',
     }
 
 
@@ -126,7 +137,7 @@ def _accepted(root, receipt):
     run = receipt['run']
     if not evidence.RUN.fullmatch(run) or receipt['collection_id'] != evidence.collection(root):
         raise ValueError('Recording occurrence differs from study')
-    folder = root / 'custody' / run
+    folder = root / _place(run, receipt.get('supplement'))
     if files.read(folder / 'receipt.json') != receipt:
         raise ValueError('Recording receipt differs from retained custody receipt')
     data = _read(folder / 'recording.zip', MAX_PACKAGE)
@@ -150,7 +161,12 @@ def _commit(root, data, expected):
     parent.mkdir(exist_ok=True, mode=0o700)
     files.safe_directory(parent)
     _dirsync(root)
-    folder = parent / receipt['run']
+    folder = root / _place(receipt['run'], receipt.get('supplement'))
+    if receipt.get('supplement') is not None:
+        # A supplement sits beside the recording it follows, which must already be in custody.
+        files.safe_directory(parent / receipt['run'])
+        folder.parent.mkdir(exist_ok=True, mode=0o700)
+        _dirsync(parent / receipt['run'])
     if not folder.exists():
         stage = Path(tempfile.mkdtemp(dir=parent, prefix='.incoming-'))
         try:
@@ -165,6 +181,7 @@ def _commit(root, data, expected):
         finally:
             if stage.exists():
                 shutil.rmtree(stage)
+    _dirsync(folder.parent)
     _dirsync(parent)
     verify_recording(root, receipt)
     return receipt
@@ -193,8 +210,13 @@ def import_recording(root, source, *, expected_sha256, size=None):
     return _commit(Path(root), data, expected_sha256)
 
 
-def preserve_split_run(root, metadata, blobs):
-    """Package a controller state and its accepted CAS paths. Retry with identical facts."""
+def preserve_split_run(root, metadata, blobs, supplement=None):
+    """Package a controller state and its accepted CAS paths. Retry with identical facts.
+
+    `blobs` holds the accepted members only. A member the acceptance names as missing is left
+    out and stated in the recording's coverage. With `supplement`, the package is that
+    supplement's collection: a further recording of the same run, kept beside the first.
+    """
     root = Path(root)
     run = metadata['run']
     if not evidence.RUN.fullmatch(run) or metadata['collection_id'] != evidence.collection(root):
@@ -205,9 +227,27 @@ def preserve_split_run(root, metadata, blobs):
     if 'decision' in metadata:
         controller['decision'] = metadata['decision']
     controller['facts'] = facts
-    capture = facts['capture']
+    if metadata.get('sittings'):
+        controller['sittings'] = metadata['sittings']
+    if supplement is None:
+        part, transferred = facts, metadata['transferred']
+    else:
+        item = metadata['supplements'][supplement - 1]
+        if item['sequence'] != supplement:
+            raise ValueError('Supplement sequence differs from its position')
+        part, transferred = item['facts'], item['transferred']
+        controller['supplement'] = {
+            'sequence': supplement,
+            'declaration': item['declaration'],
+            'facts': {key: part[key] for key in ('capture', 'accept')},
+            'transferred': transferred,
+        }
+    capture = part['capture']
     observed = protocol.inventory(capture['members'])
-    if set(observed) != set(blobs) or metadata['transferred'] != {k: v[1] for k, v in observed.items()}:
+    absent = {row['path']: row for row in part['accept'].get('missing', [])}
+    if set(absent) - set(observed) or set(blobs) != set(observed) - set(absent):
+        raise ValueError('Transferred files differ from the observed inventory')
+    if any(transferred.get(name) != observed[name][1] for name in blobs):
         raise ValueError('Transferred files differ from the observed inventory')
     base = 'runs/' + run
     payload = {}
@@ -219,7 +259,8 @@ def preserve_split_run(root, metadata, blobs):
         entries.append({'path': name, 'type': 'file', 'size': len(data), 'mode': '0o600', 'sha256': files.digest(data)})
         payload[name] = (data, stat.S_IFREG | 0o600)
 
-    for name, (size, digest) in observed.items():
+    for name in sorted(blobs):
+        size, digest = observed[name]
         if len(name.encode()) > 4000 or len(Path(name).parts) > 60:
             raise ValueError('Evidence path exceeds portable recording bound')
         data = _read(blobs[name], size)
@@ -232,20 +273,33 @@ def preserve_split_run(root, metadata, blobs):
         raise ValueError('Controller receipts exceed recording bound')
     add('evidence/controller.json', controller_bytes)
     add('evidence/ending.json', protocol.json_bytes(ending))
+    if supplement is not None:
+        add('evidence/supplement.json', protocol.json_bytes(controller['supplement']['declaration']))
     for name in directories:
         entries.append({'path': name, 'type': 'directory', 'mode': '0o700'})
         payload[name + '/'] = (b'', stat.S_IFDIR | 0o700)
     entries.sort(key=lambda item: item['path'])
     refs = dict.fromkeys(('operation', 'migration', 'capture', 'binding', 'closure'))
     refs.update(controller='evidence/controller.json', ending='evidence/ending.json')
+    if supplement is not None:
+        refs['supplement'] = 'evidence/supplement.json'
     if capture.get('parent_sha256'):
         refs['capture'], _ = evidence.committed_capture(run, lambda name: payload[name][0])
     inventory = [dict(row, path=row['path'][len(base) + 1 :]) for row in entries if row['path'].startswith(base + '/')]
     coverage = list(capture.get('limitations', []))
     coverage.extend(f'No {key} receipt retained' for key in ('preparation', 'launch') if key not in facts)
+    coverage.extend(
+        f'Observed on the host but not accepted into custody: {name} ({row["problem"]})'
+        for name, row in sorted(absent.items())
+    )
+    if supplement is not None:
+        coverage.append(
+            f'Supplement {supplement} to {run}: later observations kept after the first collection froze. '
+            'It neither repeats nor replaces that recording.'
+        )
     # Decode only transcripts explicitly attributed by a co-located native capture record.
     streams = []
-    for name in sorted(observed):
+    for name in sorted(blobs):
         if not name.endswith('.jsonl'):
             continue
         ref = str(Path(name).with_name('capture.json'))
@@ -256,7 +310,7 @@ def preserve_split_run(root, metadata, blobs):
             and associated[0] == 'associated'
             and associated[1] in (capture.get('associated_sessions') or ())
         )
-        if native_source and Path(name).name == 'transcript.jsonl' and ref in observed:
+        if native_source and Path(name).name == 'transcript.jsonl' and ref in blobs:
             meta = json.loads(payload[f'{base}/{ref}'][0])
             if meta.get('format') in ('codex-jsonl/1', 'claude-jsonl/1') and meta.get('sha256') == observed[name][1]:
                 fmt = meta['format']
@@ -282,10 +336,15 @@ def preserve_split_run(root, metadata, blobs):
             'meaning': 'Accepted native file bytes. Modes describe the portable package.',
         },
     }
+    if supplement is not None:
+        first = metadata['facts'].get('preserve')
+        if not first:
+            raise ValueError('Preserve the first collection before its supplement')
+        manifest['supplement'] = {'sequence': supplement, 'follows_recording_sha256': first['package_sha256']}
     raw_manifest = protocol.json_bytes(manifest)
     if len(raw_manifest) > MAX_MANIFEST or len(payload) >= MAX_MEMBERS:
         raise ValueError('Recording inventory exceeds custody bound')
-    saved_receipt = root / 'custody' / run / 'receipt.json'
+    saved_receipt = root / _place(run, supplement) / 'receipt.json'
     if saved_receipt.exists():
         saved = files.read(saved_receipt)
         if verify_recording(root, saved)['manifest'] != manifest:
@@ -294,6 +353,14 @@ def preserve_split_run(root, metadata, blobs):
     payload[evidence.MANIFEST] = (raw_manifest, stat.S_IFREG | 0o644)
     data = package.make_zip(payload, '')
     return _commit(root, data, files.digest(data))
+
+
+def _selection(run, supplement=None):
+    """A supplement has its own edition pointer, so it never displaces the run's first edition."""
+    request = selection('connections', runs=(run,))
+    if supplement is not None:
+        request['supplement'] = supplement
+    return request
 
 
 def _build(view, archive, manifest):
@@ -357,7 +424,7 @@ def _build(view, archive, manifest):
         {run: details},
         True,
         True,
-        selection('connections', runs=(run,)),
+        _selection(run, (manifest.get('supplement') or {}).get('sequence')),
     )
 
 
@@ -365,7 +432,7 @@ def publish_edition(root, receipt):
     """Publish one verified custody occurrence as a standard, independently readable edition."""
     root = Path(root)
     data, report = _accepted(root, receipt)
-    request = selection('connections', runs=(receipt['run'],))
+    request = _selection(receipt['run'], receipt.get('supplement'))
     with package.publication_lock(root), zipfile.ZipFile(io.BytesIO(data)) as archive:
         pointer = root / package.pointer_path(request)
         if pointer.exists():

@@ -1,4 +1,10 @@
-"""Offline hook routing and staged parent transcripts. Only assigned native sessions reach disk."""
+"""Offline hook routing and staged parent transcripts. Only assigned native sessions reach disk.
+
+Staging stays open for the whole engagement: a callback from the bound session is kept whether
+or not the process that first launched it is still running. After the first collection freezes,
+callbacks go to the `late` area, which the next supplement collects. Nothing is dropped silently
+once a session is bound to an operation.
+"""
 
 from contextlib import contextmanager
 import fcntl
@@ -21,6 +27,31 @@ MAX_EVENT = 4 * 1024 * 1024
 
 def operation_dir(spool, operation):
     return Path(spool).expanduser().resolve() / 'operations' / protocol.identifier(operation)
+
+
+def sitting_files(folder, number):
+    """One native process per sitting. Operations launched before sittings existed keep their names."""
+    if number == 1 and (folder / 'launch-intent.json').exists():
+        return {
+            'intent': folder / 'launch-intent.json',
+            'started': folder / 'started.json',
+            'exit': folder / 'exit.json',
+        }
+    base = folder / 'sittings' / f'{number:04d}'
+    return {'intent': base / 'intent.json', 'started': base / 'started.json', 'exit': base / 'exit.json'}
+
+
+def sittings(folder):
+    """Numbers of the sittings whose launch intent was recorded, in order."""
+    found = {int(p.parent.name) for p in (folder / 'sittings').glob('[0-9][0-9][0-9][0-9]/intent.json')}
+    if (folder / 'launch-intent.json').exists():
+        found.add(1)
+    return sorted(found)
+
+
+def open_area(folder):
+    """Where a callback is staged now: the operation itself until its collection freezes, then `late`."""
+    return folder / 'late' if (folder / 'collection').exists() else folder
 
 
 @contextmanager
@@ -86,13 +117,17 @@ def find_parent(home, harness, sid):
     return match
 
 
-def observe(folder, preparation, session_id, event):
-    """Publish one verified native source using the existing committed-generation format."""
+def observe(folder, preparation, session_id, event, known=None):
+    """Publish one verified native source using the existing committed-generation format.
+
+    `folder` is the staging area that receives the generation. `known` is a source path already
+    verified for this parent in another area, used when the callback names none.
+    """
     harness = preparation['harness']
     home = Path(preparation['binding']['home'])
     previous = snapshots.read(folder / 'session')
     old = previous['metadata'] if previous else {}
-    path = Path(event.get('transcript_path') or old.get('source_transcript') or '')
+    path = Path(event.get('transcript_path') or old.get('source_transcript') or known or '')
     roots = ('projects',) if harness == 'claude' else ('sessions', 'archived_sessions')
     if event['hook_event_name'] == 'closeout' and (path == Path('.') or not path.exists()):
         path = find_parent(home, harness, session_id)
@@ -148,6 +183,15 @@ def observe(folder, preparation, session_id, event):
     return snapshots.publish(folder / 'session', record, raw, reader, tail, folder / 'scratch')
 
 
+def known_source(folder):
+    """The parent source path last verified in the first staging area, if any."""
+    try:
+        latest = snapshots.read(folder / 'session')
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+    return latest['metadata'].get('source_transcript') if latest else None
+
+
 def route(spool, home, event, operation=None):
     """Claude reserves a UUID. Codex binds once to the exact prepared opening prompt."""
     if not isinstance(event, dict):
@@ -171,16 +215,11 @@ def route(spool, home, event, operation=None):
             except ValueError:
                 return {}
     folder = operation_dir(spool, operation)
-    if not (folder / 'launch-intent.json').exists():
+    if not folder.is_dir() or not sittings(folder):
         return {}
     with locked(folder):
         prepared = files.read(folder / 'preparation.json')
-        if (
-            prepared['harness'] != harness
-            or str(home) != prepared['binding']['home']
-            or (folder / 'collection').exists()
-            or (folder / 'exit.json').exists()
-        ):
+        if prepared['harness'] != harness or str(home) != prepared['binding']['home']:
             return {}
         if harness == 'claude':
             if sid != prepared['reserved_session_id']:
@@ -202,11 +241,14 @@ def route(spool, home, event, operation=None):
         elif files.read(registry)['operation'] != operation:
             return {}
         files.keep(folder / 'session-id.json', files.json_bytes(sid))
+        # The engagement, not the launching process, bounds observation. A resumed parent keeps
+        # staging here; after a frozen collection its callbacks wait in `late` for a supplement.
+        area = open_area(folder)
         callback = {'observed_at_utc': files.now(), 'event': event}
-        target = folder / 'events' / (uuid4().hex + '.json')
+        target = area / 'events' / (uuid4().hex + '.json')
         files.write(target, callback)
         try:
-            observed = observe(folder, prepared, sid, event)
+            observed = observe(area, prepared, sid, event, known=known_source(folder))
             callback['generation'] = files.digest_json(observed)
         except (OSError, ValueError) as exc:
             callback['limitation'] = str(exc)

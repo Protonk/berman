@@ -188,7 +188,25 @@ def verify_members(manifest, members, read):
     check_authority(manifest, read)
 
 
-def check_split_authority(manifest, controller, ending, capture):
+def split_part(manifest, controller):
+    """The capture, acceptance and transfer map this split recording packages.
+
+    A first recording packages the run's own facts. A supplement packages the one supplement
+    the controller record carries, and must name the recording it follows.
+    """
+    supplement = manifest.get('supplement')
+    if supplement is None:
+        if 'supplement' in controller:
+            raise ValueError('Controller record carries a supplement the recording does not name')
+        return controller['facts'], controller['transferred'], None
+    item = controller.get('supplement')
+    if (not isinstance(supplement, dict) or not isinstance(item, dict) or type(supplement.get('sequence')) is not int
+            or item.get('sequence') != supplement['sequence'] or not SHA.fullmatch(supplement.get('follows_recording_sha256', ''))):
+        raise ValueError('Split supplement and controller record disagree')
+    return item['facts'], item['transferred'], item['declaration']
+
+
+def check_split_authority(manifest, controller, ending, capture, read=None):
     if (controller.get('collection_id') != manifest['collection_id'] or controller.get('run') != manifest['run']
             or controller.get('connection') != manifest['attribution']['connection']
             or manifest['attribution']['evidence'] != manifest['evidence']['controller']):
@@ -200,15 +218,25 @@ def check_split_authority(manifest, controller, ending, capture):
     assignment = controller['assignment']
     if any(assignment.get(key) != controller[key] for key in ('run', 'collection_id', 'connection')):
         raise ValueError('Split assignment names another occurrence')
-    for observation in (facts['capture'], facts.get('preparation'), facts.get('launch')):
+    part, transferred, declaration = split_part(manifest, controller)
+    sittings = controller.get('sittings', {})
+    if not isinstance(sittings, dict):
+        raise ValueError('Split sitting receipts are not a mapping')
+    for observation in (part['capture'], facts['capture'], facts.get('preparation'), facts.get('launch'), *sittings.values()):
         if observation is None:
             continue
         if (any(observation.get(key) != assignment.get(key) for key in ('run', 'collection_id', 'operation', 'connection', 'harness'))
                 or observation.get('assignment_sha256') != files.digest_json(assignment)):
             raise ValueError('Split observation names another assignment')
-    capture_receipt = facts['capture']
+    capture_receipt = part['capture']
     if not declared.get('operation') or capture_receipt.get('ending_id') != declared['operation']:
         raise ValueError('Split capture closeout names another ending')
+    if declaration is not None:
+        ref = manifest['evidence'].get('supplement')
+        if (ref != 'evidence/supplement.json' or read is None or json.loads(read(ref)) != declaration
+                or not declaration.get('reason') or capture_receipt.get('supplement_id') != declaration.get('operation')
+                or capture_receipt.get('sequence') != manifest['supplement']['sequence']):
+            raise ValueError('Split supplement declaration and capture disagree')
     if capture_receipt.get('parent_sha256') != (capture and capture['sha256']):
         raise ValueError('Split parent transcript differs from native closeout')
     if capture and (capture_receipt.get('session_id') != capture.get('session_id')
@@ -221,11 +249,19 @@ def check_split_authority(manifest, controller, ending, capture):
     inventory = {row['path']: (row['size'], row['sha256']) for row in rows}
     members = {row['path']: (row['size'], row['sha256']) for row in manifest['custody']['inventory']['entries']
                if row['type'] == 'file'}
-    accepted = facts['accept']
+    accepted = part['accept']
+    # Evidence observed on the host and never accepted stays named: in the acceptance and in coverage.
+    absent = accepted.get('missing', [])
+    if (not isinstance(absent, list) or (absent and not accepted.get('missing_reason'))
+            or any(row.get('path') not in inventory or inventory[row['path']] != (row.get('size'), row.get('sha256'))
+                   or not any(row['path'] in limit for limit in manifest['coverage']['unknown']) for row in absent)):
+        raise ValueError('Split recording does not account for evidence missing at acceptance')
+    expected = {key: value for key, value in inventory.items() if key not in {row['path'] for row in absent}}
     fingerprint = files.digest(json.dumps(rows, sort_keys=True, separators=(',', ':'), allow_nan=False).encode())
-    if (members != inventory or len(inventory) != len(rows) or accepted.get('inventory_sha256') != fingerprint
-            or accepted.get('accepted_members') != len(rows)
-            or controller['transferred'] != {key: value[1] for key, value in inventory.items()}):
+    if (members != expected or len(inventory) != len(rows) or accepted.get('inventory_sha256') != fingerprint
+            or accepted.get('accepted_members') != len(expected)
+            or any(transferred.get(key) != value[1] for key, value in expected.items())
+            or (not absent and transferred != {key: value[1] for key, value in inventory.items()})):
         raise ValueError('Recorded observations, transfers, acceptance and preserved members disagree')
 
 
@@ -256,14 +292,14 @@ def check_authority(manifest, read, snapshot_bytes=True):
     capture_ref = refs.get('capture')
     if manifest['profile'] == 'split':
         controller = load('controller')
-        if controller['facts']['capture'].get('parent_sha256'):
+        if split_part(manifest, controller)[0]['capture'].get('parent_sha256'):
             # Early split manifests identify the primary generation only through the
             # retained host pointer. Explicit and implicit references must agree.
             ref, capture = committed_capture(manifest['run'], read)
             if capture_ref is not None and capture_ref != ref:
                 raise ValueError('Split manifest and native pointer select different captures')
             capture_ref = ref
-        check_split_authority(manifest, controller, ending, capture)
+        check_split_authority(manifest, controller, ending, capture, read)
     if ending is not None:
         if not isinstance(ending, dict) or not ending.get('reason') or not ending.get('declared_at_utc'):
             raise ValueError('Retained ending is not a declaration')
