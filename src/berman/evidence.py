@@ -62,8 +62,8 @@ def validate(manifest):
     uuid.UUID(manifest['collection_id'])
     if not isinstance(manifest.get('run'), str) or not RUN.fullmatch(manifest['run']):
         raise ValueError('Invalid recording run identity')
-    if manifest.get('profile') not in ('native', 'historical-import'):
-        raise ValueError('Recording needs an explicit native or historical-import profile')
+    if manifest.get('profile') not in ('native', 'historical-import', 'split'):
+        raise ValueError('Recording needs a supported recording profile')
     if not isinstance(manifest.get('entries'), list) or not manifest['entries']:
         raise ValueError('Recording has no inventoried members')
     seen = {}
@@ -113,8 +113,14 @@ def validate(manifest):
         evidence.get(key) is None for key in ('ending', 'capture', 'operation', 'migration', 'binding', 'closure')
     ):
         raise ValueError('A new recording requires capture, binding, closure, ending, operation and migration evidence')
+    if manifest['profile'] == 'split':
+        ref = evidence.get('controller')
+        if ref != 'evidence/controller.json' or ref not in seen or seen[ref]['type'] != 'file':
+            raise ValueError('Split recording requires retained controller evidence')
+        if evidence.get('ending') != 'evidence/ending.json':
+            raise ValueError('Split recording requires retained ending evidence')
     for fact in ('ending', 'capture', 'operation', 'migration', 'binding', 'closure'):
-        if evidence.get(fact) is None and not any(fact in value for value in coverage['unknown']):
+        if manifest['profile'] != 'split' and evidence.get(fact) is None and not any(fact in value for value in coverage['unknown']):
             raise ValueError(f'Missing {fact} evidence must be named in coverage.unknown')
     for stream in manifest.get('streams', []):
         if (
@@ -182,6 +188,47 @@ def verify_members(manifest, members, read):
     check_authority(manifest, read)
 
 
+def check_split_authority(manifest, controller, ending, capture):
+    if (controller.get('collection_id') != manifest['collection_id'] or controller.get('run') != manifest['run']
+            or controller.get('connection') != manifest['attribution']['connection']
+            or manifest['attribution']['evidence'] != manifest['evidence']['controller']):
+        raise ValueError('Split controller record and recording occurrence disagree')
+    facts = controller['facts']
+    declared = facts.get('ending')
+    if not isinstance(declared, dict) or not ending or ending != dict(declared, declared_at_utc=declared.get('at')):
+        raise ValueError('Retained controller and ending declaration disagree')
+    assignment = controller['assignment']
+    if any(assignment.get(key) != controller[key] for key in ('run', 'collection_id', 'connection')):
+        raise ValueError('Split assignment names another occurrence')
+    for observation in (facts['capture'], facts.get('preparation'), facts.get('launch')):
+        if observation is None:
+            continue
+        if (any(observation.get(key) != assignment.get(key) for key in ('run', 'collection_id', 'operation', 'connection', 'harness'))
+                or observation.get('assignment_sha256') != files.digest_json(assignment)):
+            raise ValueError('Split observation names another assignment')
+    capture_receipt = facts['capture']
+    if not declared.get('operation') or capture_receipt.get('ending_id') != declared['operation']:
+        raise ValueError('Split capture closeout names another ending')
+    if capture_receipt.get('parent_sha256') != (capture and capture['sha256']):
+        raise ValueError('Split parent transcript differs from native closeout')
+    if capture and (capture_receipt.get('session_id') != capture.get('session_id')
+                    or capture.get('harness') != assignment.get('harness')):
+        raise ValueError('Split parent transcript attribution differs from native closeout')
+    limits = capture_receipt.get('limitations')
+    if not isinstance(limits, list) or any(limit not in manifest['coverage']['unknown'] for limit in limits):
+        raise ValueError('Split recording omits native coverage limitations')
+    rows = capture_receipt['members']
+    inventory = {row['path']: (row['size'], row['sha256']) for row in rows}
+    members = {row['path']: (row['size'], row['sha256']) for row in manifest['custody']['inventory']['entries']
+               if row['type'] == 'file'}
+    accepted = facts['accept']
+    fingerprint = files.digest(json.dumps(rows, sort_keys=True, separators=(',', ':'), allow_nan=False).encode())
+    if (members != inventory or len(inventory) != len(rows) or accepted.get('inventory_sha256') != fingerprint
+            or accepted.get('accepted_members') != len(rows)
+            or controller['transferred'] != {key: value[1] for key, value in inventory.items()}):
+        raise ValueError('Recorded observations, transfers, acceptance and preserved members disagree')
+
+
 def check_authority(manifest, read, snapshot_bytes=True):
     """Check the retained assertions, without replacing them with a manifest boolean."""
     refs = manifest['evidence']
@@ -193,6 +240,8 @@ def check_authority(manifest, read, snapshot_bytes=True):
     for key in refs:
         if refs[key] is not None and not isinstance(load(key), dict):
             raise ValueError(f'Retained {key} must be an object')
+    if manifest['profile'] == 'split':
+        check_split_authority(manifest, load('controller'), ending, capture)
     if ending is not None:
         if not isinstance(ending, dict) or not ending.get('reason') or not ending.get('declared_at_utc'):
             raise ValueError('Retained ending is not a declaration')

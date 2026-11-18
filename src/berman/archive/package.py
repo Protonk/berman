@@ -24,7 +24,7 @@ MANIFEST = 'edition-manifest.json'
 SCHEMA = 'berman.reading-edition/2'
 
 
-def assemble(build, generated):
+def assemble(build, generated, *, retained_links=None):
     """Every ZIP member as {path: (bytes, mode)}; checksums.sha256 covers this payload only."""
     root = build.root
     payload = {}
@@ -74,7 +74,8 @@ def assemble(build, generated):
                 if entry['type'] == 'directory':
                     payload[path + '/'] = (b'', stat.S_IFDIR | mode)
                 elif entry['type'] == 'symlink':
-                    payload[path] = (os.fsencode(os.readlink(root / path)), stat.S_IFLNK | mode)
+                    link = retained_links[path] if retained_links is not None else os.fsencode(os.readlink(root / path))
+                    payload[path] = (link, stat.S_IFLNK | mode)
                 else:
                     payload[path] = ((root / path).read_bytes(), stat.S_IFREG | mode)
     for path, data in generated.items():
@@ -121,9 +122,9 @@ def member(path, data, mode):
     return {'path': path, 'type': kind, 'mode': mode, 'size': len(data), 'sha256': SHA(data)}
 
 
-def seal(build, generated, summary):
+def seal(build, generated, summary, *, retained_links=None):
     """Bind source occurrences and all edition members without a self-referential digest."""
-    payload = assemble(build, generated)
+    payload = assemble(build, generated, retained_links=retained_links)
     members = [member(path, data, mode) for path, (data, mode) in sorted(payload.items())]
     originals = [item for item in members if item['path'].startswith('runs/') and item['path'] != 'runs/']
     source_paths = {item['path'] for item in build.source_manifests if item['basis'] == 'recording manifest'}

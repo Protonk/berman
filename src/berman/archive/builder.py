@@ -298,6 +298,7 @@ def transcripts(build, files, out):
 def external_references(build, files, out):
     rows = []
     # Home directories come from recorded original locations, not from the current user.
+    included = {entry["path"] for entry in build.entries}
     homes = sorted({"/".join(Path(r["original_root"]).parts[1:3]) for r in build.layout["runs"]
                     if r.get("original_root", "").startswith(("/Users/", "/home/"))})
     pattern = re.compile(r"/(?:" + "|".join([*map(re.escape, homes), "opt/homebrew", "private/tmp", "tmp"]) + r")/[^\s\"'<>`\\]+")
@@ -317,7 +318,9 @@ def external_references(build, files, out):
                 mapped = ""
                 category = "external environment or path"
                 for run in build.layout["runs"]:
-                    old = run["original_root"]
+                    old = run.get("original_root")
+                    if not old:
+                        continue
                     if original == old or original.startswith(old + "/"):
                         mapped = run["current_root"] + original[len(old):]
                         category = "relocated fieldwork reference"
@@ -327,7 +330,7 @@ def external_references(build, files, out):
                         if original.startswith(checkout + "/"):
                             category = f"external {name} repository or custody record"
                             break
-                exists = bool(mapped and ((build.root / mapped).exists() or (build.root / mapped).is_symlink()))
+                exists = mapped in included
                 rows.append({"source_path": path, "source_line": line_no, "original_path": original,
                              "archive_path": mapped, "classification": category,
                              "target_in_archive": "yes" if exists else "no",
@@ -365,13 +368,20 @@ def context_order(run, files):
             "4. " + ", ".join("context/" + r for r in receipts) + " and context/berman/preparation/ for collection scope, the declared ending, source coverage and preparation receipts."]
 
 
+def split_manifest(build, run):
+    return next((row["manifest"] for row in build.source_manifests
+                 if row["run"] == run and (row["manifest"] or {}).get("profile") == "split"), None)
+
+
 def readers(build, files, groups, evidence, aids, mappings, out):
     for run in build.runs:
         historical = build.stewart_reader(run)
         session = build.session_path(run)
         metadata_path = f"runs/{run}/run.json"
         notes_protocol = metadata_path in files and load(build.root, metadata_path).get("recording_protocol") in ("work-accounts/1", "participant-inquiry/1")
-        note_paths = sorted(p for p in files if p.startswith(f"runs/{run}/notes/") and p.endswith((".md", ".txt")))
+        split = split_manifest(build, run)
+        packet = "packet/" if split else ""
+        note_paths = sorted(p for p in files if p.startswith(f"runs/{run}/{packet}notes/") and p.endswith((".md", ".txt")))
         narrative_path = f"runs/{run}/narrative.md"
         lines = [f"{build.connection(run)['name'].upper()} FIELDWORK: {run}", ""]
         if build.edition.name != "stewart":
@@ -394,7 +404,12 @@ def readers(build, files, groups, evidence, aids, mappings, out):
         saved = [f"{a['path']} | {a['role']}" for a in aids if a["run"] == run]
         if saved:
             lines += ["SAVED PROGRAMS AND VIEW SPECIFICATIONS", *saved]
-        if notes_protocol:
+        if split:
+            lines += ["SPLIT FIELDWORK", f"Controller receipts: recordings/{run}/evidence/controller.json",
+                      "packet/ contains the worker-facing material and any returned notes.",
+                      "initial-project/ and final-project/ contain project context when collected.",
+                      "Recorded limitations:", *(split["coverage"]["unknown"] or ["No explicit limitation recorded."]), ""]
+        elif notes_protocol:
             lines += ["", "READING ORDER", "1. Opening assignment, recording instructions and participant notes, reproduced below with original line numbers.",
                       f"2. {session}/conversation.txt and review/events.txt for the recorded main conversation and tools.",
                       *context_order(run, files), "",
@@ -413,16 +428,17 @@ def readers(build, files, groups, evidence, aids, mappings, out):
         lines += ["INCLUDED MANAGER CONVERSATION FILES" if historical else "INCLUDED SESSION CONVERSATION FILES",
                   *(conversations or ["No manager conversation file supplied within this run." if historical else
                                       "No session conversation file supplied within this run."]), ""]
-        associated = [p for p in sorted(files) if p.startswith(f'runs/{run}/associated-sessions/') and p.endswith('/transcript.jsonl')]
+        associated_root = f"runs/{run}/" + ("associated/" if split else "associated-sessions/")
+        associated = [p for p in sorted(files) if p.startswith(associated_root) and p.endswith('/transcript.jsonl')]
         if associated:
             lines += ['ASSOCIATED NATIVE SESSIONS', *associated,
-                      f'runs/{run}/associated-sessions/sources.json records selection and coverage.',
+                      f'{associated_root}sources.json records selection and coverage.',
                       'These are associated sources; their presence makes no child-completion claim.', '']
         narrative = (build.root / narrative_path).read_text() if narrative_path in files else None
         if narrative is not None and not notes_protocol and not re.search(r"^\d{4}-\d\d-\d\dT\S+$", narrative, re.MULTILINE):
             lines += ["The narrative has no timestamp headings. Its paragraph times are not inferred in chronology.csv.", ""]
         lines += ["See review/recording-layouts.csv for command timestamp and exit-code provenance.", ""]
-        reading_names = ["ASSIGNMENT.md", "INSTRUCTIONS.md", *[p.removeprefix(f"runs/{run}/") for p in note_paths]] if notes_protocol else ["INSTRUCTIONS.md", "narrative.md", "git-commands.log"]
+        reading_names = [packet + "ASSIGNMENT.md", packet + "INSTRUCTIONS.md", *[p.removeprefix(f"runs/{run}/") for p in note_paths]] if (split or notes_protocol) else ["INSTRUCTIONS.md", "narrative.md", "git-commands.log"]
         for name in reading_names:
             path = f"runs/{run}/{name}"
             if name == "git-commands.log" and path not in files:
@@ -496,9 +512,13 @@ def render(build):
         narrative = (build.root / f"runs/{run}/narrative.md").read_text() if f"runs/{run}/narrative.md" in files else ""
         metadata_path = f"runs/{run}/run.json"
         protocol = load(build.root, metadata_path).get("recording_protocol", "historical narrative/scratch") if metadata_path in files else "historical narrative/scratch"
+        split = split_manifest(build, run)
+        if split:
+            protocol = "berman.connector/1"
+        notes = f"runs/{run}/" + ("packet/notes/" if split else "notes/")
         layout_rows.append({"run": run, "saved_invocations": len(selected),
                             "recording_protocol": protocol,
-                            "participant_notes": " | ".join(sorted(p for p in files if p.startswith(f"runs/{run}/notes/") and p.endswith((".md", ".txt")))),
+                            "participant_notes": " | ".join(sorted(p for p in files if p.startswith(notes) and p.endswith((".md", ".txt")))),
                             "metadata_patterns": " | ".join(sorted({"scratch/commands/<UTC timestamp>.argv.json" if g["metadata"].endswith(".argv.json") else "scratch/commands/<sequence>-<label>.command.json" if "/scratch/commands/" in g["metadata"] else "scratch/logs/<sequence>-<label>.json" if "/scratch/logs/" in g["metadata"] else "scratch/<name>" + (".command.json" if g["metadata"].endswith(".command.json") else ".json") for g in selected})),
                             "time_location": " | ".join(sorted({g["time_location"] for g in selected})),
                             "exit_location": " | ".join(sorted({"separate .exit file" if g["exit_file"] else "metadata /exit" for g in selected})),

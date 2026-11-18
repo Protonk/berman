@@ -27,7 +27,8 @@
     "profile": {
       "enum": [
         "native",
-        "historical-import"
+        "historical-import",
+        "split"
       ]
     },
     "entries": {
