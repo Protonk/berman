@@ -176,10 +176,28 @@ class Controller:
             raise ValueError('Unknown run')
         return json.loads(row['state'])
 
+    @staticmethod
+    def sitting_count(state):
+        """Sittings the host has reported: the launch, when recorded, and each later one."""
+        return ('launch' in state['facts']) + len(state.get('sittings', {}))
+
     def status(self, db, run, supplement=None, deep=False):
         if not run:
             runs = [json.loads(row[0]) for row in db.execute('SELECT state FROM runs ORDER BY number')]
-            result = [{'run': s['run'], 'connection': s['connection'], 'facts': list(s['facts'])} for s in runs]
+            result = [
+                {
+                    'run': s['run'],
+                    'connection': s['connection'],
+                    'harness': s['assignment']['harness'],
+                    'facts': list(s['facts']),
+                    'sittings': self.sitting_count(s),
+                    'supplements': [
+                        {'sequence': item['sequence'], 'facts': list(item['facts'])}
+                        for item in s.get('supplements', [])
+                    ],
+                }
+                for s in runs
+            ]
         else:
             state = self.run_state(db, run)
             facts, transferred, _ = self.part(state, supplement)
@@ -198,9 +216,7 @@ class Controller:
                 accepted=facts.get('accept'),
                 preserved=facts.get('preserve'),
                 published=facts.get('publish'),
-                sittings=1 + len(state.get('sittings', {}))
-                if 'launch' in state['facts']
-                else len(state.get('sittings', {})),
+                sittings=self.sitting_count(state),
                 supplements=[
                     {
                         'sequence': item['sequence'],

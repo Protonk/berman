@@ -11,7 +11,7 @@ import subprocess
 import sys
 import uuid
 
-from berman import executor, files, protocol, study
+from berman import cheatsheet, executor, files, protocol, study
 
 
 def ssh_client(settings):
@@ -82,12 +82,37 @@ def stable_id(collection, *parts):
     return str(uuid.uuid5(uuid.UUID(collection), json.dumps(parts)))
 
 
+def assignment_cache(spool, collection, run):
+    """Where this host keeps the assignment it fetched for a run, beside the executor's staging."""
+    return Path(spool) / 'controller-receipts' / collection / run / 'assignment.json'
+
+
+def programs(prefix=()):
+    """The words that run this installation's two commands again: (operator, standalone).
+
+    A printed command is meant to be pasted, and a workstation can hold another `berman`. A bare
+    name is used only when PATH finds this same installation under it; otherwise the full path is.
+    """
+
+    def word(path):
+        found = shutil.which(path.name)
+        return path.name if found and Path(found).resolve() == path.resolve() else str(path)
+
+    script = Path(sys.argv[0])
+    if script.name == 'berman-research' and script.is_file():
+        return [word(script)], [word(script.resolve().parent / 'berman')]
+    if script.name == 'berman' and script.is_file():
+        return [word(script), *prefix], [word(script)]
+    return [sys.executable, '-m', 'berman', 'remote'], [sys.executable, '-m', 'berman']
+
+
 class Operator:
-    def __init__(self, settings, remote=None):
+    def __init__(self, settings, remote=None, command=None):
         self.settings = settings
         self.remote = remote or Remote(settings)
+        # The words that reach this study again, for the next step shown to the operator after prepare.
+        self.command = command
         self.spool = Path(settings['spool']).expanduser().resolve()
-        self.receipts = self.spool / 'controller-receipts' / self.remote.collection
 
     def commission(self, args):
         operation = stable_id(self.remote.collection, 'commission', args.request)
@@ -121,7 +146,7 @@ class Operator:
         return self.remote.call(command, run=run, **fields)
 
     def ticket(self, run):
-        cache = self.receipts / run / 'assignment.json'
+        cache = assignment_cache(self.spool, self.remote.collection, run)
         if cache.is_file():
             return files.read(cache)
         value = self.remote.call('assignment', run=run)['result']
@@ -265,7 +290,10 @@ class Operator:
         if args.action == 'prepare':
             binding = self.settings['bindings'][a['connection']][a['harness']]
             prepared = executor.prepare(self.spool, a, dict(binding, connection=a['connection']))
-            return self.action('preparation', args.run, observation=prepared)
+            receipt = self.action('preparation', args.run, observation=prepared)
+            if self.command:
+                print(cheatsheet.prepared_note(prepared, self.command), file=sys.stderr)
+            return receipt
         if args.action in ('launch', 'resume'):
             observed = executor.launch(
                 self.spool,
@@ -319,14 +347,61 @@ def closeout_text(report):
     return '\n'.join(lines)
 
 
-def main(argv=None):
+def study_command(config):
+    """The operator command for the study these settings select, naming the settings unless they are the default."""
+    selected = [] if config == Path(cheatsheet.DEFAULT_CONFIG).expanduser() else ['--config', cheatsheet.shown(config)]
+    return [*programs(('remote',))[0], *selected]
+
+
+def sheet(config, remote=None):
+    """The cheatsheet for the study `config` selects, or for an installation with none. Reads only.
+
+    It sends one `status` to the guest. An unreachable guest is reported in the sheet, not raised.
+    """
+    operator, standalone = programs(('remote',))
+    if not config.is_file():
+        front = [*standalone, 'cheatsheet', '--config'] if operator[-1] == 'remote' else [*operator, '--config']
+        tail = [] if operator[-1] == 'remote' else ['cheatsheet']
+        folder = Path(cheatsheet.DEFAULT_CONFIG).expanduser().parent
+        others = []
+        for path in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+            try:
+                value = files.read(path)
+            except OSError, ValueError:
+                continue
+            if isinstance(value, dict) and {'study', 'collection_id', 'host'} <= set(value):
+                others.append(path)
+        choices = [[*front, cheatsheet.shown(other), *tail] for other in others]
+        return cheatsheet.unconfigured(config, choices, standalone)
+    settings = files.read(config.resolve(strict=True))
+    remote = remote or Remote(settings)
+    spool = Path(settings['spool']).expanduser().resolve()
+    try:
+        rows, problem = remote.call('status', run=None)['result'], None
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        rows, problem = None, str(error)
+
+    def operation_of(run):
+        cache = assignment_cache(spool, remote.collection, run)
+        return files.read(cache)['operation'] if cache.is_file() else None
+
+    return cheatsheet.study(settings, study_command(config), config, rows, problem, operation_of, standalone)
+
+
+def arguments():
+    """The operator command line. The cheatsheet's printed commands are checked against it."""
     parser = argparse.ArgumentParser(prog='berman remote', description=__doc__)
     parser.add_argument(
         '--config',
         type=Path,
-        default=Path(os.environ.get('BERMAN_CONNECTOR', '~/.config/berman/connector.json')).expanduser(),
+        default=Path(os.environ.get('BERMAN_CONNECTOR', cheatsheet.DEFAULT_CONFIG)).expanduser(),
+        help='connector settings for one study (default: $BERMAN_CONNECTOR, then %(default)s)',
     )
     commands = parser.add_subparsers(dest='action', required=True)
+    front = commands.add_parser(
+        'cheatsheet', help='print the commands that apply to this study now, ready to paste; changes nothing'
+    )
+    front.add_argument('--json', action='store_true', help='machine-readable result')
     commission = commands.add_parser('commission', help='reserve or recover one immutable guest assignment')
     commission.add_argument(
         '--request', required=True, help='a unique label for this research decision; reuse on retry'
@@ -390,9 +465,18 @@ def main(argv=None):
                 required=True,
                 help='a label for this sitting; repeating the command with it never starts another',
             )
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    args = arguments().parse_args(argv)
     try:
-        result = Operator(files.read(args.config.resolve(strict=True))).perform(args)
+        if args.action == 'cheatsheet':
+            value = sheet(args.config)
+            print(json.dumps(value, indent=2) if args.json else cheatsheet.text(value))
+            return 0
+        settings = files.read(args.config.resolve(strict=True))
+        result = Operator(settings, command=study_command(args.config)).perform(args)
         if args.action == 'closeout':
             if args.json:
                 print(json.dumps(result, indent=2))

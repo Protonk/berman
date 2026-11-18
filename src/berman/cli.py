@@ -1,4 +1,4 @@
-"""Operate guest fieldwork, verify the installed software and read guest recordings and editions."""
+"""Find the command for what comes next, operate guest fieldwork, check the installed software and read recordings and editions."""
 
 import argparse
 import json
@@ -20,20 +20,19 @@ def refuse(message, as_json):
     return 2
 
 
-def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ['remote']:
-        from berman.connector import main as remote_main
-
-        return remote_main(argv[1:])
-    if argv[:1] == ['executor']:
-        from berman.executor import main as executor_main
-
-        return executor_main(argv[1:])
+def arguments():
+    """The standalone command line. `remote` and `executor` have their own, in the connector and executor."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--json', action='store_true', help='machine-readable result')
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('remote', help='operate a guest study (berman remote --help)')
+    sheet = commands.add_parser(
+        'cheatsheet', help='start here: print the commands that apply now, ready to paste; changes nothing'
+    )
+    sheet.add_argument('--config', type=Path, help='connector settings for one study')
+    sheet.add_argument('--json', action='store_true', dest='sheet_json', help='machine-readable result')
+    commands.add_parser(
+        'remote', help='operate a guest study; also installed as berman-research (berman remote --help)'
+    )
     commands.add_parser('executor', help='manage native staging (berman executor --help)')
     ci = commands.add_parser('ci', help='exercise this core checkout on a qualification Mac and Linux guest')
     ci.add_argument('--config', required=True, type=Path, help='qualification SSH settings')
@@ -50,8 +49,26 @@ def main(argv=None):
         sub.add_argument('--sha256', help='expected package digest from a trusted separate record')
         if name == 'materialize':
             sub.add_argument('destination', type=Path)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ['remote']:
+        from berman.connector import main as remote_main
+
+        return remote_main(argv[1:])
+    if argv[:1] == ['executor']:
+        from berman.executor import main as executor_main
+
+        return executor_main(argv[1:])
+    args = arguments().parse_args(argv)
     try:
+        if args.command == 'cheatsheet':
+            from berman.connector import main as remote_main
+
+            selected = ['--config', str(args.config)] if args.config else []
+            return remote_main([*selected, 'cheatsheet', *(['--json'] if args.json or args.sheet_json else [])])
         if args.command == 'ci':
             runner = Path(__file__).resolve().parents[2] / 'scripts/ci/run.py'
             if not runner.is_file():
@@ -81,7 +98,7 @@ def main(argv=None):
             print(json.dumps(verify_edition(args.path), indent=2))
             return 0
         if args.command != 'verify':
-            parser.error(f'place {args.command} first to pass options to it')
+            arguments().error(f'place {args.command} first to pass options to it')
         result = verify.software()
         if args.json:
             print(json.dumps(result, indent=2))

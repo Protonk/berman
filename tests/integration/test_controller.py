@@ -307,6 +307,12 @@ class ControllerTest(unittest.TestCase):
         )
         status = self.call(self.request('status', run=run))['result']
         self.assertEqual([['capture', 'accept', 'preserve', 'publish']], [s['facts'] for s in status['supplements']])
+        # The overview alone says where the run stands: its harness, sittings and each supplement's facts.
+        (row,) = [r for r in self.call(self.request('status'))['result'] if r['run'] == run]
+        self.assertEqual(
+            (a['harness'], status['sittings'], [{'sequence': 1, 'facts': status['supplements'][0]['facts']}]),
+            (row['harness'], row['sittings'], row['supplements']),
+        )
         # The first recording is the bytes it was before the supplement existed.
         self.assertEqual(first['package_sha256'], files.digest((self.root / first['relative_path']).read_bytes()))
 

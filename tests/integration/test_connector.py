@@ -5,9 +5,11 @@ the executor, the controller and custody are the real ones.
 """
 
 from argparse import Namespace
+from contextlib import redirect_stderr
 from io import BytesIO, StringIO
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -17,7 +19,7 @@ from uuid import uuid4
 
 from unittest.mock import patch
 
-from berman import connector, evidence, executor, files, protocol
+from berman import cheatsheet, cli, connector, evidence, executor, files, protocol
 from berman.archive import package
 from berman.connector import Operator
 from berman.controller import Controller
@@ -109,6 +111,7 @@ class ConnectorTests(unittest.TestCase):
             'spool': str(self.spool),
             'bindings': {'example': {'claude': binding, 'codex': binding}},
         }
+        self.settings = settings
         self.guest = Loopback(Controller(study), self.ident)
         self.operator = Operator(settings, remote=self.guest)
 
@@ -129,6 +132,118 @@ class ConnectorTests(unittest.TestCase):
             action='commission', request=label, connection='example', harness=harness, recipe=None, plan=None
         )
         return self.operator.perform(args)
+
+    def sheet(self):
+        """The cheatsheet for this study, as an installation on PATH would print it."""
+        config = self.root / 'study.json'
+        files.write(config, self.settings)
+        with patch.object(connector, 'programs', return_value=(['berman-research'], ['berman'])):
+            return connector.sheet(config, remote=self.guest)
+
+    def entry(self):
+        (only,) = self.sheet()['engagements']
+        selected = 'berman-research --config ' + cheatsheet.shown(self.root / 'study.json') + ' '
+        return only['state'], [item['command'].removeprefix(selected) for item in only['steps']]
+
+    def test_cheatsheet_names_the_next_command_at_each_stage_and_changes_nothing(self):
+        self.assertEqual([], self.sheet()['engagements'])
+        run = self.commission()['run']
+        self.assertEqual(('commissioned', [f'prepare {run}']), self.entry())
+        self.run_command('prepare', run)
+        (prepared,) = self.sheet()['engagements']
+        operation = self.operator.ticket(run)['operation']
+        self.assertEqual(str(capture.operation_dir(self.spool, operation) / 'packet'), prepared['packet'])
+        self.assertEqual(('prepared', [f'launch {run}']), self.entry())
+        self.assertIn('After the packet is reviewed', prepared['steps'][0]['what'])
+
+        # A first sitting begun here that the guest has not heard of is reported, not offered again.
+        intent = capture.operation_dir(self.spool, operation) / 'sittings/0001/intent.json'
+        files.write(intent, {'argv': []})
+        (begun,) = self.sheet()['engagements']
+        self.assertIn('no recorded exit on this host', begun['notes'][0])
+        self.assertIn('It starts nothing', begun['steps'][0]['what'])
+        intent.unlink()
+        intent.parent.rmdir()
+        intent.parent.parent.rmdir()
+
+        self.run_command('launch', run)
+        self.assertEqual(
+            ('in fieldwork', [f'resume {run} --request LABEL', f"closeout {run} --reason 'REASON'"]), self.entry()
+        )
+        self.assertEqual(1, self.sheet()['engagements'][0]['sittings'])
+        self.run_command('end', run, reason='The researcher ended fieldwork')
+        self.assertEqual(('closing', [f'closeout {run}']), self.entry())
+        self.assertEqual(['So far the ending is recorded.'], self.sheet()['engagements'][0]['notes'])
+        self.run_command('closeout', run)
+        self.assertEqual(
+            ('complete', [f'verify {run}', f"supplement {run} --request LABEL --reason 'REASON'"]), self.entry()
+        )
+        self.run_command('supplement', run, request='later', reason='The worker continued')
+        self.assertEqual(('supplement open', [f'closeout {run} --supplement 1']), self.entry())
+        self.run_command('closeout', run, supplement=1)
+        self.assertEqual('complete', self.entry()[0])
+
+        # Reading the sheet sends one status and writes nothing on the host.
+        before = files.inventory(self.spool)
+        self.guest.calls.clear()
+        text = cheatsheet.text(self.sheet())
+        self.assertEqual((['status'], before), (self.guest.calls, files.inventory(self.spool)))
+        self.assertIn(f'1 complete: recording preserved and reading edition published. The latest is {run}.', text)
+        self.assertIn('cd ' + cheatsheet.shown(self.project) + ' && claude', text)
+
+        self.guest.down = True
+        offline = self.sheet()
+        self.assertEqual([], offline['engagements'])
+        self.assertTrue(any('did not answer: guest unreachable' in note for note in offline['notes']))
+        self.assertIn('commission --request LABEL --connection example --harness codex', cheatsheet.text(offline))
+
+    def test_every_command_the_cheatsheet_prints_is_accepted_by_the_command_line(self):
+        run = self.commission()['run']
+        sheets = [self.sheet()]
+        self.run_command('prepare', run)
+        self.run_command('launch', run)
+        sheets.append(self.sheet())
+        self.run_command('closeout', run, reason='The researcher ended fieldwork')
+        self.run_command('supplement', run, request='later', reason='The worker continued')
+        sheets.append(self.sheet())
+        self.run_command('closeout', run, supplement=1)
+        sheets.append(self.sheet())
+        with (
+            patch.object(cheatsheet, 'DEFAULT_CONFIG', str(self.root / 'none/connector.json')),
+            patch.object(connector, 'programs', return_value=(['berman-research'], ['berman'])),
+        ):
+            sheets.append(connector.sheet(self.root / 'none/connector.json'))
+        checked = set()
+        for value in sheets:
+            steps = [s for e in value['engagements'] or [] for s in e['steps']]
+            steps += [s for section in value['sections'] for s in section['steps']]
+            for item in steps:
+                program, *words = shlex.split(item['command'])
+                if program == 'cd':
+                    self.assertEqual(['&&'], words[1:2])
+                    continue
+                parser = connector.arguments() if program == 'berman-research' else cli.arguments()
+                with self.subTest(command=item['command']), redirect_stderr(StringIO()):
+                    parser.parse_args(words)  # Exits, failing the test, on an unknown command or option.
+                checked.add((program, next(w for w in words if not w.startswith('-') and not w.endswith('.json'))))
+        self.assertLessEqual(
+            {
+                ('berman-research', name)
+                for name in ('commission', 'prepare', 'resume', 'closeout', 'verify', 'supplement', 'status')
+            }
+            | {('berman', 'verify'), ('berman', 'recording'), ('berman', 'archive')},
+            checked,
+        )
+
+    def test_prepare_shows_the_packet_and_the_launch_command(self):
+        run = self.commission()['run']
+        self.operator.command = ['berman-research', '--config', 'study.json']
+        said = StringIO()
+        with redirect_stderr(said):
+            self.run_command('prepare', run)
+        packet = capture.operation_dir(self.spool, self.operator.ticket(run)['operation']) / 'packet'
+        self.assertIn(f'Packet: {packet}\n', said.getvalue())
+        self.assertIn(f'\n  berman-research --config study.json launch {run}', said.getvalue())
 
     def test_one_closeout_resumes_from_every_committed_boundary(self):
         run = self.commission()['run']

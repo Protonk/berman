@@ -77,12 +77,13 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: command line, connector, guest controller and native executor, custody and study inputs, protocol, recordings, foundations"
+name = "Layers: command line, connector, cheatsheet, guest controller and native executor, custody and study inputs, protocol, recordings, foundations"
 type = "layers"
 layers = [
     "berman.__main__",
     "berman.cli",
     "berman.connector",
+    "berman.cheatsheet",
     "berman.controller | berman.executor | berman.verify",
     "berman.custody | berman.study",
     "berman.protocol",
