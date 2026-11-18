@@ -315,7 +315,7 @@ robust corrective change over compatibility machinery. Describe changed
 refusals, output and verification scope, and any response an adopting study
 needs. Preserved evidence is never rewritten to make a new check pass.
 
-### Unreleased: one lifecycle
+### Version 0.26.4 and the guest fieldwork lifecycle
 
 The controller and executor are now the only code that commissions, prepares,
 launches, captures, ends, collects, preserves, migrates or supplements
@@ -375,8 +375,8 @@ A study that still has a co-located workspace:
   reserve the run numbers already used, as
   [historical studies](guest-deployment.md#historical-studies) describes.
 
-No release number, package, adoption or native qualification follows from this
-checkout change.
+The [0.26.4 release notes](releases/0.26.4.md) describe the operator's closeout
+command. Each installation qualifies its own native executor.
 
 ### Version 0.26.3: the last co-located writer
 
