@@ -2,7 +2,7 @@
 
 Berman supports intermittent participant observation of software development.
 A designated fieldworker does real project work and keeps an account of it.
-Berman prepares the assignment, checks access, captures the designated session
+Berman prepares the assignment, checks native execution, captures the designated session
 and preserves its records for analysis.
 
 Ordinary development is separate from fieldwork. The research environment holds
@@ -16,7 +16,11 @@ This repository contains the reusable software. Each study keeps its own
 project connections, optional research plans, instructions, recordings and analysis.
 You can develop and test Berman using the included synthetic examples.
 
-See [guest deployment and historical import](docs/guest-deployment.md) for the Linux controller and macOS executor installation.
+The Linux controller owns commissioning, endings, custody and publication. Its
+macOS executor runs the designated harness and stages observations locally.
+The operator uses `berman-research` from an ordinary terminal. See the
+[command and receipt guide](docs/connector.md) and
+[guest deployment and historical import](docs/guest-deployment.md).
 
 ## Getting started
 
@@ -40,7 +44,21 @@ berman verify
 To work on Berman itself, use the locked environment the
 [development guide](docs/development.md) describes instead.
 
-Create a workspace for a study and connect it to a project:
+For guest fieldwork, create the study and macOS binding as described in the
+[deployment guide](docs/guest-deployment.md), then discover the study from the host.
+
+```sh
+berman-research status
+```
+
+The [native execution guide](docs/executor.md) describes hook review, packet
+staging and qualification. The [custody guide](docs/custody.md) covers portable
+recordings and independent reading editions.
+
+## Co-located workspaces
+
+Existing co-located workspaces use `berman.json` and their pinned runtime.
+Their original setup command is
 
 ```sh
 berman init /path/to/study --project /path/to/project --connection example

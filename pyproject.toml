@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 berman = "berman.cli:main"
+berman-research = "berman.connector:main"
 
 [project.urls]
 Repository = "https://github.com/Protonk/berman"
@@ -142,9 +143,10 @@ type = "layers"
 layers = [
     "berman.__main__",
     "berman.cli",
-    "berman.workflow : berman.verify : berman.support : berman.harnesses.claude_support",
-    "berman.sources : berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
-    "berman.records",
+    "berman.connector",
+    "berman.controller : berman.executor : berman.workflow : berman.verify : berman.support : berman.harnesses.claude_support",
+    "berman.custody : berman.sources : berman.recordings : berman.preserve : berman.recipes : berman.recovery : berman.workspace : berman.capture.adapters : berman.harnesses.codex : berman.harnesses.claude",
+    "berman.protocol : berman.records",
     "berman.config | berman.lifecycle",
     "berman.capture.router : berman.capture.claude_router : berman.capture.runtime : berman.capture.transaction : berman.capture.collector : berman.capture.claude : berman._legacy",
     "berman.evidence : berman.snapshots : berman.archive",

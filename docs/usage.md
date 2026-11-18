@@ -1,5 +1,10 @@
 # Running fieldwork
 
+For a Linux research installation, use the [connector commands](connector.md).
+The following commands describe co-located workspaces with their own pinned
+installation. Use the [disposition and migration procedure](guest-deployment.md#historical-studies)
+when moving an existing study.
+
 A fieldwork workspace holds berman.json, named connections, versioned recipes,
 optional research plans, operations and preserved runs. The software checkout
 is independent. Select a workspace with `berman --root PATH status` or run the

@@ -27,10 +27,19 @@ def show(args, kind, result):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ['remote']:
+        from berman.connector import main as remote_main
+        return remote_main(argv[1:])
+    if argv[:1] == ['executor']:
+        from berman.executor import main as executor_main
+        return executor_main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, help='Fieldwork workspace; otherwise discover from the current directory')
     parser.add_argument('--json', action='store_true', help='machine-readable result')
     commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('remote', help='operate a guest study over SSH (berman remote --help)')
+    commands.add_parser('executor', help='manage native staging (berman executor --help)')
     init = commands.add_parser('init', help='create a workspace with isolated harness homes; assign no fieldwork')
     init.add_argument('destination', type=Path)
     init.add_argument('--project', type=Path, required=True)

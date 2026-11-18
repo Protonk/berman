@@ -40,7 +40,7 @@ Use the guest interpreter containing the controller package. This one-time migra
 
 ```sh
 ssh -F "$ssh_config" "$guest" \
-  "python3.14 -m berman.custody --root research/stewart --sha256 $digest --size $bytes" \
+  ".local/berman/bin/python -I -m berman.custody --root research/stewart --sha256 $digest --size $bytes" \
   < "$recording_zip"
 ```
 
