@@ -15,7 +15,7 @@ ROOT = REPO
 # Current guidance and planning entry points; historical reports and preserved records are excluded.
 GUIDANCE = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/limitations.md', 'docs/development.md',
             'docs/capture.md', 'docs/custody.md', 'docs/guest-deployment.md', 'docs/connector.md',
-            'docs/executor.md', 'docs/releases/unreleased.md', 'examples/minimal-study/README.md')
+            'docs/executor.md', 'docs/releases/0.26.5.md', 'examples/minimal-study/README.md')
 COMMANDS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/limitations.md', 'docs/capture.md',
             'examples/minimal-study/README.md')
 # Current procedure names maintained commands; experiment scripts are evidence of their own dates.

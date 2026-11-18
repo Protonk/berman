@@ -152,8 +152,8 @@ The executor prepares and launches the worker and stages native evidence.
 ## Compatibility and qualification
 
 Keep release notes with the release they describe. The
-[unreleased changes](releases/unreleased.md) describe the supported evidence
-format and adoption consequences for this checkout.
+[0.26.5 release notes](releases/0.26.5.md) describe the supported evidence
+format and adoption consequences.
 
 ### Adopting a release in a study
 
