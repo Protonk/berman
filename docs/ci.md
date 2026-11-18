@@ -59,22 +59,42 @@ checkout, a private packet and a dedicated persistent home under
 trust and access prompts in the terminal. Exit the sitting after the worker
 has written its note. CI then supplies the ending specified by this fixture.
 
-Claude receives its hooks per launch. For Codex, CI writes the proposed hook
-definition into the trial directory and installs it when it creates the CI
-home. In an existing home, review it against `codex-home/hooks.json`
-under the CI directory. CI prints the paths when the registration needs
-attention. Review the hooks in Codex with that same `CODEX_HOME`. A different
-candidate can change the router command. The executor checks registration for
-conflicts before launch. A live pass requires attributed opening and stop
+Claude receives its hooks per launch. Its opening callbacks can arrive before
+the transcript file exists. The recording names those callbacks and the ones
+that obtained a verified snapshot. The original event receipts retain the
+observation at each point.
+
+For Codex, sign in to its dedicated CI home once from a terminal. If the
+config selects a custom executable, use that executable for login too.
+
+```sh
+CODEX_HOME="$HOME/.local/share/berman-ci/codex-home" codex login
+```
+
+CI verifies the installed router against the candidate and checks sign-in with
+the bound executable before commissioning. For a new home it installs the
+initial hook definition. When the candidate changes, CI prints the proposed
+file and destination if registration needs updating. Preserve unrelated hooks
+and close active captures before updating a registration.
+
+CI opens Codex in the fixture checkout for review before it sends an assignment.
+Open `/hooks`, inspect and trust the candidate's Berman hooks, and exit that
+window. CI then commissions the run and opens Codex with the prepared
+assignment. This binding uses Codex's native `workspace-write` mode and adds
+the packet as a writable directory. At the end of the work, exit the sitting
+to start collection. A live pass requires attributed opening and stop
 callbacks, a captured generation, an intact parent transcript and an observed
-successful exit from that sitting.
+successful exit.
 
 ## Results and retries
 
 The command prints the result and the path to `receipt.json`, and exits nonzero
 on failure. The receipt identifies the worker, target host, candidate wheel
 digest, collection and run, capture checks, closeout and detached evidence.
-Checks still to be established have a null result. Build and installation
+The native exit and session attribution are recorded before closeout. A
+failed sitting still goes through custody. The receipt reports both outcomes
+and retains any detached evidence that verified. Checks still to be established
+have a null result. Build and installation
 diagnostics are in `build.log` and `install.log` alongside it.
 
 On each invocation the Mac creates `~/.local/share/berman-ci/trials/UUID/` for

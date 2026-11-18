@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from berman import connector, files
 from scripts.ci import run as ci
@@ -58,6 +58,44 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Review'):
             ci.codex_hooks(home, spool, root)
         self.assertEqual(installed.read_text(), '{"hooks": {}}')
+
+    def test_codex_checks_the_bound_login_and_opens_hook_review_before_fieldwork(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        trial = ci.Trial(root)
+        trial.update(worker='codex')
+        with patch.object(ci, 'STATE', root):
+            _, native = ci.binding(trial, {'executables': {'codex': sys.executable}})
+        self.assertEqual(native['policy'], 'workspace-write')
+        with patch.object(ci.subprocess, 'run') as run:
+            run.return_value.returncode = 1
+            with self.assertRaisesRegex(ValueError, 'sign-in.*CODEX_HOME=.*codex-home.*login'):
+                ci.codex_preflight(native, root / 'spool', root)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0], [native['executable'], 'login', 'status'])
+            self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'], native['home'])
+            run.return_value.returncode = 0
+            ci.codex_preflight(native, root / 'spool', root)
+            self.assertEqual(
+                run.call_args.args[0], [native['executable'], '--sandbox', 'workspace-write', '-C', native['project']]
+            )
+            self.assertEqual(run.call_args.kwargs['env']['CODEX_HOME'], native['home'])
+
+    def test_failed_native_launch_and_failed_preservation_have_separate_receipts(self):
+        trial = ci.Trial(Path(self.enterContext(tempfile.TemporaryDirectory())).resolve())
+        trial.update(worker='codex')
+        op = Mock()
+        observed = [{'session_id': None, 'exit': {'returncode': 1}}]
+        with patch.object(ci.executor, 'sitting_receipts', return_value=observed):
+            ci.launch_fixture(trial, op, {'run': 'run-001', 'operation': 'fixture'})
+        op.closeout.side_effect = ValueError('preserve failed')
+        op.read.return_value = {'result': {'accepted': {'accepted_members': 14}, 'facts': ['capture', 'accept']}}
+        with self.assertRaisesRegex(ValueError, 'accepted 14 files.*preserve failed'):
+            ci.close_fixture(trial, op, 'run-001')
+        receipt = files.read(trial.path)
+        self.assertEqual(1, receipt['launch']['exit']['returncode'])
+        self.assertEqual(receipt['launch_problem'], 'codex exited 1 without an attributed session')
+        self.assertEqual(receipt['closeout']['problem'], 'preserve failed')
+        self.assertEqual(receipt['closeout']['accepted_members'], 14)
 
     def test_candidate_interpreter_is_specific_to_the_ci_connection(self):
         settings = {'study': 'fixture', 'host': 'guest', 'collection_id': '27cc51dd-90e2-449d-b62d-0e645b04b6d8'}

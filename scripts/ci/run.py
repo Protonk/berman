@@ -159,7 +159,14 @@ def binding(trial, config):
         home = STATE / (live + '-home')
     if harness != 'codex':
         home.mkdir(mode=0o700, exist_ok=True)
-    return harness, {'executable': str(executable), 'home': str(home), 'project': str(trial.directory / 'checkout')}
+    native = {
+        'executable': str(Path(executable).resolve()),
+        'home': str(home),
+        'project': str(trial.directory / 'checkout'),
+    }
+    if harness == 'codex':
+        native['policy'] = 'workspace-write'
+    return harness, native
 
 
 def codex_hooks(home, spool, directory):
@@ -180,6 +187,25 @@ def codex_hooks(home, spool, directory):
         raise ValueError(
             f'Review {proposal} for {hooks} and review the hooks in the actual Codex CLI: {error}'
         ) from error
+
+
+def codex_preflight(native, spool, directory):
+    home = Path(native['home'])
+    codex_hooks(home, spool, directory)
+    executable = native['executable']
+    env = dict(os.environ, CODEX_HOME=str(home))
+    project = native['project']
+    status = subprocess.run([executable, 'login', 'status'], env=env, cwd=project, stdin=subprocess.DEVNULL, timeout=30)
+    if status.returncode:
+        login = shlex.join(['env', f'CODEX_HOME={home}', executable, 'login'])
+        raise ValueError(f'Codex sign-in check failed in the qualification home. Run {login}, then retry.')
+    print(
+        f'Review this candidate in /hooks in the Codex window opening now ({home}). '
+        'Exit Codex after review to start the fixture assignment.',
+        file=sys.stderr,
+        flush=True,
+    )
+    subprocess.run([executable, '--sandbox', native['policy'], '-C', project], env=env, cwd=project, check=True)
 
 
 def access(read, challenge_sha256):
@@ -213,6 +239,61 @@ def access(read, challenge_sha256):
     return note
 
 
+def launch_fixture(trial, op, assignment):
+    """Record the observed exit even when the guest loses the launch reply."""
+    run = assignment['run']
+    try:
+        op.perform(Namespace(action='launch', run=run, one_turn=trial.data['worker'] == 'deterministic'))
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        observed = executor.sitting_receipts(op.spool, assignment['operation'])
+        if not observed or observed[0]['exit'] is None:
+            raise  # An unresolved sitting has no observed ending for this fixture.
+        # Closeout replays the completed launch to the guest, including after a lost reply.
+        trial.update(launch_command_error=str(error))
+    else:
+        observed = executor.sitting_receipts(op.spool, assignment['operation'])
+    problem = None
+    sitting = observed[0]
+    code = sitting['exit'].get('returncode')
+    session = sitting['session_id']
+    if code != 0 or not session:
+        exit_detail = f'exited {code}' if code is not None else f'has no observed exit code ({sitting["exit"]})'
+        attribution = f' in session {session}' if session else ' without an attributed session'
+        problem = f'{trial.data["worker"]} {exit_detail}{attribution}'
+    trial.update(launch={'exit': sitting['exit'], 'session_id': session}, launch_problem=problem)
+    if problem:
+        print(f'Launch: {problem}. Collecting the fixture evidence.', file=sys.stderr, flush=True)
+
+
+def close_fixture(trial, op, run):
+    try:
+        report = op.closeout(
+            Namespace(
+                run=run, supplement=None, missing_reason=None, reason='The qualification fixture sitting has ended.'
+            )
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        failure = {'status': 'failed', 'problem': str(error)}
+        try:
+            state = op.read('status', run)['result']
+            failure.update(accepted_members=(state['accepted'] or {}).get('accepted_members'), facts=state['facts'])
+        except (OSError, ValueError, subprocess.SubprocessError) as status_error:
+            failure['status_problem'] = str(status_error)
+        trial.update(closeout=failure)
+        count = failure.get('accepted_members')
+        detail = f'guest accepted {count} files; ' if count is not None else ''
+        raise ValueError(f'Closeout: {detail}{error}') from error
+    trial.update(closeout=report)
+    if report['status'] != 'verified' or report['missing'] or report['omitted']:
+        raise ValueError('Incomplete qualification collection; inspect closeout in the receipt')
+    print(
+        f'Closeout: guest accepted {report["accepted_members"]} files and verified the recording and edition.',
+        file=sys.stderr,
+        flush=True,
+    )
+    return report
+
+
 def engage(trial, config):
     harness, native = binding(trial, config)
     spool = STATE / 'spool'
@@ -229,40 +310,20 @@ def engage(trial, config):
     remote.call('status', run=None)
     trial.update(candidate_verified=True)
     if harness == 'codex':
-        trial.step('check Codex qualification hook registration')
-        codex_hooks(Path(native['home']), spool, trial.directory)
+        trial.step('check Codex sign-in and review the qualification hooks')
+        codex_preflight(native, spool, trial.directory)
     trial.step('commission fixture assignment')
-    run = op.commission(Namespace(request='access', connection='fixture', recipe='access', plan=None, harness=harness))[
-        'run'
-    ]
+    assignment = op.commission(
+        Namespace(request='access', connection='fixture', recipe='access', plan=None, harness=harness)
+    )['result']
+    run = assignment['run']
     trial.update(run=run)
-
-    def perform(action, **kwargs):
-        return op.perform(Namespace(action=action, run=run, supplement=None, **kwargs))
-
-    trial.step(f'prepare and launch {run}')
-    perform('prepare')
-    perform('launch', one_turn=trial.data['worker'] == 'deterministic')
+    trial.step(f'prepare {run}')
+    op.perform(Namespace(action='prepare', run=run))
+    trial.step(f'launch {run}')
+    launch_fixture(trial, op, assignment)
     trial.step(f'end, transfer, preserve and publish {run}')
-    report = perform('closeout', reason='The qualification fixture sitting has ended.', missing_reason=None)
-    trial.update(closeout=report)
-    if report['status'] != 'verified' or report['missing'] or report['omitted']:
-        raise ValueError('Incomplete qualification collection; inspect closeout in the receipt')
-    trial.step('check launch and capture attribution')
-    capture_report = perform('qualify', expected_child=None)
-    required = (
-        'native_launch',
-        'opening_and_stop',
-        'offline_hook_snapshot',
-        'attributed_transcript',
-        'closeout_parent_observed',
-        'capture_intact',
-    )
-    checks = {key: capture_report['checks'][key] for key in required}
-    trial.update(session_id=capture_report['session_id'], capture_checks=checks)
-    missing = [key for key in checks if not checks[key]]
-    if missing:
-        raise ValueError('Missing launch or capture evidence: ' + ', '.join(missing))
+    report = close_fixture(trial, op, run)
     trial.step('copy and verify detached evidence')
     paths = {}
     for kind in ('recording', 'edition'):
@@ -277,6 +338,22 @@ def engage(trial, config):
     for verified in (record, edition):
         if (verified['collection_id'], verified['run']) != (remote.collection, run):
             raise ValueError('Detached evidence names another engagement')
+    trial.update(evidence={k: str(p) for k, p in paths.items()})
+    trial.step('check launch and capture attribution')
+    capture_report = op.perform(Namespace(action='qualify', run=run, supplement=None, expected_child=None))
+    required = (
+        'native_launch',
+        'opening_and_stop',
+        'offline_hook_snapshot',
+        'attributed_transcript',
+        'closeout_parent_observed',
+        'capture_intact',
+    )
+    checks = {key: capture_report['checks'][key] for key in required}
+    trial.update(session_id=capture_report['session_id'], capture_checks=checks)
+    missing = [key for key in checks if not checks[key]]
+    if missing:
+        raise ValueError('Missing launch or capture evidence: ' + ', '.join(missing))
     trial.step('verify checkout access and published note')
     base = f'runs/{run}/'
     with zipfile.ZipFile(paths['recording']) as recording, zipfile.ZipFile(paths['edition']) as published:
@@ -287,7 +364,7 @@ def engage(trial, config):
             recording.read(evidence.MANIFEST)
         ):
             raise ValueError('The edition differs from the verified recording or note')
-    trial.update(publication_verified=True, evidence={k: str(p) for k, p in paths.items()}, note=name, status='passed')
+    trial.update(publication_verified=True, note=name, status='passed')
 
 
 def main(config_path, live=None):
@@ -356,7 +433,10 @@ if __name__ == '__main__':
         try:
             engage(trial, files.read(Path(sys.argv[3])))
         except (Exception, KeyboardInterrupt) as error:
-            trial.update(status='failed', problem=str(error) or 'Interrupted')
+            problem = str(error) or 'Interrupted'
+            if trial.data.get('launch_problem'):
+                problem = f'Launch: {trial.data["launch_problem"]}. {problem}'
+            trial.update(status='failed', problem=problem)
             sys.exit(1)
     else:
         try:
