@@ -40,7 +40,7 @@ class PortableRecordingsTests(unittest.TestCase):
         self.assertNotIn('Traceback', result.stderr)
         return json.loads(result.stdout if expected == 0 else result.stderr)
 
-    def test_package_and_working_copy_verify_without_the_workspace_or_original_mtimes(self):
+    def test_package_and_working_copy_verify_without_the_study_or_original_mtimes(self):
         package = self.preserved()
         detached = self.base / 'source.zip'
         shutil.copyfile(package, detached)

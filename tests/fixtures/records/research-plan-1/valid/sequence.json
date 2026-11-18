@@ -1,0 +1,15 @@
+{
+  "schema": "berman.research-plan/1",
+  "id": "accounts",
+  "connection": "example",
+  "steps": [
+    {
+      "id": "first",
+      "recipe": "baseline"
+    },
+    {
+      "id": "second",
+      "recipe": "follow-up"
+    }
+  ]
+}

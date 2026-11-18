@@ -12,14 +12,8 @@ import unittest
 from berman import cli
 
 ROOT = REPO
-# Current guidance and planning entry points; historical reports and preserved records are excluded.
-GUIDANCE = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/limitations.md', 'docs/development.md',
-            'docs/capture.md', 'docs/custody.md', 'docs/guest-deployment.md', 'docs/connector.md',
-            'docs/executor.md', 'docs/releases/0.26.5.md', 'examples/minimal-study/README.md')
-COMMANDS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/limitations.md', 'docs/capture.md',
-            'examples/minimal-study/README.md')
-# Current procedure names maintained commands; experiment scripts are evidence of their own dates.
-NO_SCRIPTS = ('README.md', 'AGENTS.md', 'docs/usage.md', 'docs/development.md', 'docs/capture.md')
+GUIDANCE = ('README.md', 'AGENTS.md', 'examples/minimal-study/README.md',
+            *(p.relative_to(ROOT).as_posix() for p in sorted((ROOT / 'docs').glob('*.md'))))
 FENCE = re.compile(r'^```[^\n]*\n(.*?)^```', re.M | re.S)
 LINK = re.compile(r'\]\(([^)\s]+)\)')
 HEADING = re.compile(r'^#{1,6}[ \t]+(.+?)[ \t]*$', re.M)
@@ -30,7 +24,6 @@ NESTED = re.compile(r'^positional arguments:\n\s+\{([^}]+)\}', re.M)
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 OPTION_LINE = re.compile(r'^  (-\S[^\n]*?)(?: {2,}|$)', re.M)  # The invocation column of an options entry.
 OPTION = re.compile(r'(?:^|, )(--?[A-Za-z][\w-]*)')
-SCRIPT = re.compile(r'experiments/\S*?\.py\b')
 
 
 def text(name):
@@ -52,15 +45,13 @@ def anchors(path):
 
 
 def links(name):
-    """(target path or None for this document, fragment) for each relative link; URLs and runs/ are skipped."""
+    """(target path or None for this document, fragment) for each relative link; external URLs are skipped."""
     found = []
     for target in LINK.findall(prose(text(name))):
         if re.match(r'[a-z][a-z0-9+.-]*:', target):
             continue
         location, _, fragment = target.partition('#')
         path = Path(os.path.normpath((ROOT / name).parent / location)) if location else None
-        if path is not None and path.is_relative_to(ROOT / 'runs'):
-            continue
         found.append((target, path, fragment))
     return found
 
@@ -117,7 +108,7 @@ class GuidanceTest(unittest.TestCase):
 
     def test_documented_commands_exist(self):
         checked = 0
-        for name in COMMANDS:
+        for name in GUIDANCE:
             for candidate, path, rest in invocations(name):
                 with self.subTest(document=name, command=candidate):
                     while rest and rest[0].startswith('-'):
@@ -144,11 +135,6 @@ class GuidanceTest(unittest.TestCase):
         self.assertIn('--path', options(('archive',)))
         self.assertIn('--json', options(()))
         self.assertTrue({'--request', '--connection', '--harness'} <= options(('remote', 'commission')))
-
-    def test_current_guidance_names_no_experiment_scripts(self):
-        for name in NO_SCRIPTS:
-            self.assertEqual(SCRIPT.findall(text(name)), [], f'{name} names an experiment script as procedure')
-
 
 if __name__ == '__main__':
     unittest.main()

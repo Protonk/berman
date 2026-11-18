@@ -222,7 +222,7 @@ def preserve_recording(root, metadata, blobs, supplement=None):
     root = Path(root)
     run = metadata['run']
     if not evidence.RUN.fullmatch(run) or metadata['collection_id'] != evidence.collection(root):
-        raise ValueError('Split run identity differs from study')
+        raise ValueError('Run identity differs from study')
     facts = {key: metadata['facts'][key] for key in ('ending', 'capture', 'accept')}
     facts.update({key: metadata['facts'][key] for key in ('preparation', 'launch') if key in metadata['facts']})
     controller = {key: metadata[key] for key in ('assignment', 'transferred', 'collection_id', 'run', 'connection')}

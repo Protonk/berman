@@ -1,6 +1,5 @@
 """JSON Schema validation for the connection, recipe and plan selected at commission."""
 
-from functools import cache
 import hashlib
 import json
 from pathlib import Path
@@ -43,13 +42,11 @@ def path(name):
     return HERE / (name.removeprefix('berman.').replace('/', '-') + '.json')
 
 
-@cache
 def schema(name):
     return json.loads(path(name).read_text(encoding='utf-8'))
 
 
-@cache
-def validator(name):
+def validator(document):
     try:
         from jsonschema import Draft202012Validator
     except Exception as exc:  # Broken installations can raise more than ImportError while loading.
@@ -57,8 +54,8 @@ def validator(name):
             f'Records cannot be checked: jsonschema does not import ({exc}). Reinstall Berman with its '
             'dependencies; berman verify reports the environment'
         ) from exc
-    Draft202012Validator.check_schema(schema(name))
-    return Draft202012Validator(schema(name))
+    Draft202012Validator.check_schema(document)
+    return Draft202012Validator(document)
 
 
 def kind(value):
@@ -85,7 +82,7 @@ def found(value):
 
 
 def location(parts):
-    """A field's place as an operator would write it: connections.stewart.checks[0].argv."""
+    """A field's place as an operator would write it: checks[0].argv."""
     text = ''
     for part in parts:
         text += f'[{part}]' if isinstance(part, int) else ('.' if text else '') + str(part)
@@ -122,7 +119,7 @@ def printable(text):
 
 def problems(name, value):
     """Every structural problem in value, ordered by the field it names; empty when the schema is satisfied."""
-    found_problems = [item for error in validator(name).iter_errors(value) for item in describe(error)]
+    found_problems = [item for error in validator(schema(name)).iter_errors(value) for item in describe(error)]
     # Array positions order as numbers and precede names, so steps[2] comes before steps[10].
     found_problems.sort(
         key=lambda item: ([(0, part, '') if isinstance(part, int) else (1, 0, part) for part in item[0]], item[1])
@@ -148,8 +145,8 @@ def check():
     for name in SUPPORTED:
         try:
             data = path(name).read_bytes()
-            loaded = schema(name)
-            validator(name)
+            loaded = json.loads(data)
+            validator(loaded)
         except Exception as exc:  # jsonschema's own error type is not imported at module level.
             raise ValueError(f'Packaged schema {name} cannot be used: {type(exc).__name__}: {exc}') from exc
         if loaded.get('title') != name or loaded['properties']['schema'].get('const') != name:

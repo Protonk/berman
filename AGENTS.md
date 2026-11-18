@@ -17,8 +17,8 @@ analysis outside this repository. Tests use synthetic inputs in tests/fixtures/.
   study may have another program named `berman` on PATH, such as a pinned older
   installation. If `berman version` fails or names other source, it is not
   this package. Never modify a study's pinned runtime from here.
-- The archive builder files identify the reader that produced each edition. Do not reformat them or fix style in them; a byte change
-  there costs a rebuilt edition. The executor records every module's digest in
+- Each edition pins the reader source that produced it. Keep the archive builder
+  out of formatting-only changes. The executor records every module's digest in
   each preparation and launch receipt
   (docs/development.md#byte-sensitive-files).
 - `jsonschema` is imported only by `berman.schemas` and `packaging` only by `berman.environment`.

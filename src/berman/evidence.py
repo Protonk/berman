@@ -41,7 +41,7 @@ def relative(value):
 def validate(manifest):
     """Structural and referential checks also available in standalone, dependency-free readers."""
     if not isinstance(manifest, dict) or manifest.get('schema') not in (V2, SCHEMA):
-        raise ValueError(f'Expected {SCHEMA} manifest')
+        raise ValueError('Unsupported recording schema')
     if not isinstance(manifest.get('streams'), list):
         raise ValueError('Recording requires stream declarations')
     if not isinstance(manifest.get('collection_id'), str):
@@ -97,9 +97,9 @@ def validate(manifest):
         raise ValueError('Invalid coverage limitation')
     ref = evidence.get('controller')
     if ref != 'evidence/controller.json' or ref not in seen or seen[ref]['type'] != 'file':
-        raise ValueError('Split recording requires retained controller evidence')
+        raise ValueError('The recording requires retained controller evidence')
     if evidence.get('ending') != 'evidence/ending.json':
-        raise ValueError('Split recording requires retained ending evidence')
+        raise ValueError('The recording requires retained ending evidence')
     for stream in manifest.get('streams', []):
         if (
             stream['path'] not in seen
@@ -175,7 +175,7 @@ def missing_line(row):
 
 
 def collection_facts(manifest, controller):
-    """The capture, acceptance, transfer map and declaration this split recording packages.
+    """The capture, acceptance, transfer map and declaration this recording packages.
 
     A first recording packages the run's own facts. A supplement packages the one supplement
     the controller record carries. Which of the two a package is comes from its manifest, and
@@ -191,7 +191,7 @@ def collection_facts(manifest, controller):
             or supplement['sequence'] < 1 or item.get('sequence') != supplement['sequence']
             or not isinstance(item.get('declaration'), dict) or not isinstance(item.get('facts'), dict)
             or not SHA.fullmatch(supplement.get('follows_recording_sha256', ''))):
-        raise ValueError('Split supplement and controller record disagree')
+        raise ValueError('The supplement and controller record disagree')
     return item['facts'], item['transferred'], item['declaration']
 
 
@@ -199,7 +199,7 @@ def missing_members(manifest, controller):
     """Members the acceptance names as missing, by path. Their shape is checked with the authority."""
     rows = collection_facts(manifest, controller)[0]['accept'].get('missing', [])
     if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('path'), str) for row in rows):
-        raise ValueError('Split acceptance lists missing evidence in an unknown form')
+        raise ValueError('The acceptance lists missing evidence in an unknown form')
     return {row['path']: row for row in rows}
 
 
@@ -207,28 +207,28 @@ def check_controller(manifest, controller, ending, capture, read):
     connection = manifest['attribution']['connection'] if manifest['schema'] == V2 else manifest['connection']
     if (controller.get('collection_id') != manifest['collection_id'] or controller.get('run') != manifest['run']
             or controller.get('connection') != connection):
-        raise ValueError('Split controller record and recording occurrence disagree')
+        raise ValueError('The controller record and recording occurrence disagree')
     facts = controller['facts']
     declared = facts.get('ending')
     if not isinstance(declared, dict) or not ending or ending != dict(declared, declared_at_utc=declared.get('at')):
         raise ValueError('Retained controller and ending declaration disagree')
     assignment = controller['assignment']
     if any(assignment.get(key) != controller[key] for key in ('run', 'collection_id', 'connection')):
-        raise ValueError('Split assignment names another occurrence')
+        raise ValueError('The assignment names another occurrence')
     part, transferred, declaration = collection_facts(manifest, controller)
     supplement = manifest.get('supplement')
     sittings = controller.get('sittings', {})
     if not isinstance(sittings, dict):
-        raise ValueError('Split sitting receipts are not a mapping')
+        raise ValueError('The sitting receipts are not a mapping')
     for observation in (part['capture'], facts['capture'], facts.get('preparation'), facts.get('launch'), *sittings.values()):
         if observation is None:
             continue
         if (any(observation.get(key) != assignment.get(key) for key in ('run', 'collection_id', 'operation', 'connection', 'harness'))
                 or observation.get('assignment_sha256') != files.digest_json(assignment)):
-            raise ValueError('Split observation names another assignment')
+            raise ValueError('The observation names another assignment')
     capture_receipt = part['capture']
     if not declared.get('operation') or capture_receipt.get('ending_id') != declared['operation']:
-        raise ValueError('Split capture closeout names another ending')
+        raise ValueError('The capture closeout names another ending')
     if supplement is None:
         # A collection made for a supplement says so in its own receipt, whatever wraps it.
         if 'supplement_id' in capture_receipt or 'sequence' in capture_receipt:
@@ -242,23 +242,23 @@ def check_controller(manifest, controller, ending, capture, read):
                 or capture_receipt.get('supplement_id') != declaration['operation']
                 or capture_receipt.get('sequence') != supplement['sequence']
                 or not isinstance(first, dict) or first.get('package_sha256') != supplement['follows_recording_sha256']):
-            raise ValueError('Split supplement declaration, capture and first recording disagree')
+            raise ValueError('The supplement declaration, capture and first recording disagree')
     absent = missing_members(manifest, controller)
     lines = manifest['coverage']['unknown']
     if any(path.startswith('session/') for path in absent):
         # The parent generation cannot be checked from an incomplete set of its files. The
         # recording must then make no claim about it and must say so.
         if capture is not None or manifest['evidence'].get('capture') is not None or PARENT_GAP not in lines:
-            raise ValueError('Split recording claims a parent transcript that is incomplete in custody')
+            raise ValueError('The recording claims a parent transcript that is incomplete in custody')
     else:
         if capture_receipt.get('parent_sha256') != (capture and capture['sha256']):
-            raise ValueError('Split parent transcript differs from native closeout')
+            raise ValueError('The parent transcript differs from native closeout')
         if capture and (capture_receipt.get('session_id') != capture.get('session_id')
                         or capture.get('harness') != assignment.get('harness')):
-            raise ValueError('Split parent transcript attribution differs from native closeout')
+            raise ValueError('The parent transcript attribution differs from native closeout')
     limits = capture_receipt.get('limitations')
     if not isinstance(limits, list) or any(limit not in lines for limit in limits):
-        raise ValueError('Split recording omits native coverage limitations')
+        raise ValueError('The recording omits native coverage limitations')
     rows = capture_receipt['members']
     inventory = {row['path']: (row['size'], row['sha256']) for row in rows}
     base = f'runs/{manifest["run"]}/'
@@ -272,7 +272,7 @@ def check_controller(manifest, controller, ending, capture, read):
                    or not isinstance(row.get('problem'), str) or missing_line(row) not in lines
                    or (row['problem'] == 'never transferred' and transferred.get(path) == row['sha256'])
                    for path, row in absent.items())):
-        raise ValueError('Split recording does not account for evidence missing at acceptance')
+        raise ValueError('The recording does not account for evidence missing at acceptance')
     expected = {key: value for key, value in inventory.items() if key not in absent}
     fingerprint = files.digest(json.dumps(rows, sort_keys=True, separators=(',', ':'), allow_nan=False).encode())
     if (members != expected or len(inventory) != len(rows) or accepted.get('inventory_sha256') != fingerprint
@@ -303,7 +303,7 @@ def primary_capture(manifest, controller, read):
     if collection_facts(manifest, controller)[0]['capture'].get('parent_sha256') and not parent_gap:
         ref, capture = committed_capture(manifest['run'], read)
         if capture_ref != ref and (manifest['schema'] == SCHEMA or capture_ref is not None):
-            raise ValueError('Split manifest and native pointer select different captures')
+            raise ValueError('The manifest and native pointer select different captures')
         capture_ref = ref
     return capture_ref, capture
 

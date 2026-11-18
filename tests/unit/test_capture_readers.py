@@ -78,7 +78,7 @@ class HookRecognitionTests(unittest.TestCase):
 
 
 class ProjectCheckTests(unittest.TestCase):
-    VALUES = {'python': '/py', 'project': '/stewart', 'packet': '/p'}
+    VALUES = {'python': '/py', 'project': '/project', 'packet': '/p'}
 
     def test_declared_checks_resolve_to_explicit_arguments(self):
         declared = [
@@ -94,7 +94,7 @@ class ProjectCheckTests(unittest.TestCase):
         self.assertEqual(
             resolved,
             [
-                {'id': 'metadata', 'argv': ['/py', '-c', 'pass', '/bin/cargo', '/stewart/service'], 'timeout': 45},
+                {'id': 'metadata', 'argv': ['/py', '-c', 'pass', '/bin/cargo', '/project/service'], 'timeout': 45},
                 {'id': 'startup', 'argv': ['/bin/rustc', '--version'], 'timeout': 30, 'stdout_contains': '3'},
             ],
         )

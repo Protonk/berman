@@ -26,9 +26,8 @@ Confirm Python 3.14, a guest block device for the home directory and no host
 share. The generated SSH configuration supplies the local port, identity,
 host-key file and connection settings. Keep using that file after a guest
 restart. OpenSSH can use it directly for a command on stdin and a receipt on
-stdout. AsyncSSH offers command channels and supports a subset of OpenSSH
-configuration. A single OpenSSH client invocation here also uses the same
-host-key and connection settings as the operator. [Lima SSH](https://lima-vm.io/docs/usage/ssh/) · [AsyncSSH](https://asyncssh.readthedocs.io/en/latest/)
+stdout. The connector uses the system OpenSSH client and Lima's generated
+configuration. [Lima SSH](https://lima-vm.io/docs/usage/ssh/)
 
 ## Install a chosen wheel
 

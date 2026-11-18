@@ -36,10 +36,6 @@ An engagement in a guest study has these limits:
 - An interactive Claude launch shows Claude's own trust prompts for the checkout
   and for each new packet directory before the first turn.
 
-Research plans are optional ordered assignments. Their `commitment` and
-`relationships` fields are annotations; Berman does not enforce cross-project
-promises. A study can retain such promises in its own practice.
-
 The project must be a Git checkout with a commit. Project checks run as host
 subprocesses in the checkout; a linked worktree or external service can need its
 own declared checks. A model executing tools under hooks requires a native

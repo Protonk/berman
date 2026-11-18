@@ -139,7 +139,16 @@ The executor prepares and launches the worker and stages native evidence.
 
 ## Compatibility and qualification
 
-Keep release notes with the release they describe. The
+For an adoption from 0.26.5, use `berman verify` for standalone software
+verification and read `passed` and `checks` in its JSON output. The old
+`--software` flag and terminal formatting settings have been removed.
+Project checks take string arguments and the placeholders listed in the
+[native executor guide](executor.md#preparing-a-checkout). Each plan step
+needs a string identity and a recipe. Fieldworker wording comes from the
+recipe's instructions file.
+
+The current format and its version requirements are documented in
+[recording custody](custody.md#reading-and-analysis). Keep release notes with the release they describe. The
 [0.26.5 release notes](releases/0.26.5.md) describe that release’s evidence formats and adoption consequences.
 
 ### Adopting a release in a study

@@ -13,8 +13,8 @@ class NextStepTests(unittest.TestCase):
     def test_a_started_prefix_selects_the_next_step(self, count, data):
         plan = Plan.__new__(Plan)
         plan.id = 'test'
-        plan.ids = list(range(count))
-        plan.steps = [{'id': step} for step in plan.ids]
+        plan.ids = [f'step-{i}' for i in range(count)]
+        plan.steps = [{'id': step, 'recipe': 'baseline'} for step in plan.ids]
         done = data.draw(st.integers(0, count))
         prefix = plan.ids[:done]
         if done == count:

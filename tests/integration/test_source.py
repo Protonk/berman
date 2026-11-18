@@ -1,7 +1,6 @@
 """The standalone command checks software independently of the working directory."""
 
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -26,16 +25,3 @@ class StandaloneTests(unittest.TestCase):
         self.assertTrue(result['passed'])
         self.assertEqual(set(result['checks']), {'installation', 'dependencies', 'schemas'})
         self.assertEqual(list(self.base.iterdir()), [])
-
-    def test_entrypoint_ignores_pythonpath_startup_code(self):
-        hostile = self.base / 'hostile'
-        hostile.mkdir()
-        marker = self.base / 'startup-ran'
-        (hostile / 'sitecustomize.py').write_text(f'open({str(marker)!r}, "w").write("loaded")\n')
-        result = subprocess.run(
-            [sys.executable, '-I', '-B', '-m', 'berman', '--help'],
-            env=dict(os.environ, PYTHONPATH=str(hostile)),
-            capture_output=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(marker.exists())

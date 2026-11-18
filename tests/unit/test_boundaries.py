@@ -1,4 +1,4 @@
-"""Architectural contracts and observable compatibility, independent of old filenames."""
+"""Filesystem, import and isolated entry point checks."""
 import ast
 from pathlib import Path
 import subprocess
@@ -27,7 +27,7 @@ def imports(path):
              or (PACKAGE / m.removeprefix('berman.').replace('.', '/') / '__init__.py').is_file())}
 
 
-class CompatibilityTests(unittest.TestCase):
+class FileTests(unittest.TestCase):
     def test_files_refuse_linked_sources_and_destinations(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp).resolve()

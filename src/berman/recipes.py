@@ -25,16 +25,14 @@ def recipe(root, name, connection):
     if meta['id'] != name:
         raise ValueError('Recipe identity differs from its directory')
     if meta['connections'] and connection not in meta['connections']:
-        raise Decision(f'Recipe {name} is worded for {", ".join(meta.get("connections", [])) or "no connection"}, '
-                       f'not {connection}; introduce a separately versioned recipe')
-    result = {'metadata': meta}
+        raise Decision(f'Recipe {name} is worded for {", ".join(meta["connections"])}. Select a recipe for {connection}')
     path = Path(meta['instructions'])
     if path.is_absolute() or '..' in path.parts:
         raise ValueError('Recipe file must stay within its directory')
-    result['instructions'] = files.regular(folder / path).read_text()
-    if result['instructions'].count('{{notes_directory}}') != 1:
+    instructions = files.regular(folder / path).read_text()
+    if instructions.count('{{notes_directory}}') != 1:
         raise ValueError('Instructions must contain exactly one notes_directory placeholder')
-    return result
+    return {'metadata': meta, 'instructions': instructions}
 
 
 def git_state(project):

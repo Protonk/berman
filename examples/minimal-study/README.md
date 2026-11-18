@@ -28,9 +28,7 @@ berman remote commission --request first-account --connection example --harness 
 
 To use an ordered plan instead, also copy `plans/` and commission with
 `--plan example` in place of `--recipe baseline`. The plan's next unstarted
-step supplies the recipe. A direct assignment does not consume that step. The
-example's `commitment` and `relationships` are optional annotations, not
-enforced promises.
+step supplies the recipe. A direct assignment does not consume that step.
 
 The researcher chooses direct assignments and any plan. The
 [fieldwork guide](../../docs/usage.md) follows an engagement from this

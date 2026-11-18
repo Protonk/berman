@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from berman import environment, verify
+from berman import cli, environment, verify
+from contextlib import redirect_stdout
+import io
+import json
 
 
 def distribution(version='1', requires=(), python=None):
@@ -92,6 +95,21 @@ class RequirementTests(unittest.TestCase):
             result = verify.software()
         self.assertFalse(result['passed'])
         self.assertIn('installed jsonschema 4.25.1', result['checks']['dependencies']['detail'])
+
+    def test_unloadable_schema_library_fails_the_command_with_a_diagnostic(self):
+        original = builtins.__import__
+
+        def missing(name, *args, **kwargs):
+            if name == 'jsonschema':
+                raise ImportError('synthetic missing API')
+            return original(name, *args, **kwargs)
+
+        with mock.patch('builtins.__import__', side_effect=missing), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.main(['--json', 'verify']), 1)
+        result = json.loads(output.getvalue())
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['checks']['schemas']['passed'])
+        self.assertIn('synthetic missing API', result['checks']['schemas']['detail'])
 
     def test_a_broken_requirement_parser_is_a_failed_check_not_a_traceback(self):
         original = builtins.__import__
