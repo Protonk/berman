@@ -169,6 +169,15 @@ class CustodyTests(unittest.TestCase):
         result = custody.preserve_and_publish(self.root, state, blobs)
         manifest = custody.verify_recording(self.root, result['recording'])['manifest']
         self.assertIn(files.digest_json(meta), manifest['evidence']['capture'])
+        # Re-open the initial split format, which retained the committed native
+        # pointer but omitted the redundant top-level capture reference.
+        with zipfile.ZipFile(self.root / result['recording']['relative_path']) as original:
+            early = deepcopy(manifest)
+            early['evidence']['capture'] = None
+            evidence.check_authority(early, original.read)
+            early['evidence']['capture'] = early['evidence']['controller']
+            with self.assertRaisesRegex(ValueError, 'different captures'):
+                evidence.check_authority(early, original.read)
         self.assertTrue(any(s['format'] == 'codex-jsonl/1' for s in manifest['streams']))
         with zipfile.ZipFile(self.root / result['edition']['archive_path']) as z:
             self.assertIn(b'packet/notes/work.md', z.read('berman-analysis/review/run-013.txt'))

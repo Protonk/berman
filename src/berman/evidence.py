@@ -229,6 +229,19 @@ def check_split_authority(manifest, controller, ending, capture):
         raise ValueError('Recorded observations, transfers, acceptance and preserved members disagree')
 
 
+def committed_capture(run, read):
+    session = f'runs/{run}/session'
+    pointer = json.loads(read(f'{session}/current.json'))
+    generation = pointer['generation']
+    if not isinstance(generation, str) or not SHA.fullmatch(generation):
+        raise ValueError('Invalid capture generation')
+    ref = f'{session}/snapshots/{generation}/capture.json'
+    capture = json.loads(read(ref))
+    if files.digest_json(capture) != generation:
+        raise ValueError('Native capture pointer disagrees with generation')
+    return ref, capture
+
+
 def check_authority(manifest, read, snapshot_bytes=True):
     """Check the retained assertions, without replacing them with a manifest boolean."""
     refs = manifest['evidence']
@@ -240,8 +253,17 @@ def check_authority(manifest, read, snapshot_bytes=True):
     for key in refs:
         if refs[key] is not None and not isinstance(load(key), dict):
             raise ValueError(f'Retained {key} must be an object')
+    capture_ref = refs.get('capture')
     if manifest['profile'] == 'split':
-        check_split_authority(manifest, load('controller'), ending, capture)
+        controller = load('controller')
+        if controller['facts']['capture'].get('parent_sha256'):
+            # Early split manifests identify the primary generation only through the
+            # retained host pointer. Explicit and implicit references must agree.
+            ref, capture = committed_capture(manifest['run'], read)
+            if capture_ref is not None and capture_ref != ref:
+                raise ValueError('Split manifest and native pointer select different captures')
+            capture_ref = ref
+        check_split_authority(manifest, controller, ending, capture)
     if ending is not None:
         if not isinstance(ending, dict) or not ending.get('reason') or not ending.get('declared_at_utc'):
             raise ValueError('Retained ending is not a declaration')
@@ -252,7 +274,7 @@ def check_authority(manifest, read, snapshot_bytes=True):
     if capture is not None and capture.get('run') != manifest['run']:
         raise ValueError('Retained capture names another run')
     if capture is not None:
-        folder = PurePosixPath(refs['capture']).parent
+        folder = PurePosixPath(capture_ref).parent
         if snapshot_bytes:
             raw = read(str(folder / 'transcript.jsonl'))
             if len(raw) != capture['saved_bytes'] or files.digest(raw) != capture['sha256']:

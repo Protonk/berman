@@ -239,13 +239,7 @@ def preserve_split_run(root, metadata, blobs):
     refs = dict.fromkeys(('operation', 'migration', 'capture', 'binding', 'closure'))
     refs.update(controller='evidence/controller.json', ending='evidence/ending.json')
     if capture.get('parent_sha256'):
-        pointer = json.loads(payload[base + '/session/current.json'][0])
-        generation = pointer['generation']
-        if not isinstance(generation, str) or not evidence.SHA.fullmatch(generation):
-            raise ValueError('Invalid capture generation')
-        refs['capture'] = f'{base}/session/snapshots/{generation}/capture.json'
-        if files.digest_json(json.loads(payload[refs['capture']][0])) != generation:
-            raise ValueError('Native capture pointer disagrees with generation')
+        refs['capture'], _ = evidence.committed_capture(run, lambda name: payload[name][0])
     inventory = [dict(row, path=row['path'][len(base) + 1 :]) for row in entries if row['path'].startswith(base + '/')]
     coverage = list(capture.get('limitations', []))
     coverage.extend(f'No {key} receipt retained' for key in ('preparation', 'launch') if key not in facts)
