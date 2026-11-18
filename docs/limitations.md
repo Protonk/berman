@@ -10,6 +10,36 @@ Fieldwork runs only through the controller and executor. This version carries
 no other way to prepare, launch, capture, end, preserve or supplement an
 engagement, and it creates no co-located workspace.
 
+An engagement in a guest study has these limits:
+
+- Observation follows the bound native session, not Berman's process. Codex
+  hooks live in the harness home, so a session resumed by hand is still staged.
+  Claude receives its hooks per launch: a Claude session resumed outside
+  `berman remote resume` sends no callbacks, and only the next closeout read of
+  its transcript sees that work.
+- The guest learns of a sitting when it ends. While one runs, `status` shows the
+  facts recorded before it started.
+- Callbacks after a frozen collection wait on the host under `late/`. They reach
+  custody only when a supplement is declared and collected. A supplement is a
+  second recording with its own edition; no edition joins it to the first.
+- A collection never fails for one member, and so it can be incomplete in ways
+  it names: a link, a special or unreadable entry, a file over a bound. Those
+  are recorded by name, not kept. Read `omitted` and the limitations before
+  relying on a collection.
+- Acceptance with `--missing-reason` puts a named gap in the recording for good.
+  It closes that collection; the same evidence arriving later needs a
+  supplement. If any file of the parent transcript generation is among the
+  missing, the recording verifies without making any claim about the parent.
+- No command cancels a commission. An unused run stays in the ledger.
+- Host staging is never pruned. Every operation's packet, callbacks and
+  transcripts remain under the spool, beside later packets, until someone
+  removes them. Remove an operation's folder only after the guest has preserved
+  it and any supplement.
+- Custody builds a recording and its edition in memory. A collection near the
+  512 MiB bound can need more memory than a small guest has.
+- An interactive Claude launch shows Claude's own trust prompts for the checkout
+  and for each new packet directory before the first turn.
+
 A co-located workspace made by release 0.26.3 or earlier is read-only here:
 
 - Anything unsettled in it has to be closed with the release that opened it.
