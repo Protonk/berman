@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "berman"
 version = "0.26.6"
-description = "Prepare, capture, and preserve research alongside software development."
+description = "Intermittent management of work in a software project: commission bounded engagements and preserve a verifiable record of each."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -110,7 +110,7 @@ source_modules = [
 forbidden_modules = ["jsonschema", "packaging"]
 broken_contract_guidance = """
 The executor's hook runs on every turn of a fieldworker's session and stages
-its observation while the research guest is offline. The whole executor uses the
+its observation while the guest is offline. The whole executor uses the
 standard library and these modules only, directly and indirectly."""
 
 [[tool.importlinter.contracts]]

@@ -18,6 +18,14 @@ harness homes; the controller runs in a Linux guest reached over OpenSSH.
 
 ## An engagement
 
+- Berman starts nothing by itself. Its commands run when someone runs them and
+  its hooks when a harness calls them. It schedules nothing, assigns no work
+  and ends no engagement. Launching a sitting waits in the terminal that ran
+  it.
+- A recipe's `recording_protocol` must be `work-accounts/1` or
+  `participant-inquiry/1`, and a recipe's `coverage` must be `["notes"]`. The
+  schema admits nothing else, and Berman does nothing with either value beyond
+  keeping the recipe's fingerprint with the commission.
 - Observation follows the bound native session, not Berman's process. Codex
   hooks live in the harness home, so a session resumed by hand is still staged.
   Claude receives its hooks per launch: a Claude session resumed outside
@@ -40,7 +48,10 @@ harness homes; the controller runs in a Linux guest reached over OpenSSH.
   good. It closes that collection; the same evidence arriving later needs a
   supplement. If any file of the parent transcript generation is among the
   missing, the recording verifies without making any claim about the parent.
-- No command cancels a commission. An unused run stays in the ledger.
+- No command cancels a commission. An unused run stays in the ledger. A plan
+  gives out its next step only when every earlier commission from that plan
+  has started its first sitting, so a plan commission that is never launched
+  holds the plan.
 - An exposure account stays in the guest's ledger. No recording or edition
   carries it, and `status RUN` reports only how many there are.
 - Study inputs are files in the guest. Adding or changing a connection, recipe
@@ -71,15 +82,17 @@ keep their historical paths; do not repair them into runnable checkouts.
 
 ## Separation
 
-Research plans, prior analysis and fieldwork history belong in the research
-environment. The executor needs the assigned packet and space for working
-notes. Keep the research trees outside project searches, including configured
-search roots and symlinks followed by project tools. A guest on the same
-machine is visible to anyone with the host account, through the VM and its SSH
-configuration, and shares the machine's failure domain. A participant who
-inspects installed hooks may recognize the study. Record a consequential
-exposure and the researcher's response; discovery alone leaves the engagement's
-status intact.
+Plans and recordings are kept in the guest and are not sent to the host. The
+executor needs the assigned packet and space for working notes. A study that
+keeps earlier engagements from later workers keeps its trees outside project
+searches, including configured search roots and symlinks followed by project
+tools. A guest on the same machine is visible to
+anyone with the host account, through the VM and its SSH configuration, and
+shares the machine's failure domain. A worker who inspects installed hooks can
+recognize that sessions are staged. This separation is an arrangement of
+directories, not containment. Where a discovery matters to how the record will
+be read, add an [exposure account](operating.md#exposure); discovery alone
+leaves the engagement's status intact.
 
 ## Custody
 

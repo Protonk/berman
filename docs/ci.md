@@ -34,8 +34,8 @@ and three questions govern integration.
 
 The ordinary source suite owns regression coverage. Change these three questions
 or the fixture assignment deliberately when the integration contract changes.
-CI is a development command. Study adoption and release publication are separate
-researcher decisions.
+CI is a development command. Adopting a build in a study and publishing a
+release are separate decisions that CI does not make.
 
 ## Worker selection
 

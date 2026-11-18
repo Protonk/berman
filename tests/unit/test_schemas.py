@@ -67,7 +67,7 @@ class FixtureTests(unittest.TestCase):
                 with self.subTest(file=path.relative_to(REPO).as_posix()):
                     self.assertEqual(schemas.problems(name, json.loads(path.read_text())), [])
                     checked += 1
-        self.assertEqual(checked, 2)
+        self.assertEqual(checked, 3)
 
 
 class MessageTests(unittest.TestCase):

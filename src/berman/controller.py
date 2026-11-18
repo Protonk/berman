@@ -67,7 +67,7 @@ class Controller:
                 if command == 'closeout':
                     _, _, anchor = self.part(state, request.get('supplement'))
                     if not anchor:
-                        raise ValueError('The engagement has no researcher ending declaration')
+                        raise ValueError('The engagement has no ending declaration')
                     value = dict(collection_id=self.collection, run=state['run'], operation=anchor['operation'])
                 return dict(protocol=protocol.VERSION, collection_id=self.collection, command=command, result=value)
             if command == 'status':
@@ -263,7 +263,7 @@ class Controller:
             selected = step['recipe']
             plan_decision = plan.reservation(step)
         if selected is None:
-            raise ValueError('Choose a recipe or a research plan for this connection')
+            raise ValueError('Choose a recipe or a plan for this connection')
         source = study.recipe(self.root, selected, connection)
         floor = files.read(self.root / 'collection.json').get('reserved_through', 0)
         imported = (p.name for p in (self.root / 'custody').glob('run-*'))
@@ -410,7 +410,7 @@ class Controller:
             return {'observed': command}
         if command == 'ending':
             if not isinstance(request.get('reason'), str) or not request['reason'].strip():
-                raise ValueError('A researcher ending requires a reason')
+                raise ValueError('An ending requires a reason')
             result = {'reason': request['reason'], 'at': files.now(), 'operation': request['operation']}
         elif command in ('transfer', 'accept'):
             if 'capture' not in facts:
@@ -430,7 +430,7 @@ class Controller:
                 transferred[name] = request['sha256']
                 return {'transferred': name, 'sha256': transferred[name]}
             # Acceptance is the guest's own reading of its bytes. A member that never arrived, or
-            # that the store has lost, is named. The researcher may accept the rest with a reason.
+            # that the store has lost, is named. The commissioner may accept the rest with a reason.
             missing = []
             for name, (size, digest) in members.items():
                 problem = self.object_problem(transferred, name, size, digest)

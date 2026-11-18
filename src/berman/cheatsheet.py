@@ -84,7 +84,7 @@ def engagement(row, run_command, spool, operation):
                 'The first sitting was started on this host and the guest has no report of it. '
                 'Once it has ended, repeat this to report it. It starts nothing.'
                 if begun
-                else 'After the packet is reviewed, the researcher starts the first sitting from an ordinary '
+                else 'After the packet is reviewed, the commissioner starts the first sitting from an ordinary '
                 'terminal. Repeating this never starts a second process.',
                 *run_command,
                 'launch',
@@ -103,7 +103,7 @@ def engagement(row, run_command, spool, operation):
                 'LABEL',
             ),
             step(
-                'When the researcher declares the engagement ended, record their reason and close out.',
+                'When the commissioner declares the engagement ended, record their reason and close out.',
                 *run_command,
                 'closeout',
                 run,
@@ -250,12 +250,12 @@ def study(settings, run_command, config, rows, problem, operation_of, standalone
         {
             'title': 'Start an engagement',
             'notes': [
-                'LABEL names the research decision; reuse it only to retry the same commission. '
+                'LABEL names this decision to commission; reuse it only to retry the same commission. '
                 'Add --recipe NAME or --plan NAME, or the connection’s default recipe is used.'
             ],
             'steps': [
                 step(
-                    f'Commission {harness} fieldwork in {connection}. The reply names the run.',
+                    f'Commission a {harness} engagement in {connection}. The reply names the run.',
                     *run_command,
                     'commission',
                     '--request',
@@ -309,13 +309,13 @@ def study(settings, run_command, config, rows, problem, operation_of, standalone
 
 
 def prepared_note(prepared, run_command):
-    """What the operator shows the researcher after `prepare`: the packet and the launch command."""
+    """What the operator shows the commissioner after `prepare`: the packet and the launch command."""
     packet = Path(prepared['packet'])
     launch = ' '.join([*run_command, 'launch', prepared['run']])
     return (
         f'Packet: {packet}\n'
         f'Review {packet / "ASSIGNMENT.md"} and {packet / "INSTRUCTIONS.md"}.\n'
-        f'The researcher then starts the first sitting from an ordinary terminal:\n  {launch}'
+        f'The commissioner then starts the first sitting from an ordinary terminal:\n  {launch}'
     )
 
 

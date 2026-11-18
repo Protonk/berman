@@ -8,20 +8,31 @@ in docs/development.md.
 ## Who owns what
 
 - The guest controller (`controller.py`, with `custody.py`) owns every
-  authoritative research fact: run numbers, commissions, the researcher's
-  ending, acceptance, recordings and editions. Nothing on the host decides any
-  of them, and a native exit or `SessionEnd` never ends an engagement.
+  authoritative fact about a study: run numbers, commissions, the
+  commissioner's ending, acceptance, recordings and editions. Nothing on the
+  host decides any of them, and a native exit or `SessionEnd` never ends an
+  engagement.
 - The executor (`executor/`) owns native staging on macOS: the packet, hooks,
   sittings and the frozen collection.
 - The connector (`connector.py`) carries. It turns operator commands into
   `protocol.py` requests and calls the local executor.
 - That is the one lifecycle. Add no second path that commissions, prepares,
-  launches, captures, ends, collects, preserves or supplements fieldwork.
+  launches, captures, ends, collects, preserves or supplements an engagement.
 - The controller and the executor never import each other, and the executor
   imports only the standard library because its hook runs on every turn of a
   worker's session. `pyproject.toml` holds the contracts. A new module needs a
   layer and a new contract needs a violation case in
   `tests/unit/test_architecture.py`.
+
+## What Berman is for
+
+- Berman is described as a tool for intermittent management of work in a
+  software project. Research is one use, set up in a study's own inputs. Keep
+  purpose statements in the README, the guides, the example, the help text and
+  the package description in agreement with that.
+- `berman-research`, `~/research/`, `berman.research-plan/1`,
+  `participant-inquiry/1`, `exposure`, study and fieldwork are interface names.
+  Renaming one is an interface change, not an edit to wording.
 
 ## Bytes that are evidence
 

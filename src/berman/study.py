@@ -1,4 +1,4 @@
-"""A study's inputs in the research guest: identities, recipes and research plans.
+"""A study's inputs in the guest: identities, recipes and plans.
 
 The controller reads a recipe, and a plan when one is selected, as it commissions an engagement.
 Only the recipe's instructions travel to the host; the plan and a recipe's annotations stay here.
@@ -14,7 +14,7 @@ IDENTITY = re.compile(r'[a-z][a-z0-9-]{0,62}')
 
 
 class Complete(Decision):
-    """Every step of a research plan has been started; another choice must be recorded."""
+    """Every step of a plan has been started; another choice must be recorded."""
 
 
 def identity(value, kind):
@@ -29,11 +29,11 @@ class Plan:
     def __init__(self, root, value):
         self.path = (root / value).resolve()
         if not self.path.is_relative_to(root):
-            raise ValueError(f'Research plans are researcher inputs held in Berman: {self.path}')
+            raise ValueError(f'Plans are study inputs held in the guest: {self.path}')
         self.data = read(self.path)
         schemas.validate('berman.research-plan/1', self.data, self.path)
         self.root = root
-        self.id = identity(self.data['id'], 'research plan')
+        self.id = identity(self.data['id'], 'plan')
         self.connection = identity(self.data['connection'], 'connection')
         self.steps = self.data['steps']
         self.ids = [s['id'] for s in self.steps]

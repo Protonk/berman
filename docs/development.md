@@ -47,7 +47,7 @@ modules by concern; the import order between them is under
 | Command line | `cli.py` (`berman`), `cheatsheet.py`, `__main__.py` | `cli.py` defines the standalone commands and hands `remote` and `executor` to their own parsers. `cheatsheet.py` builds the sheet as data. |
 | Connection to the guest | `connector.py` (`berman-research`, `berman remote`), `protocol.py` | The connector turns each operator command into requests and calls the local executor. `protocol.py` is the envelope and inventory both sides share. [Protocol](protocol.md) |
 | Native capture and execution, macOS | `executor/` | `__init__.py` prepares, launches, collects and qualifies, and holds the `berman executor` parser. `capture.py` routes hooks and stages transcripts. `checkout.py` runs project checks and snapshots documents. `sources.py` finds associated sessions. `snapshots.py` commits capture generations. `claude.py` and `codex.py` render reading copies. [Executor](executor.md) |
-| Research side, Linux guest | `controller.py`, `study.py`, `custody.py`, `evidence.py`, `archive/` | The controller owns the ledger and every lifecycle decision; its `main` is what the connector starts over SSH. `study.py` reads recipes and plans. `custody.py` seals recordings and publishes editions, using the recording contract in `evidence.py`. In `archive/`, `builder.py`, `package.py` and `streams.py` build and verify editions, and `edition_v2.py` reads the earlier edition format. [Custody](custody.md) |
+| Controller side, Linux guest | `controller.py`, `study.py`, `custody.py`, `evidence.py`, `archive/` | The controller owns the ledger and every lifecycle decision; its `main` is what the connector starts over SSH. `study.py` reads recipes and plans. `custody.py` seals recordings and publishes editions, using the recording contract in `evidence.py`. In `archive/`, `builder.py`, `package.py` and `streams.py` build and verify editions, and `edition_v2.py` reads the earlier edition format. [Custody](custody.md) |
 | Software identity | `verify.py`, `installation.py`, `environment.py` | What `berman verify` and `berman version` report. |
 | Foundations | `files.py`, `schemas/` | File and digest helpers, and JSON Schema validation. |
 
@@ -102,7 +102,7 @@ executor never do: they run on different machines and meet only through
 `protocol.py`. The other three contracts:
 
 - The executor and everything it imports use the standard library only. Its
-  hook runs on every turn of a fieldworker's session.
+  hook runs on every turn of a worker's session.
 - The archive builder uses the standard library only.
 - `jsonschema` is imported only by `schemas` and `packaging` only by
   `environment`.

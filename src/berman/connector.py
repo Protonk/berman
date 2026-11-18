@@ -202,7 +202,7 @@ class Operator:
             self.action('ending', run, reason=args.reason)
         state = self.read('status', run, supplement)['result']
         if supplement is None and 'ending' not in state['facts']:
-            raise ValueError('Supply --reason with the researcher’s ending declaration to start closeout.')
+            raise ValueError('Supply --reason with the commissioner’s ending declaration to start closeout.')
         if 'capture' not in state['facts']:
             observation = self.collect(run, supplement, self.ticket(run))
             self.action('capture', run, supplement, observation=observation)
@@ -406,9 +406,7 @@ def arguments():
     # The front door takes its settings on either side of the word, as `berman cheatsheet --config FILE` does.
     front.add_argument('--config', type=Path, default=argparse.SUPPRESS, help='connector settings for one study')
     commission = commands.add_parser('commission', help='reserve or recover one immutable guest assignment')
-    commission.add_argument(
-        '--request', required=True, help='a unique label for this research decision; reuse on retry'
-    )
+    commission.add_argument('--request', required=True, help='a unique label for this commission; reuse on retry')
     commission.add_argument('--connection', required=True)
     commission.add_argument('--harness', required=True, choices=('codex', 'claude'))
     origin = commission.add_mutually_exclusive_group()
@@ -424,7 +422,7 @@ def arguments():
         'launch': 'start the first sitting and wait for it; repeating this never starts another process',
         'resume': 'start a further sitting of the same engagement, resuming its native session',
         'closeout': 'end fieldwork and resume through a verified recording and reading edition',
-        'end': 'record the researcher ending; a native exit never does this',
+        'end': 'record the commissioner’s ending; a native exit never does this',
         'supplement': 'declare later activity after a frozen collection; returns its number',
         'collect': 'freeze what the host holds for the ending, or for --supplement N',
         'transfer': 'send every frozen member the guest lacks; unreadable staged files are listed, not fatal',
@@ -433,14 +431,14 @@ def arguments():
         'publish': 'publish the reading edition of a preserved recording',
         'verify': 'reread the preserved recordings and editions in the guest',
         'qualify': 'evaluate the first collection as a native support trial (local; nothing is recorded)',
-        'exposure': 'add a dated researcher account of an exposure to the run',
+        'exposure': 'add a dated account to the run of what a worker came to know of its arrangements',
     }
     for action, text in helps.items():
         cmd = commands.add_parser(action, help=text)
         cmd.add_argument('run')
         if action == 'closeout':
             origin = cmd.add_mutually_exclusive_group()
-            origin.add_argument('--reason', help='researcher’s ending declaration; omit to resume a recorded ending')
+            origin.add_argument('--reason', help='commissioner’s ending declaration; omit to resume a recorded ending')
             origin.add_argument('--supplement', type=int, help='close out an already declared supplement')
             cmd.add_argument('--json', action='store_true', help='print a machine-readable closeout summary')
         if action == 'qualify':
@@ -490,7 +488,7 @@ def main(argv=None):
                 print('Restore the unavailable evidence and repeat closeout.', file=sys.stderr)
                 if not result['already_accepted']:
                     print(
-                        'To accept the remaining evidence, repeat with --missing-reason and the researcher’s reason.',
+                        'To accept the remaining evidence, repeat with --missing-reason and the commissioner’s reason.',
                         file=sys.stderr,
                     )
                 return 1

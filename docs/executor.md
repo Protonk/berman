@@ -5,9 +5,10 @@ from the controller, binds it to a checkout and a harness on this host,
 prepares the worker's packet, launches the harness, stages what the capture
 hooks observe and freezes a collection for the guest. It keeps everything in a
 spool outside the checkout, so a developer can search the project without
-picking up packets, staging or research records.
+picking up packets or staging.
 
-Operators reach it through `berman-research` ([operating a study](operating.md)).
+Operators reach it through `berman-research` ([operating a study](operating.md),
+which also gives the [words used here](operating.md#words-used-here)).
 This page is the reference for what it does and records. The code is
 `berman.executor`; its commands are also available as
 `python -m berman.executor --spool PATH COMMAND`.
@@ -27,8 +28,8 @@ A host binding names the actual native paths:
 ```json
 {
   "connection": "example",
-  "project": "/Users/researcher/work/example",
-  "home": "/Users/researcher/.claude",
+  "project": "/Users/me/work/example",
+  "home": "/Users/me/.claude",
   "executable": "/opt/homebrew/bin/claude"
 }
 ```
@@ -137,7 +138,7 @@ process for an operation; only `resume` starts another sitting.
 
 ## Staging
 
-Hooks run against local disk and work while the research guest is offline.
+Hooks run against local disk and work while the guest is offline.
 Each attributed callback has its own durable event file. The raw event is
 written first. A second write records the verified transcript generation or an
 acquisition limitation, so a crash between them leaves the raw observation
@@ -150,7 +151,7 @@ filename and matching session identities in the records.
 
 Staging follows the engagement, not the process. A callback from the bound
 parent is kept after the launched process has exited, including from a session
-the operator resumed by hand in a home that has the hooks. Once a collection is
+resumed by hand in a home that has the hooks. Once a collection is
 frozen, callbacks are staged under `late/` with their own transcript
 generations and wait there for the next supplement. A callback is ignored only
 when it comes from a session that is not bound to the operation.
@@ -217,7 +218,7 @@ Repeating collection returns the original receipt. A different declaration ID
 is refused. `damaged(spool, operation, declaration_id)` lists frozen members
 whose staged bytes are now absent or changed; `payload_path` refuses each of
 those individually. Source files can subsequently move or disappear. Transfer
-and research custody are acknowledged separately by the controller.
+and custody are acknowledged separately by the controller.
 
 ## Qualification evidence
 

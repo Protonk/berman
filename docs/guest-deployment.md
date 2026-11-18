@@ -1,10 +1,16 @@
-# Install the research guest
+# Install the guest
 
-The researcher operates the controller from a macOS terminal. The Linux account
-holds the study, recordings, editions and a separate analysis repository. The
-native executor needs its assignment, a checkout and a spool outside the
-checkout. Keep plans, analysis and prior recordings off the executor's ordinary
-search path. Keep harness credentials and native source discovery on macOS.
+This page sets up the two sides of an installation: a Linux guest for the
+controller and a study, and the connector settings on the macOS host where the
+project and the harness are. The operator reaches the controller from a macOS
+terminal. The Linux account holds the study with its recordings and editions.
+The native executor needs its assignment, a checkout and a spool outside the
+checkout. Harness credentials and the harness's own session stores stay on
+macOS. [Words used here](operating.md#words-used-here)
+
+The instance name `berman-research`, the installer script's name and the guest
+directory `~/research` are fixed names. They do not make a study research
+([words used here](operating.md#words-used-here)).
 
 ## Provision once
 
@@ -45,13 +51,15 @@ reinstalls the chosen wheel even for a same-version development build and
 checks the environment. Coordinate replacements with anyone exercising this
 guest. A second venv can verify older packages while a qualification session
 uses the active application. Provisioning and Python package installation
-require access to the distribution or package mirrors. Research evidence
+require access to the distribution or package mirrors. Collected evidence
 travels over the local SSH connection.
 
 ## The study in the guest
 
-Create `~/research/STUDY` as a private directory in the guest. Select a new UUID
-once for a new collection. For a qualification collection the initial files are
+Create `~/research/STUDY` as a private directory in the guest. The controller
+looks for a study only under `~/research`, and a study's name is lowercase
+letters, digits and hyphens, beginning with a letter. Select a new UUID once
+for a new collection. For a qualification collection the initial files are
 
 ```text
 collection.json                         {"schema":"berman.collection/1","id":"<UUID>","name":"Qualification"}
@@ -60,11 +68,14 @@ recipes/baseline/recipe.json
 recipes/baseline/INSTRUCTIONS.md
 ```
 
-Copy the two recipe files from `examples/minimal-study/recipes/baseline`.
+Copy the two recipe files from `examples/minimal-study/recipes/baseline`, or a
+recipe of the study's own.
 [Study inputs](operating.md#study-inputs) describes connections, recipes and
 plans. The guest controller alone allocates run numbers and records ending
-declarations. Only designated assignments and execution requirements travel to
-the host. Keep analysis outside the worker packet and the connected checkout.
+declarations. Only an assignment travels to the host: the instructions, the
+harness, the document selectors and the project checks. A study that keeps
+earlier engagements from later workers also keeps what is written from its
+recordings outside the worker packet and the connected checkout.
 
 ## Connector settings on macOS
 
@@ -111,8 +122,8 @@ A stopped guest interrupts commissioning and transfers. Local hooks can keep
 staging evidence on macOS. After `limactl start berman-research`, retry the same
 operation using its existing identity and spool. Keep the native staging until
 the guest has accepted the inventory and verified its hashes. A transfer
-receipt describes delivered bytes. Capture coverage and the researcher's
-declaration each have their own evidence.
+receipt describes delivered bytes. Capture coverage and the commissioner's
+ending each have their own evidence.
 
 ## Continuing a collection
 
@@ -123,8 +134,9 @@ continues from the earlier study, account for the steps already consumed or
 start a separately identified plan. A fresh study starts with its own UUID.
 [Importing an earlier recording](custody.md#importing-a-guest-recording)
 
-The VM and its SSH configuration remain visible to a participant with host
-access. Ordinary project searches can stay within the checkout while a
-cooperating participant can still recognize fieldwork or inspect the VM.
-Record a material exposure with its circumstances and the researcher's
-response. Guest storage on this machine shares the machine's failure domain.
+The VM and its SSH configuration remain visible to anyone with the host
+account, a worker included. Ordinary project searches can stay within the
+checkout, and a worker can still recognize an engagement's arrangements or
+inspect the VM. Where that matters to how the record will be read, add an
+[exposure account](operating.md#exposure) with the circumstances and what was
+done. Guest storage on this machine shares the machine's failure domain.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:berman:schema:research-plan-1",
   "title": "berman.research-plan/1",
-  "description": "An optional guest research plan naming a connection and an ordered sequence of steps and recipes.",
+  "description": "An optional plan in a guest study, naming a connection and an ordered sequence of steps and recipes.",
   "type": "object",
   "required": [
     "schema",

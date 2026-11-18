@@ -4,22 +4,50 @@ Closeout leaves two files in the guest for each run. The recording is the
 evidence: the files the host returned, the controller's records about them and
 a manifest that pins every byte. The reading edition is a convenience built
 from the recording: the same originals with indexes and decoded transcripts for
-a researcher to read. Both verify from a copy, with no study beside them.
+a reader. Both verify from a copy, with no study beside them.
+[Words used here](operating.md#words-used-here)
+
+## What is recorded
+
+Berman records an engagement and nothing else in the project. For one
+engagement the host returns, in the main:
+
+- the packet as the worker left it, with the assignment, the instructions and
+  the worker's notes;
+- the preparation receipt, with the results of the project checks, and a
+  receipt for each sitting;
+- the callbacks the capture hooks staged from the bound session, with the
+  transcript snapshots they obtained, and the associated sessions that
+  collection found;
+- snapshots of the selected project documents and the Git state at preparation
+  and at collection;
+- the names of anything it saw and could not take.
+
+The controller adds its own records: the assignment, the commission decision,
+its copies of the host's receipts, the ending with its reason and time, the
+transfer map and the acceptance. [Native executor](executor.md#collection)
+gives the collection's members and bounds exactly.
 
 ## What a recording establishes
 
 A recording that verifies establishes that its members are the bytes the guest
 accepted for that collection and run, with the hashes, sizes and modes the
 manifest records, and that they agree with the controller's records packaged
-beside them: the assignment, the researcher's ending and its time, the host's
+beside them: the assignment, the commissioner's ending and its time, the host's
 collection receipt, the transfer map and the acceptance.
+
+It establishes nothing about the work. A worker's notes are kept as written,
+and no verification says that an account is accurate or that the work was done
+well.
 
 It does not establish that the capture was complete. An integrity pass can
 cover an incomplete capture. What was not observed or not kept is stated, not
 inferred:
 
-- `coverage` carries the host's limitations: a callback with no transcript, an
-  unobserved process exit, a session store that was unavailable.
+- `coverage` carries the limitations: the host's, such as a callback with no
+  transcript, an unobserved process exit or a session store that was
+  unavailable, and the lines custody adds for a receipt or member it does not
+  hold.
 - A member the host saw and could not take is named in `omitted.json`.
 - A member accepted as missing has one coverage line with its path and the
   reason, and the acceptance in `evidence/controller.json` keeps its length and
@@ -33,8 +61,9 @@ inferred:
 
 Verification against a digest kept separately establishes that the copy is the
 recording the guest issued. Without one it establishes internal consistency
-only. Nothing in a recording says whether a worker noticed the study. The
-researcher's exposure accounts stay in the guest's ledger and are not packaged.
+only. Nothing in a recording says what a worker knew of an engagement's
+arrangements beyond the packet. Exposure accounts stay in the guest's ledger
+and are not packaged.
 
 ## Where they are
 
@@ -75,8 +104,8 @@ occurrence belongs to that collection and run; equal bytes in another run are
 not the same occurrence.
 
 In a `berman.reading-edition/3` ZIP every original member sits at its recorded
-path under `berman-analysis/`, including the researcher-facing commission
-decision. `recording.json` inventories the originals. `edition-manifest.json`
+path under `berman-analysis/`, including the commission decision, which the
+worker never received. `recording.json` inventories the originals. `edition-manifest.json`
 pins that manifest by its exact byte digest, every reading aid, and the source
 modules that built the edition. The reading aids decode Codex and Claude
 streams into neutral blocks that keep native roles and cite source lines and
@@ -89,9 +118,12 @@ guest `recording/2` (the `split` profile) and single-recording
 `reading-edition/2`, and replaying publication of one honors its original
 selection pointer. Releases through 0.26.5 cannot read the `/3` formats.
 
-Keep the analysis repository on guest-owned storage, outside the worker packet,
-the executor's spool and the project checkout. Cite the collection UUID, run,
-supplement when applicable, member path and digest.
+What a commissioner does with a recording is theirs to decide, including
+bringing a worker's notes back into the project. A study that keeps earlier
+engagements from later workers keeps its recordings, and whatever is written
+from them, on guest-owned storage, outside the worker packet, the executor's
+spool and the project checkout. When citing a recording, give the collection
+UUID, run, supplement when applicable, member path and digest.
 
 ## How custody builds them
 

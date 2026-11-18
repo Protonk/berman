@@ -1,4 +1,7 @@
-"""Find the command for what comes next, operate guest fieldwork, check the installed software and read recordings and editions."""
+"""Commission bounded engagements in a software project and preserve a verifiable record of each.
+
+Find the command for what comes next, operate a guest study, check the installed software and read recordings and editions.
+"""
 
 import argparse
 import json

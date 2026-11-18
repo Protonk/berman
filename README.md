@@ -1,21 +1,49 @@
 # Berman
 
-Berman supports intermittent participant observation of software development.
-A researcher commissions an engagement. A designated fieldworker uses Codex or
-Claude to do ordinary work in the project's checkout and keeps the notes the
-assignment asks for. Development between engagements continues independently
-and is not recorded.
+Berman is a tool for intermittent management of work in a software project.
+The person responsible for a project uses it to commission a bounded
+engagement in the project's Git checkout. A worker enters the project's
+ordinary development environment through Codex or Claude, does the assigned
+work and keeps whatever additional account the assignment asks for. Berman
+keeps the commission and the evidence it can collect, and at the engagement's
+explicit ending seals them into a recording that can be verified from a copy
+alone.
 
-It has three parts.
+The person responsible does not have to be continuously present. They arrange
+a piece of work, an investigation or a period of participation when they
+choose, and read afterwards what was asked, what the worker reported, what
+was captured and what the record does not cover. Development outside
+engagements continues independently: it needs no Berman command and is not
+recorded.
+
+The managing is done by that person. Berman chooses no work, decides nothing
+about the project and ends no engagement. It records the commission, the
+ending and what it could collect between them. Research on a project's
+development, participant observation included, is one use among others, set
+up in a study's own instructions
+([using Berman for research](docs/operating.md#using-berman-for-research)).
+
+## Who does what
+
+| Role | Does |
+| --- | --- |
+| Commissioner | Makes an engagement's decisions: chooses the assignment, reviews the packet, starts each sitting from an ordinary terminal and declares the ending, with a reason. |
+| Operator | Runs Berman's commands. Often the same person as the commissioner. When an assistant, a script or an agent operates, it records the commissioner's decisions and makes none of them. |
+| Worker | The Codex or Claude session that receives the assignment as its opening message, works in the project's checkout and writes its account in the notes directory it is given. These guides also say fieldworker. |
+
+The software has three parts. The executor and the connector run on the
+macOS host where the project is; the controller runs in a Linux virtual
+machine, the guest. A study is what the guest keeps together: its inputs, its
+engagements and their recordings ([words used here](docs/operating.md#words-used-here)).
 
 | Part | Runs | Does |
 | --- | --- | --- |
 | Native executor | On macOS, beside the project | Prepares the worker's packet outside the checkout, launches the harness and stages what its hooks observe. |
-| Connector | In the operator's macOS terminal, over SSH | Carries each command to the research guest and the collected evidence after it. |
-| Controller and custody | In a Linux guest | Holds the study's recipes and plans, commissions assignments, records the researcher's ending, preserves a verifiable recording and publishes a reading edition. |
+| Connector | In the operator's macOS terminal, over SSH | Carries each command to the guest and the collected evidence after it. |
+| Controller and custody | In a Linux guest | Holds the study's recipes and plans, issues each assignment, records the commissioner's ending, preserves a verifiable recording and publishes a reading edition. |
 
-The worker receives the assignment and its recording instructions. Plans,
-earlier recordings and analysis stay on the research side.
+The worker receives the assignment and its instructions. Plans and earlier
+recordings are kept in the guest and are not sent to the host.
 
 ## Start with the cheatsheet
 
@@ -26,13 +54,13 @@ berman cheatsheet
 The cheatsheet reads the study's recorded situation and prints the commands
 that apply now, written out so they can be pasted. Use it to begin an
 engagement, to find out where one stands, and to pick up after an
-interruption. It changes nothing.
+interruption. It changes nothing. An excerpt:
 
 ```text
 Engagements
   run-001 (example, claude): prepared
     Packet: /Users/me/.local/share/berman/spool/operations/…/packet
-    After the packet is reviewed, the researcher starts the first sitting from an ordinary terminal.
+    After the packet is reviewed, the commissioner starts the first sitting from an ordinary terminal. Repeating this never starts a second process.
       berman-research launch run-001
 ```
 
@@ -55,15 +83,15 @@ berman cheatsheet
 ```
 
 Install the same build in the Linux guest and bind a macOS checkout and harness
-to a study. [Install the research guest](docs/guest-deployment.md) ·
+to a study. [Install the guest](docs/guest-deployment.md) ·
 [Example study](examples/minimal-study/README.md)
 
 ## Read more
 
 | For | Read |
 | --- | --- |
-| Running an engagement from commission to closeout, and study inputs | [Operating a study](docs/operating.md) |
-| What a recording establishes, and reading editions | [Recordings and editions](docs/custody.md) |
+| Running an engagement from commission to closeout, the words Berman uses, and study inputs | [Operating a study](docs/operating.md) |
+| What is recorded, what a recording establishes and does not, and reading editions | [Recordings and editions](docs/custody.md) |
 | Packets, hooks, launch, staging and native qualification | [Native executor](docs/executor.md) |
 | What the software cannot do or has not established | [Current limits](docs/limitations.md) |
 | Changing Berman, its checks and what each one establishes | [Developing Berman](docs/development.md) |

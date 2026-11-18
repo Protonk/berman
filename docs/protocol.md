@@ -45,7 +45,7 @@ Submitting different input under an existing operation identity fails.
 | accept | Reread all transferred objects, check their lengths and digests, then commit the inventory digest. If a member never arrived or the store has lost it, acceptance fails and names each one. With `missing_reason` it accepts the rest and records the missing members and the reason. |
 | supplement | Declare later activity after a frozen collection, with a reason. Returns its number. `closeout`, `capture`, `transfer`, `accept`, `preserve`, `publish` and `status` then take that number in `supplement`. |
 | preserve, publish, verify | Build a portable recording from accepted evidence, build a reading edition, or independently verify the retained publication. |
-| exposure | Append a researcher account under a separate operation ID. |
+| exposure | Append a dated account of an exposure to the run, under a separate operation ID. |
 
 ## Guest storage and transfer
 

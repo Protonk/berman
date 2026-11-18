@@ -1,14 +1,41 @@
 # Operating a study
 
-An engagement is one fieldworker's assigned work in one project, from the
-researcher's commission to the researcher's ending. The controller in the Linux
-guest commissions it, records its ending and keeps custody of what was
-collected. The executor on macOS prepares the worker's packet, launches the
-harness and stages its observations. Nothing else in Berman prepares, launches,
-captures, ends, collects, preserves or supplements fieldwork.
+An engagement is one worker's assigned work in one project, from its
+commission to its explicit ending. The controller in the Linux guest records
+the commission and the ending and keeps custody of what was collected. The
+executor on macOS prepares the worker's packet, launches the harness and stages
+its observations. Nothing else in Berman prepares, launches, captures, ends,
+collects, preserves or supplements an engagement.
+
+Work in the project outside an engagement is
+[ordinary development](#ordinary-development). Berman neither directs nor
+records it.
 
 The operator works from an ordinary macOS terminal with `berman-research`. It
 is the same program as `berman remote` and takes the same arguments.
+
+## Words used here
+
+| Word | Meaning |
+| --- | --- |
+| Engagement | One worker's assigned work in one project. Each has a run number, such as `run-001`. |
+| Sitting | One run of the harness process within an engagement. An engagement can have several. |
+| Commissioner | The person who makes an engagement's decisions: what is assigned, when a sitting starts and when the engagement ends. |
+| Operator | Whoever runs Berman's commands. Often the commissioner. When an assistant, a script or an agent operates, it records the commissioner's decisions and makes none of them. |
+| Worker, fieldworker | The Codex or Claude session that receives the assignment, does the work and writes the account the assignment asks for. The two words mean the same. |
+| Harness | Codex or Claude, the program the worker runs in. Native means belonging to the harness as installed on the host: its executable, home, sessions and hooks. |
+| Host, guest | The macOS machine with the project checkout and the harness, and the Linux virtual machine that holds the controller and the study. |
+| Study | What Berman keeps together in the guest: connections, recipes, plans, the ledger of engagements, recordings and editions. |
+| Collection | Two things have this name. A study's identity is its collection UUID. The set of files the host freezes and returns at an ending is that engagement's collection. |
+| Packet | What the worker receives: the assignment, its instructions and a notes directory, outside the checkout. |
+| Recording, reading edition | The preserved evidence of one engagement, and a copy of it arranged for reading. |
+
+Some names date from Berman's first use, which was a research study, and stay
+because commands, paths, schemas and published records carry them:
+`berman-research`, the guest directory `~/research/`, the plan schema
+`berman.research-plan/1`, the recipe label `participant-inquiry/1`, the
+`exposure` command, the words study and fieldwork, and "participant notes" in a
+reading edition's guide. None of them makes an engagement research.
 
 ## Finding the next command
 
@@ -35,25 +62,27 @@ berman-research commission --request first-account --connection example --harnes
 berman-research prepare run-001
 berman-research launch run-001
 berman-research resume run-001 --request second
-berman-research closeout run-001 --reason 'The researcher ended fieldwork after the project review'
+berman-research closeout run-001 --reason 'The assigned work was finished and reviewed'
 ```
 
 | Step | Who | What happens |
 | --- | --- | --- |
-| `commission` | Operator | The guest reads the connection and recipe, allocates the run number and returns the assignment. Omit `--recipe` for the connection's default, or pass `--plan NAME` for a plan's next step. |
-| `prepare RUN` | Operator | The executor places the packet in its spool, snapshots the selected documents and runs the project checks. It prints the packet path and the launch command. Review the packet before launch. |
-| `launch RUN` | Researcher, in an ordinary terminal | Starts the first sitting and waits for the harness to exit. Repeating it never starts a second process. |
-| `resume RUN --request LABEL` | Researcher | Starts a further sitting of the same engagement and resumes its native session. Each sitting has its own label. |
-| `closeout RUN --reason TEXT` | Operator, once the researcher has declared the ending | Records the ending, freezes the host collection, transfers it, and has the guest accept, preserve, publish and verify it. |
+| `commission` | Operator, with the commissioner's choice of connection, harness and recipe | The guest reads the connection and recipe, allocates the run number and returns the assignment. Omit `--recipe` for the connection's default, or pass `--plan NAME` for a plan's next step. |
+| `prepare RUN` | Operator | The executor places the packet in its spool, snapshots the selected documents and runs the project checks. It prints the packet path and the launch command. The commissioner reviews the packet before launch. |
+| `launch RUN` | Commissioner, in an ordinary terminal | Starts the first sitting and waits for the harness to exit. Repeating it never starts a second process. |
+| `resume RUN --request LABEL` | Commissioner | Starts a further sitting of the same engagement and resumes its native session. Each sitting has its own label. |
+| `closeout RUN --reason TEXT` | Operator, once the commissioner has declared the ending | Records the ending, freezes the host collection, transfers it, and has the guest accept, preserve, publish and verify it. |
 
 A request label makes a lost reply safe: repeat the same command with the same
 label and the guest returns the original result. A new decision takes a new
 label.
 
-An engagement lasts until the researcher ends it, however many times the
+An engagement lasts until the commissioner ends it, however many times the
 worker's process stops and starts. Native exit, a `SessionEnd` callback, a
-successful transfer and the researcher's ending are separate facts with
-separate receipts, and none implies another.
+successful transfer and the commissioner's ending are separate facts with
+separate receipts, and none implies another. Berman has no command that ends
+an engagement on its own judgment, and an operator who is not the commissioner
+supplies the commissioner's actual reason.
 
 `status` lists every run with its recorded facts. `status RUN` adds what was
 observed, transferred and outstanding. The guest learns of a sitting when it
@@ -61,10 +90,10 @@ ends; while one runs, `status` shows the facts recorded before it started.
 
 ## Closeout
 
-Run closeout when the sitting has finished and the researcher has declared the
-ending. It prints the sitting and note counts, the capture's limitations and
-omissions, and the guest paths of the recording and the reading edition, both
-reread before it reports success. `--json` gives counts, hashes and the
+Run closeout when the sitting has finished and the commissioner has declared
+the ending. It prints the sitting and note counts, the capture's limitations
+and omissions, and the guest paths of the recording and the reading edition,
+both reread before it reports success. `--json` gives counts, hashes and the
 detailed gaps.
 
 Repeat the same command after an interruption. Once the ending is recorded,
@@ -77,7 +106,7 @@ that a capture is complete.
 
 If an inventoried file cannot reach the guest, closeout sends the rest, names
 the missing files and exits unsuccessfully before acceptance. Restore the file
-and repeat, or pass the researcher's reason with `--missing-reason TEXT`. The
+and repeat, or pass the commissioner's reason with `--missing-reason TEXT`. The
 guest then records the reason and the missing members, and the recording states
 the gap for good. Acceptance closes that collection: the same evidence arriving
 later belongs in a supplement.
@@ -99,16 +128,20 @@ berman-research closeout run-001 --supplement 1
 
 ## Exposure
 
-A participant may recognize an installed hook, remember earlier fieldwork or
-look inside the guest. When that matters, record what they encountered and how
-it was handled:
+Some studies leave part of an engagement's arrangements out of the packet, such
+as the fact that sessions are staged or what earlier engagements found. A
+worker can come to know it anyway: recognize an installed hook, find the spool
+or the guest, or remember an earlier engagement. When that matters to how the
+record will be read, add an account of what the worker encountered and how it
+was handled:
 
 ```sh
-berman-research exposure run-001 --request noticed-hook --account 'The worker asked about the capture hook; the researcher explained it'
+berman-research exposure run-001 --request noticed-hook --account 'The worker asked about the capture hook and was told what it stages'
 ```
 
-This adds a dated researcher account to the run. Discovery alone changes
-nothing in the lifecycle.
+This adds a dated account to the run in the guest's ledger. It changes nothing
+in the lifecycle, and no recording or edition carries it. `status RUN` reports
+how many accounts a run has.
 
 ## After an interruption
 
@@ -145,19 +178,21 @@ connected checkout.
   `berman.connection/1`) names the project documents to observe, optional
   project checks and an optional `default_recipe`.
 - A recipe (`recipes/NAME/recipe.json`, schema `berman.recipe/2`) declares its
-  connections and recording protocol and names INSTRUCTIONS.md, which contains
-  exactly one `{{notes_directory}}` placeholder. An empty `connections` list
-  means generic instructions; a nonempty list restricts them to those
-  connections.
+  connections and names INSTRUCTIONS.md, which contains exactly one
+  `{{notes_directory}}` placeholder. An empty `connections` list means generic
+  instructions; a nonempty list restricts them to those connections. Its
+  required `recording_protocol` is one of two labels, `work-accounts/1` and
+  `participant-inquiry/1`. The label is the study's own description of the
+  notes it asks for, and Berman treats both alike.
 - A plan (`plans/NAME/plan.json`, schema `berman.research-plan/1`) is optional:
   an id, a connection and ordered steps, each with an id and a recipe.
   `commission --plan NAME` takes its next unstarted step. A commission with
   `--recipe` leaves the plan's sequence untouched.
 
-The [minimal study](../examples/minimal-study/README.md) holds a baseline
-recipe to start from. A record Berman would misread is refused with its file
-and the place of each problem, such as `documents must be an array`. Reading
-never rewrites a record.
+The [minimal study](../examples/minimal-study/README.md) holds two recipes to
+start from. A record Berman would misread is refused with its file and the
+place of each problem, such as `documents must be an array`. Reading never
+rewrites a record.
 
 ## What a fieldworker receives
 
@@ -168,11 +203,35 @@ is added to the harness's working directories.
 
 The assignment that reaches the host carries the instructions, the harness, the
 document selectors and the project checks, with the collection, run and
-commission identities. The plan, the recipe's research annotations and the
-reason an engagement ended stay in the guest. Anything a study wants said about
-the project, how the work begins or what to attend to belongs in the recipe's
-INSTRUCTIONS.md. [Native executor](executor.md#preparing-a-checkout) gives the
-packet and the opening message exactly.
+commission identities. The plan, the recipe's annotations and the reason an
+engagement ended are not sent to the host.
+
+The opening message tells the worker to read the instructions and follow them
+in the checkout. Beyond that Berman says nothing to a worker about what to do.
+Whether an engagement asks the worker to carry on the project's ordinary work,
+to investigate, to repair something or only to look is for its recipe to say.
+Anything a study wants said about the project, how the work begins, what to
+attend to or what account to keep belongs in the recipe's INSTRUCTIONS.md. An
+interactive sitting is an ordinary harness session in the terminal that
+launched it. Whoever sits at that terminal, ordinarily the commissioner, can
+talk with the worker as in any session, and what is said is in the transcript.
+[Native executor](executor.md#preparing-a-checkout) gives the packet and the
+opening message exactly.
+
+## Using Berman for research
+
+A study of a project's development uses the same pieces, and its design lives
+in its own inputs. Its recipes tell the worker what to attend to and what
+account to keep. A plan fixes the order of its engagements. The plan, each
+recipe's annotations and the reason an engagement ended are not sent to the
+host, and an [exposure](#exposure) account records what a worker came to know
+anyway. Whether a worker is told that the session is recorded is the study's
+choice, made in its recipe: the instructions say only what the recipe says. A
+guest on the same machine remains open to anyone with the host account
+([separation](limitations.md#separation)).
+
+Berman enforces no research design and supplies no method or analysis. A study
+that needs them brings them. No other use of Berman takes on any of this.
 
 ## Ordinary development
 
@@ -180,4 +239,11 @@ Ordinary development needs no Berman command. Run Codex or Claude from the
 project checkout with the normal harness, credentials and permissions. The
 executor's Codex router ignores every session that does not open with a
 prepared assignment from the assigned checkout, and Claude receives capture
-hooks only on a fieldwork launch.
+hooks only on a Berman launch. That holds while an engagement is open: another
+session in the same checkout is not staged.
+
+Berman therefore has no account of the time between engagements. That work
+appears in a later engagement as the state its preparation finds: the
+checkout's commit and Git status, the selected documents and the results of
+the project checks. Whatever a worker then reads in the checkout is in its
+transcript too.
