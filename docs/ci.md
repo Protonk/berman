@@ -97,3 +97,5 @@ the checkout, receipt, wheel and detached ZIPs. The guest creates a new
 `~/research/ci-UUID/` study. Both machines cache verified candidate runtimes
 under `~/.local/share/berman-ci/wheels/SHA256/`; the executor spool belongs to
 CI. A retry starts a fresh trial and preserves the earlier run for inspection.
+
+Proposed changes to live runs are in the [unattended CI plan](plans/live-ci.md).
