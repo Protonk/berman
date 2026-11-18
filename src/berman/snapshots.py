@@ -36,19 +36,6 @@ def pointer(session):
     return value
 
 
-def resolve(session):
-    session = Path(session)
-    committed = pointer(session)
-    if committed is None:
-        return session
-    folder = session / 'snapshots' / committed['generation']
-    files.safe_directory(folder)
-    metadata = files.read(folder / 'capture.json')
-    if files.digest_json(metadata) != committed['generation']:
-        raise ValueError('Committed capture metadata differs from its identity')
-    return folder
-
-
 def retained(path, digest, size, checked):
     """Verify a retained byte obligation once per read, including repeated history rows."""
     if not isinstance(digest, str) or not ID.fullmatch(digest):
@@ -88,59 +75,48 @@ def obligations(session, rows, tail):
                 retained(session / 'tails' / (expected[0] + '.bin'), expected[0], expected[1], checked)
 
 
+def read_generation(folder):
+    metadata = files.read(folder / 'capture.json')
+    raw = files.regular(folder / 'transcript.jsonl').read_bytes()
+    reader = files.regular(folder / 'conversation.txt').read_bytes()
+    history = files.regular(folder / 'captures.jsonl').read_bytes().splitlines()
+    if (
+        files.digest(raw) != metadata['sha256']
+        or len(raw) != metadata['saved_bytes']
+        or files.digest(reader) != metadata['reader_sha256']
+        or not history
+        or json.loads(history[-1]) != metadata
+    ):
+        raise ValueError('Capture bytes, reader, metadata or history disagree')
+    tail = b''
+    if name := metadata.get('partial_tail_file'):
+        if not isinstance(name, str) or Path(name).name != name:
+            raise ValueError('Invalid capture tail path')
+        tail = files.regular(folder / name).read_bytes()
+        if files.digest(tail) != metadata['partial_tail_sha256'] or len(tail) != metadata['omitted_partial_tail_bytes']:
+            raise ValueError('Capture partial tail differs')
+    return {'metadata': metadata, 'raw': raw, 'reader': reader, 'tail': tail, 'history': history}
+
+
 def read(session):
-    """Read one coherent generation, retrying a concurrent generation retirement."""
-    for attempt in range(3):
-        before = pointer(session)
+    """Read a published generation, retrying if its writer advanced the pointer."""
+    for _ in range(3):
+        ref = pointer(session)
+        if ref is None:
+            return None
         try:
-            folder = resolve(session)
-            meta_path = folder / 'capture.json'
-            if not meta_path.exists():
-                if before is None:
-                    return None
-                raise ValueError('Committed capture metadata is missing')
-            metadata = files.read(meta_path)
-            raw = files.regular(folder / 'transcript.jsonl').read_bytes()
-            reader = files.regular(folder / 'conversation.txt').read_bytes()
-            history = files.regular(folder / 'captures.jsonl').read_bytes().splitlines()
+            current = read_generation(Path(session) / 'snapshots' / ref['generation'])
+            rows = [json.loads(line) for line in current['history']]
             if (
-                files.digest(raw) != metadata['sha256']
-                or len(raw) != metadata['saved_bytes']
-                or (metadata.get('reader_sha256') and files.digest(reader) != metadata['reader_sha256'])
-                or not history
-                or json.loads(history[-1]) != metadata
-            ):
-                raise ValueError('Capture bytes, reader, metadata or history disagree')
-            rows = [json.loads(line) for line in history]
-            committed = pointer(session)
-            if committed and (
-                folder.name != committed['generation']
-                or [files.digest_json(row) for row in rows] != committed['committed']
+                files.digest_json(current['metadata']) != ref['generation']
+                or [files.digest_json(row) for row in rows] != ref['committed']
             ):
                 raise ValueError('Capture commit reference and retained history disagree')
-            tail = b''
-            if metadata.get('partial_tail_file'):
-                name = metadata['partial_tail_file']
-                if not isinstance(name, str) or Path(name).name != name:
-                    raise ValueError('Invalid capture tail path')
-                tail = files.regular(folder / name).read_bytes()
-                if (
-                    files.digest(tail) != metadata['partial_tail_sha256']
-                    or len(tail) != metadata['omitted_partial_tail_bytes']
-                ):
-                    raise ValueError('Capture partial tail differs')
-            if committed:
-                obligations(Path(session), rows, tail)
-            return {
-                'folder': folder,
-                'metadata': metadata,
-                'raw': raw,
-                'reader': reader,
-                'tail': tail,
-                'history': history,
-            }
+            obligations(Path(session), rows, current['tail'])
+            if pointer(session) == ref:
+                return current
         except OSError, ValueError, KeyError, TypeError:
-            if attempt == 2 or pointer(session) == before:
+            if pointer(session) == ref:
                 raise
     raise ValueError('Capture changed repeatedly while reading')
 
@@ -206,8 +182,6 @@ def recover(session, staging):
 
 def publish(session, metadata, raw, reader, tail, staging):
     session, staging = Path(session), Path(staging)
-    if any((session / name).exists() for name in ('finalized.json', 'ended.json')):
-        raise ValueError('Cannot publish a new generation into a closed capture')
     session.mkdir(parents=True, exist_ok=True)
     staging.mkdir(parents=True, exist_ok=True)
     files.safe_directory(session)
@@ -246,7 +220,7 @@ def publish(session, metadata, raw, reader, tail, staging):
         content[metadata['partial_tail_file']] = tail
     for name, data in content.items():
         files.atomic(stage / name, data)
-    read(stage)  # Refuse inconsistent writer output before making it visible.
+    read_generation(stage)  # Check staged bytes before publishing their pointer.
     target = session / 'snapshots' / generation
     target.parent.mkdir(exist_ok=True)
     files.safe_directory(target.parent)

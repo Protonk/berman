@@ -1,8 +1,7 @@
 """Bounded acquisition of associated native sessions before a packet is inventoried.
 
 Native relationship metadata selects sources, never conversation text or file recency.
-The first complete observation is retained atomically. Retrying verifies it rather than
-silently replacing it with a later view of the native session directory.
+Only a complete set of associated files enters the frozen collection.
 """
 
 import json
@@ -88,16 +87,6 @@ def candidates(home, parent, harness):
 def collect(home, parent, harness, target):
     if not IDENTITY.fullmatch(parent) or harness not in ('codex', 'claude'):
         raise Decision('Unsupported associated-session discovery identity or harness')
-    if target.exists():
-        receipt = files.read(target / 'sources.json')
-        if receipt['parent_session_id'] != parent or receipt['harness'] != harness:
-            raise Decision('Associated-session collection belongs to another parent')
-        for item in receipt['sources']:
-            raw = files.regular(target / item['path']).read_bytes()
-            if files.digest(raw) != item['sha256'] or len(raw) != item['bytes']:
-                raise Decision('Retained associated session changed: ' + item['path'])
-        return receipt
-    target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.associated-', dir=target.parent))
     try:
         selected, inspected = candidates(home, parent, harness)

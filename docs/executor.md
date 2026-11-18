@@ -17,7 +17,10 @@ A host binding looks like this (supply the actual native paths).
 }
 ```
 
-The connection must match the assignment. Omit `policy` for the harness default. An explicit value names a native Codex sandbox mode or Claude permission mode. Project checks run as native host subprocesses in the checkout. The preparation receipt records their resolved arguments, return codes and output digests, the selected Git state and the observed document hashes. The harness process receives its ordinary environment. A custom home selects `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. An unset home variable stays unset when the binding selects the default home, which matters for Claude's login state.
+The connection must match the assignment. Omit `policy` for the harness default. An explicit value names a native Codex sandbox mode or Claude permission mode. Project checks run as native host subprocesses in the checkout. Check arguments are strings. Berman resolves `{python}`, `{project}`, `{packet}` and
+`{executable:NAME}` against the executor environment. Each check has a unique
+identifier, a nonempty argument list and an optional timeout of 1–120 seconds.
+The preparation receipt records their resolved arguments, return codes and output digests, the selected Git state and the observed document hashes. The harness process receives its ordinary environment. A custom home selects `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. An unset home variable stays unset when the binding selects the default home, which matters for Claude's login state.
 
 Inside `SPOOL/operations/OPERATION/packet`, the worker gets `ASSIGNMENT.md`, rendered `INSTRUCTIONS.md` and a writable `notes/`. Only that packet is added to the harness's working directories. Put private research questions, assessments and analysis in the research environment. The worker and developer retain their ordinary native facilities.
 

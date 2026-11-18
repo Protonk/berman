@@ -32,7 +32,7 @@ class ContextTests(unittest.TestCase):
 
 
 class AssociatedSourcesTests(unittest.TestCase):
-    def test_parent_guardian_descendant_selection_and_retry(self):
+    def test_parent_guardian_descendant_selection(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp).resolve()
             home = base / 'codex'
@@ -58,8 +58,3 @@ class AssociatedSourcesTests(unittest.TestCase):
             target = base / 'associated'
             result = sources.collect(home, 'parent', 'codex', target)
             self.assertEqual({r['session_id'] for r in result['sources']}, {'guardian', 'reviewer', 'descendant'})
-            native('later.jsonl', {'id': 'later', 'parent_thread_id': 'parent'})
-            self.assertEqual(sources.collect(home, 'parent', 'codex', target), result)
-            (target / result['sources'][0]['path']).write_text('damage')
-            with self.assertRaisesRegex(Decision, 'changed'):
-                sources.collect(home, 'parent', 'codex', target)

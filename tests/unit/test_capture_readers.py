@@ -4,8 +4,8 @@ import json
 import unittest
 from unittest import mock
 
-from berman import checks
-from berman.capture import claude, codex, hooks
+from berman import checks, executor
+from berman.capture import claude, codex
 from berman.files import Decision
 
 
@@ -57,29 +57,28 @@ class ReaderTests(unittest.TestCase):
 
 
 class HookRecognitionTests(unittest.TestCase):
-    def test_our_own_handlers_are_recognized_and_ordinary_hooks_are_not(self):
-        python = '/usr/bin/python3 -I -B'
-        cases = {
-            f'{python} -m berman.executor --spool /spool hook --home /home/.codex': 'berman.executor',
-            # A home an earlier release operated can still hold that release's router or collectors.
-            f'{python} -m berman.capture.router hook --analysis-root /study': 'berman.capture.router',
-            f'{python} /another/install/tools/berman_capture_router.py hook': 'berman_capture_router.py',
-            f'{python} /another/install/tools/berman_collector.py hook': 'berman_collector.py',
-            f'"{python.split()[0]}" -I -B "/install/_legacy/capture_session.py" hook': 'capture_session.py',
-            # The executor module without its hook action is not a handler.
-            f'{python} -m berman.executor --spool /spool codex-hooks --home /home/.codex': None,
-            '/usr/local/bin/notify --on-stop': None,
-            'relative/capture_session.py hook': None,
-            'unterminated "quote': None,
-        }
-        for command, expected in cases.items():
-            with self.subTest(command=command):
-                self.assertEqual(hooks.capture_entry({'command': command}), expected)
-        self.assertIsNone(hooks.capture_entry({}))
+    def test_duplicate_or_conflicting_handlers_block_launch(self):
+        def group(command):
+            return {'hooks': [{'type': 'command', 'command': command}]}
+
+        router = group('python -I -m berman.executor --spool /spool hook --home /codex')
+        expected = {'hooks': {'Stop': [router]}}
+        ordinary = group('/usr/local/bin/notify --on-stop')
+        executor.verify_hooks({'hooks': {'Stop': [ordinary, router]}}, expected)
+        commands = [
+            router['hooks'][0]['command'],
+            'python -m berman.capture.router hook',
+            'python /install/berman_capture_router.py hook',
+            'python /install/berman_collector.py hook',
+            'python "/shared tools/capture_session.py" hook',
+        ]
+        for command in commands:
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'exclusive executor router'):
+                executor.verify_hooks({'hooks': {'Stop': [router, ordinary, group(command)]}}, expected)
 
 
 class ProjectCheckTests(unittest.TestCase):
-    VALUES = {'python': '/py', 'project': '/stewart', 'fixture': '/fx', 'packet': '/p'}
+    VALUES = {'python': '/py', 'project': '/stewart', 'packet': '/p'}
 
     def test_declared_checks_resolve_to_explicit_arguments(self):
         declared = [

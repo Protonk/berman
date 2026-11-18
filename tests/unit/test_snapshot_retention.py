@@ -58,7 +58,7 @@ class SnapshotRetentionTests(unittest.TestCase):
 
     def test_lost_displaced_bytes_cannot_authorize_deleting_the_last_old_generation(self):
         old = self.publish(b'original\n')
-        original = snapshots.resolve(self.session)
+        original = self.session / 'snapshots' / snapshots.pointer(self.session)['generation']
         self.publish(b'replacement\n', interrupt=True)
         (self.session / 'displaced' / (old['sha256'] + '.jsonl')).unlink()
         before = self.tree()
@@ -100,13 +100,18 @@ class SnapshotRetentionTests(unittest.TestCase):
 
     def test_partially_retired_directory_uses_committed_history_to_finish_cleanup(self):
         self.publish(b'original\n')
-        original = snapshots.resolve(self.session)
+        original = self.session / 'snapshots' / snapshots.pointer(self.session)['generation']
         self.publish(b'original\ncontinued\n', interrupt=True)
         (original / 'capture.json').unlink()
         (original / 'transcript.jsonl').unlink()
         snapshots.recover(self.session, self.staging)
         self.assertFalse(original.exists())
         self.assertEqual(snapshots.read(self.session)['raw'], b'original\ncontinued\n')
+
+    def test_only_a_committed_pointer_makes_a_generation_visible(self):
+        self.publish(b'observed')
+        (self.session / 'current.json').unlink()
+        self.assertIsNone(snapshots.read(self.session))
 
     def test_prefix_claim_is_checked_against_bytes_before_publication(self):
         self.publish(b'original\n')

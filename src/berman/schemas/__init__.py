@@ -48,21 +48,12 @@ def schema(name):
     return json.loads(path(name).read_text(encoding='utf-8'))
 
 
-class Unavailable(ValueError):
-    """Records cannot be checked in this environment, because jsonschema does not import.
-
-    A ValueError on purpose. Every reader then treats it as it treats a record it cannot trust:
-    the command line reports it, verification fails the check, and discovery leaves the run's facts
-    unknown. Nothing is passed over unchecked.
-    """
-
-
 @cache
 def validator(name):
     try:
         from jsonschema import Draft202012Validator
     except Exception as exc:  # Broken installations can raise more than ImportError while loading.
-        raise Unavailable(
+        raise ValueError(
             f'Records cannot be checked: jsonschema does not import ({exc}). Reinstall Berman with its '
             'dependencies; berman verify reports the environment'
         ) from exc

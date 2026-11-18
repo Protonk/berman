@@ -9,7 +9,7 @@ import shutil
 
 from berman.files import Decision
 
-PLACEHOLDER = re.compile(r'\{(python|project|fixture|packet|executable:[a-z][a-z0-9-]*)\}')
+PLACEHOLDER = re.compile(r'\{(python|project|packet|executable:[a-z][a-z0-9-]*)\}')
 
 
 def project_checks(declared, values):

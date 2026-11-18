@@ -156,30 +156,29 @@ def prepare(spool, assignment, binding):
         claude = assignment['harness'] == 'claude'
         files.write(folder / 'hooks.json', capture.definition(spool, home, assignment['operation'] if claude else None))
         checks = []
-        with tempfile.TemporaryDirectory(dir=folder) as fixture:
-            for check in project_checks(
-                assignment['checks'],
-                {'python': sys.executable, 'project': str(project), 'fixture': fixture, 'packet': str(packet)},
-            ):
-                done = subprocess.run(
-                    check['argv'],
-                    cwd=project,
-                    timeout=check['timeout'],
-                    capture_output=True,
-                    env=environment(dict(assignment, binding=b)),
+        for check in project_checks(
+            assignment['checks'],
+            {'python': sys.executable, 'project': str(project), 'packet': str(packet)},
+        ):
+            done = subprocess.run(
+                check['argv'],
+                cwd=project,
+                timeout=check['timeout'],
+                capture_output=True,
+                env=environment(dict(assignment, binding=b)),
+            )
+            ok = done.returncode == 0 and check.get('stdout_contains', '').encode() in done.stdout
+            checks.append(
+                dict(
+                    check,
+                    passed=ok,
+                    returncode=done.returncode,
+                    stdout_sha256=files.digest(done.stdout),
+                    stderr_sha256=files.digest(done.stderr),
                 )
-                ok = done.returncode == 0 and check.get('stdout_contains', '').encode() in done.stdout
-                checks.append(
-                    dict(
-                        check,
-                        passed=ok,
-                        returncode=done.returncode,
-                        stdout_sha256=files.digest(done.stdout),
-                        stderr_sha256=files.digest(done.stderr),
-                    )
-                )
-                if not ok:
-                    raise ValueError(f'Project check failed: {check["id"]} (exit {done.returncode})')
+            )
+            if not ok:
+                raise ValueError(f'Project check failed: {check["id"]} (exit {done.returncode})')
         prepared = receipt(
             'preparation',
             dict(assignment, assignment_sha256=files.digest_json(assignment)),
@@ -198,14 +197,20 @@ def prepare(spool, assignment, binding):
 
 
 def verify_hooks(installed, expected):
-    from berman.capture.hooks import capture_entry
+    # Directly installed collectors can still receive events from this Codex home.
+    collector_scripts = {'capture_session.py', 'berman_collector.py', 'berman_capture_router.py'}
 
     for event in set(installed.get('hooks', {})) | set(expected['hooks']):
         found = []
         for group in installed.get('hooks', {}).get(event, []):
             for hook in group.get('hooks', []):
                 argv = shlex.split(hook.get('command', ''))
-                if capture_entry(hook) or any(s.startswith(('berman.executor', 'berman.capture.')) for s in argv):
+                if any(
+                    arg == 'berman.executor'
+                    or arg.startswith('berman.capture.')
+                    or (Path(arg).is_absolute() and Path(arg).name in collector_scripts)
+                    for arg in argv
+                ):
                     found.append(group)
         if found != expected['hooks'].get(event, []):
             raise ValueError(f'{event}: review the exclusive executor router in the selected Codex hooks.json')

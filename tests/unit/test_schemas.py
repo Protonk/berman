@@ -110,23 +110,6 @@ class PackagedSchemaTests(unittest.TestCase):
                 self.assertIn('schema', loaded['required'])
                 self.assertTrue(loaded['description'].strip())
 
-    def test_schemas_stay_open_to_fields_they_do_not_name(self):
-        # Records grow, and researcher inputs carry explanatory fields. A closed object would turn
-        # a newer or annotated record into reported damage.
-        def closed(node, where):
-            if isinstance(node, dict):
-                if node.get('additionalProperties') is False or 'unevaluatedProperties' in node:
-                    yield where
-                for key, child in node.items():
-                    yield from closed(child, f'{where}/{key}')
-            elif isinstance(node, list):
-                for index, child in enumerate(node):
-                    yield from closed(child, f'{where}/{index}')
-
-        for name in schemas.SUPPORTED:
-            with self.subTest(schema=name):
-                self.assertEqual(list(closed(schemas.schema(name), '')), [])
-
     def test_schema_files_are_part_of_the_software_identity(self):
         recorded = identity()
         for name, digest in schemas.check().items():

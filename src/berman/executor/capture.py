@@ -12,11 +12,11 @@ import json
 import os
 from pathlib import Path
 import shlex
+import sys
 from uuid import uuid4
 
 from berman import files, protocol, snapshots
 from berman.capture import claude, codex
-import sys
 from berman.sources import IDENTITY, metadata
 
 MARKER = 'Berman-Assignment: '
