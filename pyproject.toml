@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "berman"
-version = "0.26.5"
+version = "0.26.6"
 description = "Prepare, capture, and preserve research alongside software development."
 readme = "README.md"
 license = "MIT"

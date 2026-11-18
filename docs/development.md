@@ -191,9 +191,10 @@ severity, compatibility, maturity or progress.
 - Version `1.0.0` is reserved for a decision to establish a stable contract.
   Numbers below 0.26 predate this scheme and carry no meaning under it.
 
-[Changes since the last release](releases/unreleased.md) collects what the next
-release will need to say; at release it becomes that release's notes. Notes for
-a published release stay with it under `releases/`.
+Notes for each release stay with it under `releases/`; the latest are the
+[0.26.6 release notes](releases/0.26.6.md). Between releases, collect what the
+next one will need to say in `releases/unreleased.md`, and rename that file
+when the release is prepared.
 
 GitHub is the backup of released artifacts: every release from 0.4.4 on stays
 there with its wheel, source distribution and `SHA256SUMS`, and none is
