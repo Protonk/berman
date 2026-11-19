@@ -13,13 +13,7 @@ was captured and what the record does not cover. Development outside
 engagements continues independently: it needs no Berman command and is not
 recorded.
 
-## Who does what
-
-| Role | Does |
-| --- | --- |
-| Commissioner | Makes an engagement's decisions: chooses the assignment, reviews the packet, starts each sitting from an ordinary terminal and declares the ending, with a reason. |
-| Operator | Runs Berman's commands. Often the same person as the commissioner. When an assistant, a script or an agent operates, it records the commissioner's decisions and makes none of them. |
-| Worker | The Codex or Claude session that receives the assignment as its opening message, works in the project's checkout and writes its account in the notes directory it is given. These guides also say fieldworker. |
+## What does what
 
 The software has three parts. The executor and the connector run on the
 macOS host where the project is; the controller runs in a Linux virtual
