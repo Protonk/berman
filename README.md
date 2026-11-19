@@ -18,7 +18,7 @@ recorded.
 The software has three parts. The executor and the connector run on the
 macOS host where the project is; the controller runs in a Linux virtual
 machine, the guest. A study is what the guest keeps together: its inputs, its
-engagements and their recordings ([words used here](docs/operating.md#words-used-here)).
+engagements and their recordings.
 
 | Part | Runs | Does |
 | --- | --- | --- |
@@ -80,7 +80,4 @@ to a study. [Install the guest](docs/guest-deployment.md) ·
 | What the software cannot do or has not established | [Current limits](docs/limitations.md) |
 | Changing Berman, its checks and what each one establishes | [Developing Berman](docs/development.md) |
 
-`berman verify` checks the installed software. It says nothing about a
-harness on this machine: that takes a
-[native qualification](docs/executor.md#qualification-evidence).
 [MIT License](LICENSE)
