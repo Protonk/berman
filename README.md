@@ -1,27 +1,17 @@
 # Berman
 
 Berman is a tool for intermittent management of work in a software project.
-The person responsible for a project uses it to commission a bounded
-engagement in the project's Git checkout. A worker enters the project's
-ordinary development environment through Codex or Claude, does the assigned
-work and keeps whatever additional account the assignment asks for. Berman
-keeps the commission and the evidence it can collect, and at the engagement's
-explicit ending seals them into a recording that can be verified from a copy
-alone.
+The operator uses it to commission a bounded engagement in a project's Git 
+checkout. A worker enters the project's ordinary development environment 
+through Codex or Claude, does the assigned work and keeps whatever additional 
+account the assignment asks for. 
 
-The person responsible does not have to be continuously present. They arrange
+The operator does not have to be continuously present. They arrange
 a piece of work, an investigation or a period of participation when they
 choose, and read afterwards what was asked, what the worker reported, what
 was captured and what the record does not cover. Development outside
 engagements continues independently: it needs no Berman command and is not
 recorded.
-
-The managing is done by that person. Berman chooses no work, decides nothing
-about the project and ends no engagement. It records the commission, the
-ending and what it could collect between them. Research on a project's
-development, participant observation included, is one use among others, set
-up in a study's own instructions
-([using Berman for research](docs/operating.md#using-berman-for-research)).
 
 ## Who does what
 
