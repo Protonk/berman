@@ -48,7 +48,14 @@ git config --local "$scope.username" Protonk
 
 ### Unlock and push
 
-In a private `berman-dev` Bash terminal, unlock the login keyring. On first use, choose a nonempty passphrase. Use that same passphrase after a guest restart or whenever the keyring locks. [GNOME Keyring](https://manpages.debian.org/trixie/gnome-keyring/gnome-keyring-daemon.1.en.html)
+In a private `berman-dev` Bash terminal, check the login collection. This check leaves a stopped Secret Service asleep. If it reports `b false`, the keyring is already unlocked and you can go straight to Git.
+
+```sh
+busctl --user --auto-start=no get-property org.freedesktop.secrets \
+  /org/freedesktop/secrets/collection/login org.freedesktop.Secret.Collection Locked
+```
+
+For a fresh guest login with no running service, unlock the keyring before running Git or `secret-tool`. On first use, choose a nonempty passphrase. Use the same passphrase for subsequent unlocks. [GNOME Keyring](https://manpages.debian.org/trixie/gnome-keyring/gnome-keyring-daemon.1.en.html)
 
 ```bash
 IFS= read -rsp 'Guest keyring passphrase: ' ringpass; echo
@@ -56,10 +63,11 @@ if [ -n "$ringpass" ]; then
   printf '%s' "$ringpass" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
 fi
 unset ringpass
-git -C "$HOME/berman" push --dry-run origin HEAD:main
 ```
 
-At Git’s password prompt, paste the token. A successful HTTPS authentication lets Git store it through the helper. An agent can check access from a separate guest session with the dry run below. When the maintainer requests a push to `main`, remove `--dry-run`. Git reads the token from the keyring for the push.
+Repeat the collection check and look for `b false` before entering a token. If Debian started its systemd daemon before the unlock command, the unlocked daemon can be waiting for the same bus name. Inspect the owners with `busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ListQueuedOwners s org.freedesktop.secrets`. If the systemd service owns the name, the passphrase-unlocked daemon is next, and the service has no session credentials in use, `systemctl --user stop gnome-keyring-daemon.service` lets the queued daemon take over. Check the collection again.
+
+On first use, run `git -C "$HOME/berman" push --dry-run origin HEAD:main` from the private terminal. At Git’s password prompt, paste the token. A successful HTTPS authentication lets Git store it through the helper. An agent can check access from a separate guest session with the dry run below. When the maintainer requests a push to `main`, remove `--dry-run`. Git reads the token from the keyring for the push.
 
 ```sh
 GIT_TERMINAL_PROMPT=0 git -C "$HOME/berman" push --dry-run origin HEAD:main
