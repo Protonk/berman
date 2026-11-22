@@ -1,6 +1,6 @@
 # Working on Berman
 
-Start with the [README](README.md) for the producer’s workflow. Berman runs in Linux alongside the project and the actor. The producer chooses when to open an episode and which additional jobs to give the actor, starts sittings in an ordinary terminal, and decides when to close. A process exit, missing transcript, or actor’s final message describes a sitting. Only an explicit producer ending closes the episode.
+Start with the [README](README.md) for the producer’s workflow. Berman runs in Linux alongside the project and the actor. The producer chooses when to open an episode and which additional jobs, if any, to give the actor. Each sitting is attended in an ordinary terminal or unattended with a message, and the producer decides when to close. A process exit, missing transcript, or actor’s final message describes a sitting. Only an explicit producer ending closes the episode.
 
 Use *producer*, *actor*, *episode*, *sitting*, and *additional job* consistently in the CLI, records, templates and guides. Write each additional job so an actor can carry it out alongside ordinary work, either on its own or with other selected jobs. Give any requested files distinct locations in the return directory. The producer can ask for notes, a current handover, or both.
 

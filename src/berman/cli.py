@@ -23,9 +23,9 @@ def parser():
         'template', help='create an editable additional job and the note-taking and handover examples'
     )
     template.add_argument('destination', type=path)
-    opening = commands.add_parser('open', help='open an episode and fix the additional instructions')
+    opening = commands.add_parser('open', help='open an episode and fix any additional jobs')
     opening.add_argument('episode', type=path)
-    opening.add_argument('--project', type=path, required=True, help='Git checkout for the ordinary work')
+    opening.add_argument('--project', type=path, required=True, help='Git checkout the actor works in')
     opening.add_argument('--actor', choices=tuple(capture.HARNESSES), required=True)
     opening.add_argument(
         '--job',
@@ -33,12 +33,12 @@ def parser():
         metavar='FILE',
         type=path,
         action='append',
-        required=True,
-        help='UTF-8 instructions for one additional job. Repeat for each job in the opening.',
+        default=[],
+        help='UTF-8 instructions for one additional job. Repeat for each job in the opening, or omit for none.',
     )
     for name, meaning in [
-        ('start', 'start the first interactive sitting'),
-        ('resume', 'continue the same actor session'),
+        ('start', 'start the first sitting with the opening'),
+        ('resume', 'continue the same actor session in another sitting'),
         ('status', 'show the opening, sittings, and ending'),
         ('close', 'record the producer’s ending and collect the return'),
     ]:
@@ -46,7 +46,14 @@ def parser():
         cmd.add_argument('episode', type=path)
         if name == 'resume':
             cmd.add_argument('--request', required=True, help='stable nonempty label for this sitting')
-            cmd.add_argument('--prompt', help='optional further instructions')
+        if name in ('start', 'resume'):
+            after = 'after the opening' if name == 'start' else 'in this sitting'
+            cmd.add_argument('--prompt', help=f'message for the actor {after}; required with --unattended')
+            cmd.add_argument(
+                '--unattended',
+                action='store_true',
+                help='run the actor without its interactive interface and print the response it reports',
+            )
         if name == 'close':
             cmd.add_argument('--reason', required=True)
     verify = commands.add_parser('verify', help='identify the installation or verify an episode record')
@@ -76,12 +83,15 @@ def main(argv=None):
                 result = episodes.install_template(args.destination)
             case 'open':
                 result = episodes.open_episode(args.episode, args.project, args.actor, args.jobs)
-            case 'start':
-                result = episodes.launch(args.episode)
-            case 'resume':
-                if not args.request.strip():
+            case 'start' | 'resume':
+                request = args.request if args.command == 'resume' else None
+                if request is not None and not request.strip():
                     raise ValueError('Supply a nonempty request label')
-                result = episodes.launch(args.episode, args.request, args.prompt)
+                if (args.unattended or request is None) and args.prompt is not None and not args.prompt.strip():
+                    raise ValueError('Supply a nonempty prompt')
+                if args.unattended and args.prompt is None:
+                    raise ValueError('An unattended sitting needs a message in --prompt')
+                result = episodes.launch(args.episode, request, args.prompt, not args.unattended)
             case 'status':
                 result = episodes.status(args.episode)
             case 'close':

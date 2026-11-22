@@ -1,8 +1,8 @@
-"""What Berman knows about Claude Code: its home, callbacks, launch, session store and transcripts.
+"""What Berman knows about Claude Code: its home, callbacks, launch, results, session store and transcripts.
 
 Berman launches Claude Code with the episode ID as its session ID and passes the callbacks as
-per-launch settings. Raw JSONL is always retained; the reading copy is derived from it and
-never substitutes for it.
+per-launch settings. An unattended sitting runs in print mode and reports one JSON result. Raw
+JSONL is always retained; the reading copy is derived from it and never substitutes for it.
 """
 
 import json
@@ -21,17 +21,54 @@ def assigned_session(state):
     return state['id']
 
 
-def binds(state, event):
+def binds(state, event, first):
     """Only the assigned session can bind the episode."""
     return event['session_id'] == state['id']
 
 
-def arguments(folder, session, resuming, hooks):
+def arguments(folder, session, resuming, hooks, attended):
     """Write the per-launch callbacks and return the arguments for a sitting."""
     settings = folder / 'claude-hooks.json'
     files.write(settings, hooks)
     start = '--resume' if resuming else '--session-id'
-    return ['--settings', str(settings), start, session, '--add-dir', str(folder / 'return')]
+    mode = [] if attended else ['--print', '--output-format', 'json']
+    return [*mode, '--settings', str(settings), start, session, '--add-dir', str(folder / 'return')]
+
+
+def outcome(output):
+    """The session, final response and permission denials that a print-mode result reports."""
+    try:
+        value = json.loads(output)
+    except (ValueError, UnicodeError):
+        value = None
+    if isinstance(value, list):
+        # A verbose setting turns the result into the last item of a message list.
+        value = next(
+            (item for item in reversed(value) if isinstance(item, dict) and item.get('type') == 'result'), None
+        )
+    if not isinstance(value, dict) or value.get('type') != 'result':
+        return {'session': None, 'response': None, 'denials': [], 'limitations': ['The native output holds no result.']}
+    session = value.get('session_id')
+    denials = [
+        {'tool': item.get('tool_name'), 'input': item.get('tool_input')}
+        for item in value.get('permission_denials') or ()
+        if isinstance(item, dict)
+    ]
+    text = value.get('result')
+    if value.get('subtype') == 'success' and not value.get('is_error') and isinstance(text, str):
+        response, limitations = text, []
+    else:
+        subtype = value.get('subtype')
+        errors = [item for item in value.get('errors') or () if isinstance(item, str)]
+        parts = [subtype if subtype != 'success' else None, text if isinstance(text, str) else None, *errors]
+        detail = '; '.join(str(part) for part in parts if part) or 'no detail'
+        response, limitations = None, [f'The native result reports an error: {detail}']
+    return {
+        'session': session if isinstance(session, str) else None,
+        'response': response,
+        'denials': denials,
+        'limitations': limitations,
+    }
 
 
 def candidates(home, session):

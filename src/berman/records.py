@@ -145,16 +145,21 @@ def seal(folder, state, limitations):
                 files.keep(stage / label, raw)
                 retained += len(raw)
                 count += 1
-                if prefix == 'sittings' and files.read(stage / label).get('exit') is None:
-                    limitations.append(f'{label}: process exit unobserved.')
+                if prefix == 'sittings' and label.endswith('.json'):
+                    sitting = files.read(stage / label)
+                    if sitting.get('exit') is None:
+                        limitations.append(f'{label}: process exit unobserved.')
+                    limitations.extend(f'{label}: {item}' for item in sitting.get('limitations', ()))
                 if prefix == 'telemetry/events':
                     detail = files.read(stage / label).get('limitation')
                     if detail:
                         limitations.append(f'{label}: {detail}')
         coverage = {
             'limitations': limitations,
-            'scope': 'The actor return, observed sittings, bound parent session '
-            'and checkout state at the boundaries. Other conversations and activity between episodes are outside capture.',
+            'scope': 'The actor return, the sittings Berman launched with any native output they left, '
+            'the bound parent session, and the checkout as observed at the opening and at closing. '
+            'Those observations show the checkout at two times, not who changed it. '
+            'Other sessions and activity outside the bound session are outside capture.',
         }
         files.write(stage / 'coverage.json', coverage)
         files.write(stage / MANIFEST, {'schema': SCHEMA, 'episode': state['id'], 'members': hashes(stage)})

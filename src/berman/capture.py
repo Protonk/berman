@@ -18,6 +18,13 @@ HARNESSES = {'codex': codex, 'claude': claude}
 IDENTITY = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}')
 
 
+def first_message(state, prompt):
+    """The first sitting delivers the opening, followed by the producer's message when there is one."""
+    if prompt is None:
+        return state['opening']
+    return f'{state["opening"]}\nMessage from the producer:\n\n{prompt}'
+
+
 def find_parent(home, harness, session):
     """Closeout fallback for absent or relocated callback paths, bounded by native parent identity."""
     match = None
@@ -109,10 +116,11 @@ def record(folder, name, event):
         if state['actor'] != name or (folder / 'ending.json').exists() or not (folder / 'sittings').is_dir():
             return
         bound = folder / 'session-id.json'
+        first = folder / 'sittings' / '000001.json'
         if bound.exists():
             if files.read(bound) != sid:
                 return
-        elif not harness.binds(state, event):
+        elif not first.exists() or not harness.binds(state, event, first_message(state, files.read(first)['prompt'])):
             return
         files.keep(bound, files.json_bytes(sid))
         area = folder / 'telemetry'

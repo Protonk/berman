@@ -1,7 +1,12 @@
-"""Observe the checkout at the boundaries of an episode."""
+"""Observe the checkout at the boundaries of an episode.
+
+An observation shows the checkout at one time. Anyone may change it between observations.
+"""
 
 import os
 import subprocess
+
+from berman import files
 
 
 def git_state(project):
@@ -19,4 +24,4 @@ def git_state(project):
     head = git('rev-parse', '--verify', '--quiet', 'HEAD', check=False)
     if head.returncode not in (0, 1):
         head.check_returncode()
-    return {'head': head.stdout.strip() or None, 'status': status}
+    return {'observed_at': files.now(), 'head': head.stdout.strip() or None, 'status': status}

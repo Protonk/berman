@@ -1,19 +1,19 @@
 # Operating an episode
 
-Write each additional job in its own UTF-8 file. Describe what should catch the actor’s attention during ordinary work, what to do while the episode continues, and what to leave for the producer. `berman template` supplies an editable `job.md` and two independent examples. With `note-taking.md` the actor adds occasional accounts under `return/notes/`. With `handover.md` the actor keeps `return/HANDOVER.md` current for someone picking up the work.
+Write each additional job in its own UTF-8 file. Describe what should catch the actor’s attention during its work, what to do while the episode continues, and what to leave for the producer. `berman template` supplies an editable `job.md` and two independent examples. With `note-taking.md` the actor adds occasional accounts under `return/notes/`. With `handover.md` the actor keeps `return/HANDOVER.md` current for someone picking up the work. An episode can also have no additional job.
 
 ## Open and start
 
-Pass one `--job FILE` for each job you want the actor to take on. For a handover alone, use `--job "$HOME/jobs/handover.md"`. This opening asks for both examples.
+Pass one `--job FILE` for each job you want the actor to take on, or none. For a handover alone, use `--job "$HOME/jobs/handover.md"`. This opening asks for both examples.
 
 ```sh
 berman open EPISODE --project CHECKOUT --actor codex \
   --job "$HOME/jobs/handover.md" --job "$HOME/jobs/note-taking.md"
 ```
 
-Berman creates a private episode directory and fixes the selected instructions in the order given. Repeating the same open returns the existing episode. Read `EPISODE/opening.md` to see the message the actor will receive, including the absolute return path. Project artifacts belong in their ordinary locations.
+Berman creates a private episode directory and fixes the selected instructions in the order given. Repeating the same open returns the existing episode. Read `EPISODE/opening.md` to see what the actor receives first: the episode, the absolute return path, and any additional jobs. The opening names no project task. Project artifacts belong in their ordinary locations.
 
-`berman start EPISODE` starts the interactive CLI in the checkout. Berman inherits the actor’s normal settings and passes the return directory as an additional writable location. The Linux account must already have access to the project and the chosen harness. The producer can use a dedicated harness home by setting `CODEX_HOME` or `CLAUDE_CONFIG_DIR` before opening the episode. Berman binds that home at the opening.
+`berman start EPISODE` starts the interactive CLI in the checkout and delivers the opening. Add `--prompt` to follow the opening with your first message. Berman inherits the actor’s normal settings and passes the return directory as an additional writable location. The Linux account must already have access to the project and the chosen harness. The producer can use a dedicated harness home by setting `CODEX_HOME` or `CLAUDE_CONFIG_DIR` before opening the episode. Berman binds that home at the opening.
 
 ## Set up the actor
 
@@ -26,7 +26,31 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}"
 ( set -C; berman codex-hooks > "${CODEX_HOME:-$HOME/.codex}/hooks.json" )
 ```
 
-Open the actual Codex CLI, sign in, and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the episode CLI with `--no-daemon` so its hooks receive the episode’s environment. Berman binds the native session only when the episode’s opening arrives as a prompt submitted in the checkout. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
+Open the actual Codex CLI, sign in, and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the interactive CLI with `--no-daemon` so its hooks receive the episode’s environment. Berman binds the native session when the first sitting’s message arrives as a prompt submitted in the checkout. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
+
+## Unattended sittings
+
+Add `--unattended` and a `--prompt` to `start` or `resume` to send a message without opening the actor’s interactive interface.
+
+```sh
+berman start EPISODE --unattended --prompt "What state is the release branch in?"
+berman resume EPISODE --request notes-draft --unattended --prompt "Draft release notes for it."
+```
+
+Berman runs `claude --print` or `codex exec` in the checkout with no terminal input, waits for it to exit, and prints the sitting. A first sitting delivers the opening followed by the message. Read these fields before deciding what to say next:
+
+- `response` is the final message the actor’s CLI reported. It is `null` when the native output has none, reports an error, or shows an unfinished turn. Berman does not compose one.
+- `denials` lists operations the CLI reports it refused: Claude Code’s permission denials and Codex items marked declined.
+- `limitations` names what Berman could not read or confirm, such as a missing result, a session other than the bound one, or a nonzero exit with the last line of error output.
+- `exit` is the process status, and `stdout` and `stderr` name the native output kept beside the sitting record.
+
+A zero exit does not mean the work is finished, and a response can be partial, mistaken or a question. Files the actor leaves under `return/` stay separate from the response. Callbacks capture the transcript as in an attended sitting.
+
+No person answers permission prompts during an unattended sitting. The actor works under its own configuration, and Berman adds no permissions. In Claude Code, anything that would ask for approval is denied and listed. Codex applies its configured sandbox and approval policy. For an actor to edit the project or leave files in the return directory without a person, its own settings must already allow those edits. Examples are Claude Code’s `acceptEdits` mode or an allow rule, and Codex’s `workspace-write` sandbox.
+
+An unattended Claude Code sitting uses the episode’s session ID. An unattended Codex sitting names its session in its output. If no reviewed hook bound the first sitting, Berman binds the session that output names. Codex still needs the hook for telemetry during sittings.
+
+Attendance belongs to each sitting. After an attended sitting you can send an unattended message, and the reverse, in the same native session. Berman starts a sitting only when none is running. It cannot join a running sitting or pass messages into one.
 
 ## Resume and close
 
@@ -37,6 +61,8 @@ berman status EPISODE
 berman close EPISODE --reason "The team has decided how to proceed."
 ```
 
-Each distinct resume request identifies one sitting of the same native session. Reuse its label and prompt when retrying. Repeating start also returns the first sitting. Keep sitting requests short and meaningful. A missing exit means the launcher did not observe it; inspect the native process before continuing. Concurrent starts and closeouts refuse while a sitting holds the episode lock. A native exit leaves the episode open.
+Each distinct resume request identifies one sitting of the same native session. Reuse its label, prompt and attendance when retrying. Repeating a request returns the recorded sitting and never starts the actor again. Repeating start also returns the first sitting. Keep sitting requests short and meaningful. A missing exit means the launcher did not observe it; inspect the native process before continuing. If the launcher stopped during an unattended sitting, repeat the same request after the actor exits to read what its output reports. Concurrent starts and closeouts refuse while a sitting holds the episode lock. An interrupt from the terminal reaches the actor, and Berman records the resulting exit. A native exit leaves the episode open.
+
+The checkout can change between any two Berman commands. Other people, sessions and tools can work in it without Berman, and their changes do not invalidate the episode. A sitting needs only the checkout, the actor’s CLI and, when resuming, the bound native session. Berman refuses a sitting while the checkout is missing and records any native failure to resume. Sessions that Berman did not launch stay outside the episode, even in the same checkout and harness home.
 
 Closing records the producer’s reason, closes callback intake, and publishes `EPISODE/record`. A close interrupted during publication can be repeated with the original reason. Its output includes the manifest digest. Keep that digest separately when you need to verify a copy against the record you received.

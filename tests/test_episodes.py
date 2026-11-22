@@ -20,7 +20,9 @@ def documented_members():
     return {name for row in rows for name in re.findall(r'`([^`]+)`', row)}
 
 
-class EpisodeTests(unittest.TestCase):
+class EpisodeCase(unittest.TestCase):
+    """Disposable homes, an independent Git checkout and scripted actors for each test."""
+
     def setUp(self):
         self.base = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.project = self.base / 'normal checkout'
@@ -37,6 +39,7 @@ class EpisodeTests(unittest.TestCase):
             HOME=str(self.base),
             CODEX_HOME=str(self.base / '.codex'),
             CLAUDE_CONFIG_DIR=str(self.base / '.claude'),
+            FIXTURE_LOG=str(self.base / 'launches.jsonl'),
         )
         self.env.pop('BERMAN_EPISODE', None)
         self.fixture = Path(__file__).parent / 'fixtures/actor.py'
@@ -47,7 +50,7 @@ class EpisodeTests(unittest.TestCase):
         c.mkdir()
         (c / 'hooks.json').write_text(json.dumps(self.cli('codex-hooks')))
 
-    def cli(self, *args, error=None):
+    def cli(self, *args, error=None, code=0):
         result = subprocess.run(
             [sys.executable, '-I', '-m', 'berman', *map(str, args)],
             cwd=self.base,
@@ -59,11 +62,17 @@ class EpisodeTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode, args)
             self.assertIn(error, result.stderr)
             return
-        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(code, result.returncode, result.stderr)
         return json.loads(result.stdout)
 
-    def opening(self, actor):
-        return self.cli('open', self.folder, '--actor', actor, '--project', self.project, '--job', self.job)
+    def opening(self, actor, jobs=None):
+        jobs = (self.job,) if jobs is None else jobs
+        selection = [arg for job in jobs for arg in ('--job', job)]
+        return self.cli('open', self.folder, '--actor', actor, '--project', self.project, *selection)
+
+    def launches(self):
+        log = Path(self.env['FIXTURE_LOG'])
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def assert_documented(self, record):
         documented = documented_members()
@@ -73,6 +82,8 @@ class EpisodeTests(unittest.TestCase):
                 with self.subTest(member=name):
                     self.assertTrue(name in documented or any(name.startswith(d) for d in documented if d[-1] == '/'))
 
+
+class EpisodeTests(EpisodeCase):
     def full_episode(self, actor):
         subprocess.run([actor], cwd=self.project, env=self.env, check=True)
         self.assertFalse(self.folder.parent.exists())
