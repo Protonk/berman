@@ -17,7 +17,16 @@ Berman creates a private episode directory and fixes the selected instructions i
 
 ## Set up the actor
 
-**Claude Code.** Berman supplies a fresh native session ID and a hook settings file to the launched process. Sign in to Claude Code through its ordinary interactive CLI.
+Sign the actor in through its own CLI, in the harness home the episode will bind. Berman does not handle credentials. Over SSH or in another login without a browser, `codex login --device-auth` prints a code to enter in a browser on another computer. For Claude Code, run `claude auth login` and follow its prompts. `codex login status` and `claude auth status` show whether a home is signed in. A dedicated home keeps an episode’s hooks and permissions apart from everyday use and needs its own sign-in.
+
+```sh
+export CODEX_HOME="$HOME/.codex-berman" CLAUDE_CONFIG_DIR="$HOME/.claude-berman"
+mkdir -p "$CODEX_HOME"
+codex login --device-auth
+claude auth login
+```
+
+**Claude Code.** Berman supplies a fresh native session ID and a hook settings file to the launched process.
 
 **Codex.** Run `berman codex-hooks` from the installed environment. Review the printed command and merge its four groups into the corresponding events in the Linux Codex home’s `hooks.json`, preserving existing handlers. For a new home with no hook file:
 
@@ -26,7 +35,7 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}"
 ( set -C; berman codex-hooks > "${CODEX_HOME:-$HOME/.codex}/hooks.json" )
 ```
 
-Open the actual Codex CLI, sign in, and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the interactive CLI with `--no-daemon` so its hooks receive the episode’s environment. Berman binds the native session when the first sitting’s message arrives as a prompt submitted in the checkout. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
+Open the actual Codex CLI in that home and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the interactive CLI with `--no-daemon` so its hooks receive the episode’s environment. Berman binds the native session when the first sitting’s message arrives as a prompt submitted in the checkout. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
 
 ## Unattended sittings
 

@@ -16,7 +16,7 @@ git clone https://github.com/Protonk/berman.git "$HOME/berman"
 podman info --format '{{.Host.Security.Rootless}}'
 ```
 
-For commits still local to the Mac, transfer a Git bundle into the guest, clone it there and set the software repository as origin. The public source can be read without a token. The actor signs in to its own CLI in Linux.
+For commits still local to the Mac, transfer a Git bundle into the guest, clone it there and set the software repository as origin. The public source can be read without a token. The actor signs in to its own CLI in Linux. Over SSH, `codex login --device-auth` prints a code to enter in the Mac’s browser. [Actor setup](../../docs/operating.md#set-up-the-actor)
 
 ## Push Berman commits from the guest
 
