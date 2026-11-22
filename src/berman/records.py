@@ -1,6 +1,7 @@
 """Publish a portable episode record and prepare a reading folder from selected records."""
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -51,8 +52,13 @@ def verify(record, expected=None):
     fingerprint = files.digest(raw)
     if expected is not None and expected != fingerprint:
         raise ValueError('The supplied record digest differs')
-    manifest = files.read(record / MANIFEST)
-    if manifest.get('schema') != SCHEMA or str(UUID(manifest['episode'])) != manifest['episode']:
+    manifest = json.loads(raw)
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get('schema') != SCHEMA
+        or not isinstance(manifest.get('episode'), str)
+        or str(UUID(manifest['episode'])) != manifest['episode']
+    ):
         raise ValueError('Expected an episode record')
     actual = hashes(record)
     if (
@@ -91,7 +97,11 @@ def seal(folder, state, limitations):
             ('telemetry/events', folder / 'telemetry/events'),
         ]
         session = folder / 'telemetry/session'
-        captured = snapshots.read(session)
+        try:
+            captured = snapshots.read(session)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            limitations.append(f'Could not verify the staged parent transcript: {exc}')
+            captured = None
         if captured:
             meta = captured['metadata']
             if meta['unparsed_jsonl_lines']:

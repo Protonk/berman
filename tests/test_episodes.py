@@ -125,6 +125,24 @@ class EpisodeTests(unittest.TestCase):
         self.cli('review', record, record, '--question', 'When?', '--output', output, error='twice')
         self.assertFalse(output.exists())
 
+    def test_review_two_independently_closed_episodes(self):
+        ids = []
+        sources = []
+        for name, actor in (('first', 'claude'), ('later', 'codex')):
+            self.folder = self.base / 'episodes' / name
+            ids.append(self.opening(actor)['id'])
+            self.cli('start', self.folder)
+            sources.append(self.cli('close', self.folder, '--reason', name)['record'])
+        output = self.base / 'returning-manager'
+        result = self.cli(
+            'review', *sources, '--question', 'What evidence would change the next decision?', '--output', output
+        )
+        self.assertEqual([item['episode'] for item in result['sources']], ids)
+        for item in result['sources']:
+            source = output / item['path']
+            self.assertTrue((source / 'return/decision.md').is_file())
+            self.assertEqual(self.cli('verify', source)['sha256'], item['sha256'])
+
     def test_ordinary_callback_requires_no_episode_files(self):
         result = subprocess.run(
             [sys.executable, '-I', '-m', 'berman.capture', 'codex'],
@@ -169,6 +187,21 @@ class EpisodeTests(unittest.TestCase):
             fcntl.flock(lease, fcntl.LOCK_EX)
             self.cli('close', self.folder, '--reason', 'Done.', error='in progress')
         self.assertFalse((self.folder / 'ending.json').exists())
+
+    def test_unrelated_directory_stays_empty_on_a_mistyped_command(self):
+        empty = self.base / 'empty'
+        empty.mkdir()
+        self.cli('start', empty, error='No such file')
+        self.assertEqual(list(empty.iterdir()), [])
+
+    def test_unreadable_transcript_does_not_discard_the_actor_return(self):
+        self.opening('claude')
+        self.cli('start', self.folder)
+        source = next((self.folder / 'telemetry/session/snapshots').glob('*/transcript.jsonl'))
+        source.write_text('damaged')
+        receipt = self.cli('close', self.folder, '--reason', 'Keep the account with the gap.')
+        self.assertIn('Could not verify the staged parent', str(receipt['coverage']))
+        self.assertTrue((self.folder / 'record/return/decision.md').is_file())
 
     def test_templates_are_opt_in_and_existing_output_is_preserved(self):
         destination = self.base / 'jobs'

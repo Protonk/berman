@@ -59,6 +59,8 @@ def open_episode(folder, checkout, actor, job):
     }
     with files.new_directory(folder) as stage:
         (stage / 'return').mkdir()
+        for name in ('.sitting.lock', '.capture.lock'):
+            (stage / name).touch(mode=0o600)
         files.write(stage / 'episode.json', state)
         files.atomic(stage / 'opening.md', opening.encode())
     return state

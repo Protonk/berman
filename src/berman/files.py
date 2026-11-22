@@ -83,7 +83,7 @@ def safe_directory(path):
 @contextmanager
 def lock(folder, name, blocking=True):
     safe_directory(folder)
-    with (folder / name).open('a+b') as stream:
+    with regular(folder / name).open('rb') as stream:
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
         except BlockingIOError:
