@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from berman import files
-from berman.executor import snapshots
+from berman import snapshots
 
 
 class SnapshotRetentionTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class SnapshotRetentionTests(unittest.TestCase):
         self.number += 1
         reader = b'Reading: ' + raw
         metadata = {
-            'run': 'run-001',
+            'episode': 'example',
             'session_id': 'synthetic-session',
             'event': 'Stop',
             'captured_at_utc': str(self.number),

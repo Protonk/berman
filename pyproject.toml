@@ -5,132 +5,52 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "berman"
 version = "0.26.7"
-description = "Intermittent management of work in a software project: commission bounded engagements and preserve a verifiable record of each."
+description = "Intermittent project management with additional actor jobs and verifiable episode records on Linux."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.14"
-dependencies = [
-    "jsonschema>=4.26,<5",
-    "packaging>=25,<27",
-]
+requires-python = ">=3.13"
+classifiers = ["Operating System :: POSIX :: Linux"]
 
 [dependency-groups]
-dev = [
-    "hypothesis>=6.170",
-    "import-linter>=2.16",
-    "ruff>=0.17.5,<0.18",
-]
+dev = ["import-linter>=2.16", "ruff>=0.17.5,<0.18"]
 
 [project.scripts]
 berman = "berman.cli:main"
-berman-research = "berman.connector:main"
 
 [project.urls]
 Repository = "https://github.com/Protonk/berman"
-
-[tool.setuptools]
-include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = false
 
 [tool.setuptools.package-data]
-berman = ["schemas/*.json"]
+berman = ["templates/*.md"]
 
-
-# Ruff. Lint applies to the package and tests. The formatter
-# governs new files only: docs/development.md explains the exemptions.
 [tool.ruff]
-target-version = "py314"
+target-version = "py313"
 line-length = 120
 src = ["src"]
-
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B"]
 
 [tool.ruff.format]
 quote-style = "single"
-exclude = [
-    # Byte-sensitive: never a formatter target (tests/unit/test_architecture.py checks this list).
-    "src/berman/archive/builder.py",
-    "src/berman/archive/package.py",
-    "src/berman/archive/streams.py",
-    # Written before the formatter. Remove a file from this list when formatting it.
-    "src/berman/__main__.py",
-    "src/berman/evidence.py",
-    "src/berman/executor/claude.py",
-    "src/berman/files.py",
-    "src/berman/installation.py",
-    "tests/support/paths.py",
-    "tests/unit/test_boundaries.py",
-    "tests/unit/test_guidance.py",
-]
 
-# Import Linter. Each contract has a test in tests/unit/test_architecture.py
-# that injects a violation and expects that contract, by id, to break.
 [tool.importlinter]
 root_package = "berman"
-include_external_packages = true
 
 [[tool.importlinter.contracts]]
-id = "layers"
-name = "Layers: command line, connector, cheatsheet, guest controller and native executor, custody and study inputs, protocol, recordings, foundations"
+name = "Episode commands, collection, native capture, and file operations"
 type = "layers"
 layers = [
-    "berman.__main__",
-    "berman.cli",
-    "berman.connector",
-    "berman.cheatsheet",
-    "berman.controller | berman.executor | berman.verify",
-    "berman.custody | berman.study",
-    "berman.protocol",
-    "berman.evidence : berman.archive",
-    "berman.files | berman.installation | berman.environment | berman.schemas",
+  "berman.__main__",
+  "berman.cli",
+  "berman.episodes",
+  "berman.records",
+  "berman.capture | berman.project",
+  "berman.snapshots | berman.claude | berman.codex",
+  "berman.files | berman.installation",
 ]
-broken_contract_guidance = """
-A lower layer may not import a higher one. Modules joined by ':' may import each
-other; modules joined by '|' may not, so the guest controller and the native
-executor never import each other. The lowest layer imports nothing else in the
-package. Pass what the lower module needs as an argument instead."""
-
-[[tool.importlinter.contracts]]
-id = "hooks"
-name = "The native executor and what it imports load no third-party package"
-type = "forbidden"
-source_modules = [
-    "berman.executor",
-    "berman.protocol",
-    "berman.evidence",
-    "berman.files",
-    "berman.installation",
-]
-forbidden_modules = ["jsonschema", "packaging"]
-broken_contract_guidance = """
-The executor's hook runs on every turn of a fieldworker's session and stages
-its observation while the guest is offline. The whole executor uses the
-standard library and these modules only, directly and indirectly."""
-
-[[tool.importlinter.contracts]]
-id = "archive"
-name = "The archive builder uses the standard library only"
-type = "forbidden"
-source_modules = ["berman.archive"]
-forbidden_modules = ["jsonschema", "packaging"]
-broken_contract_guidance = """
-A reading edition is deterministic and its builder's bytes are its identity.
-Third-party libraries stay out of selection, rendering and
-packaging."""
-
-[[tool.importlinter.contracts]]
-id = "confined"
-name = "No module imports a third-party package except the one that confines it"
-type = "forbidden"
-source_modules = ["berman"]
-forbidden_modules = ["jsonschema", "packaging"]
-ignore_imports = ["berman.schemas -> jsonschema", "berman.environment -> packaging"]
-broken_contract_guidance = """
-jsonschema and packaging each have one importing module. Call that module instead of
-importing the library, so its use stays in one reviewable place."""

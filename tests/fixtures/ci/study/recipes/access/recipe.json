@@ -1,8 +1,0 @@
-{
-  "schema": "berman.recipe/2",
-  "id": "access",
-  "connections": ["fixture"],
-  "coverage": ["notes"],
-  "recording_protocol": "work-accounts/1",
-  "instructions": "INSTRUCTIONS.md"
-}

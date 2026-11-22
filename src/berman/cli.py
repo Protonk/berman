@@ -1,131 +1,106 @@
-"""Commission bounded engagements in a software project and preserve a verifiable record of each.
-
-Find the command for what comes next, operate a guest study, check the installed software and read recordings and editions.
-"""
+"""Intermittent project management in a local Linux checkout."""
 
 import argparse
 import json
 from pathlib import Path
 import subprocess
 import sys
-import zipfile
-import zlib
 
-from berman import verify
-from berman.files import Decision
+from berman import capture, episodes, files, records
+from berman.installation import PACKAGE, verify_wheel, version
 
 
-def refuse(message, as_json):
-    if as_json:
-        print(json.dumps({'state': 'needs-attention', 'message': message}, indent=2), file=sys.stderr)
-    else:
-        print('Berman needs attention: ' + message, file=sys.stderr)
-    return 2
+def path(value):
+    p = Path(value).expanduser()
+    if p.is_symlink():
+        raise argparse.ArgumentTypeError(f'Use the physical path: {p}')
+    return p.resolve()
 
 
-def arguments():
-    """The standalone command line. `remote` and `executor` have their own, in the connector and executor."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--json', action='store_true', help='machine-readable result')
-    commands = parser.add_subparsers(dest='command', required=True)
-    sheet = commands.add_parser(
-        'cheatsheet', help='start here: print the commands that apply now, ready to paste; changes nothing'
+def parser():
+    app = argparse.ArgumentParser(prog='berman', description=__doc__)
+    commands = app.add_subparsers(dest='command', required=True)
+    template = commands.add_parser(
+        'template', help='create an editable additional job and the optional note-taking example'
     )
-    sheet.add_argument('--config', type=Path, help='connector settings for one study')
-    sheet.add_argument('--json', action='store_true', dest='sheet_json', help='machine-readable result')
-    commands.add_parser(
-        'remote', help='operate a guest study; also installed as berman-research (berman remote --help)'
-    )
-    commands.add_parser('executor', help='manage native staging (berman executor --help)')
-    ci = commands.add_parser('ci', help='exercise this core checkout on a qualification Mac and Linux guest')
-    ci.add_argument('--config', required=True, type=Path, help='qualification SSH settings')
-    ci.add_argument('--live', choices=('codex', 'claude'), help='launch the named harness in this terminal')
-    commands.add_parser('version', help='show the installed version and source identity')
-    commands.add_parser('verify', help='verify the installed software')
-    archive = commands.add_parser('archive', help='verify a published guest reading edition')
-    archive.add_argument('--path', type=Path, required=True, help='reading edition ZIP')
-    recording = commands.add_parser('recording', help='verify or materialize a guest recording')
-    recording_commands = recording.add_subparsers(dest='recording_command', required=True)
-    for name in ('verify', 'materialize'):
-        sub = recording_commands.add_parser(name)
-        sub.add_argument('path', type=Path)
-        sub.add_argument('--sha256', help='expected package digest from a trusted separate record')
-        if name == 'materialize':
-            sub.add_argument('destination', type=Path)
-    return parser
+    template.add_argument('destination', type=path)
+    opening = commands.add_parser('open', help='open an episode and fix the additional instructions')
+    opening.add_argument('episode', type=path)
+    opening.add_argument('--project', type=path, required=True, help='Git checkout for the ordinary work')
+    opening.add_argument('--actor', choices=('codex', 'claude'), required=True)
+    opening.add_argument('--job', type=path, required=True, help='UTF-8 additional instructions')
+    for name, meaning in [
+        ('start', 'start the first interactive sitting'),
+        ('resume', 'continue the same actor session'),
+        ('status', 'show the opening, sittings, and ending'),
+        ('close', 'record the manager’s ending and collect the return'),
+    ]:
+        cmd = commands.add_parser(name, help=meaning)
+        cmd.add_argument('episode', type=path)
+        if name == 'resume':
+            cmd.add_argument('--request', required=True, help='stable nonempty label for this sitting')
+            cmd.add_argument('--prompt', help='optional further instructions')
+        if name == 'close':
+            cmd.add_argument('--reason', required=True)
+    verify = commands.add_parser('verify', help='identify the installation or verify an episode record')
+    verify.add_argument('record', type=path, nargs='?')
+    verify.add_argument('--sha256', help='expected digest of the manifest from a separate copy')
+    review = commands.add_parser('review', help='prepare verified sources and an answer file for a manager’s question')
+    review.add_argument('records', type=path, nargs='+')
+    review.add_argument('--question', required=True)
+    review.add_argument('--output', required=True, type=path)
+    commands.add_parser('codex-hooks', help='print the Linux Codex hook entries for review and installation')
+    commands.add_parser('version', help='identify the installed build')
+    return app
+
+
+def installation(check=False):
+    paths = sorted(p for p in PACKAGE.rglob('*') if p.is_file() and p.suffix in ('.py', '.md'))
+    members = {str(p.relative_to(PACKAGE)): files.digest(p.read_bytes()) for p in paths}
+    if not {'templates/job.md', 'templates/note-taking.md'} <= members.keys():
+        raise ValueError('Incomplete installation: the job templates are missing')
+    result = {'version': version(), 'source_sha256': files.digest_json(members), 'files_sha256': members}
+    if check:
+        result['verification'] = verify_wheel(members)
+    return result
 
 
 def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ['remote']:
-        from berman.connector import main as remote_main
-
-        return remote_main(argv[1:])
-    if argv[:1] == ['executor']:
-        from berman.executor import main as executor_main
-
-        return executor_main(argv[1:])
-    args = arguments().parse_args(argv)
+    args = parser().parse_args(argv)
     try:
-        if args.command == 'cheatsheet':
-            from berman.connector import main as remote_main
-
-            selected = ['--config', str(args.config)] if args.config else []
-            return remote_main([*selected, 'cheatsheet', *(['--json'] if args.json or args.sheet_json else [])])
-        if args.command == 'ci':
-            runner = Path(__file__).resolve().parents[2] / 'scripts/ci/run.py'
-            if not runner.is_file():
-                raise Decision('Run uv run berman ci from the core development checkout.')
-            return subprocess.call(
-                [sys.executable, '-I', runner, args.config.expanduser().resolve(), *([args.live] if args.live else [])]
-            )
-        if args.command == 'version':
-            print(json.dumps(verify.identity(), indent=2))
-            return 0
-        if args.command == 'recording':
-            from berman import evidence
-
-            if args.recording_command == 'materialize':
-                result = evidence.materialize(args.path, args.destination, args.sha256)
-            elif args.path.is_dir():
-                if args.sha256:
-                    raise Decision('--sha256 names a package digest; verify the ZIP before materializing it')
-                result = evidence.verify_directory(args.path)
-            else:
-                result = evidence.verify_package(args.path, args.sha256)
-            print(json.dumps(result, indent=2))
-            return 0
-        if args.command == 'archive':
-            from berman.archive.package import verify_edition
-
-            print(json.dumps(verify_edition(args.path), indent=2))
-            return 0
-        if args.command == 'verify':
-            result = verify.software()
-            if args.json:
-                print(json.dumps(result, indent=2))
-            else:
-                for name, check in result['checks'].items():
-                    print(f'{name} {"passed" if check["passed"] else "failed"}: {check["detail"]}')
-            return 0 if result['passed'] else 1
-        if args.command in ('remote', 'executor'):
-            # Reached only behind a global option; these two parse their own arguments.
-            arguments().error(f'place {args.command} first to pass options to it')
-        raise RuntimeError(f'berman {args.command} is declared in arguments() and not handled in main()')
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        AttributeError,
-        RuntimeError,
-        EOFError,
-        zipfile.BadZipFile,
-        zlib.error,
-        subprocess.SubprocessError,
-    ) as exc:
-        return refuse(str(exc), args.json)
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
+        match args.command:
+            case 'template':
+                result = episodes.install_template(args.destination)
+            case 'open':
+                result = episodes.open_episode(args.episode, args.project, args.actor, args.job)
+            case 'start':
+                result = episodes.launch(args.episode)
+            case 'resume':
+                if not args.request.strip():
+                    raise ValueError('Supply a nonempty request label')
+                result = episodes.launch(args.episode, args.request, args.prompt)
+            case 'status':
+                result = episodes.status(args.episode)
+            case 'close':
+                result = episodes.close(args.episode, args.reason)
+            case 'verify' if args.record:
+                result = records.verify(args.record, args.sha256)
+            case 'review':
+                result = records.review(args.records, args.question, args.output)
+            case 'codex-hooks':
+                result = capture.hook_settings('codex')
+            case _:
+                if getattr(args, 'sha256', None):
+                    raise ValueError('--sha256 needs a record directory')
+                result = installation(check=args.command == 'verify')
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        if args.command in ('start', 'resume'):
+            if result.get('error'):
+                return 1
+            code = result.get('exit')
+            if code:
+                return 128 - code if code < 0 else code
+        return 0
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        print(f'berman: {exc}', file=sys.stderr)
+        return 1

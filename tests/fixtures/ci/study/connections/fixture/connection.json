@@ -1,5 +1,0 @@
-{
-  "schema": "berman.connection/1",
-  "id": "fixture",
-  "documents": ["answer.py", "challenge.txt", "check.py", "test-result.json"]
-}

@@ -1,102 +1,51 @@
 # Berman
 
-Berman is a tool for intermittent management of work in a software project.
-The person responsible for a project uses it to commission a bounded
-engagement in the project's Git checkout. A worker enters the project's
-ordinary development environment through Codex or Claude, does the assigned
-work and keeps whatever additional account the assignment asks for. Berman
-keeps the commission and the evidence it can collect, and at the engagement's
-explicit ending seals them into a recording that can be verified from a copy
-alone.
+Berman supports intermittent management of work in a software project. Most days an actor can open the project in its usual environment and get on with the work. The manager can leave an encounter entirely outside Berman. When something deserves attention alongside the work, the manager opens an **episode**.
 
-The person responsible does not have to be continuously present. They arrange
-a piece of work, an investigation or a period of participation when they
-choose, and read afterwards what was asked, what the worker reported, what
-was captured and what the record does not cover. Development outside
-engagements continues independently: it needs no Berman command and is not
-recorded.
+The **actor** is the agent doing the ordinary work, currently through Codex or Claude Code. At the opening, Berman gives the actor the manager’s additional instructions and a place to leave a response. The manager might ask for occasional notes about decisions as they happen. The actor can continue independently, talk with the manager, or consult someone else. The opening matters because it might be the only exchange they have.
 
-The managing is done by that person. Berman chooses no work, decides nothing
-about the project and ends no engagement. It records the commission, the
-ending and what it could collect between them. Research on a project's
-development, participant observation included, is one use among others, set
-up in a study's own instructions
-([using Berman for research](docs/operating.md#using-berman-for-research)).
+An episode can span several sittings. The manager decides when it ends and supplies the reason. Berman collects what the actor deliberately left, along with the telemetry it could attribute to the episode. A manager returning to the project can read both, see gaps in the record, and decide what deserves another episode.
 
-## Who does what
+## Install on Linux
 
-| Role | Does |
-| --- | --- |
-| Commissioner | Makes an engagement's decisions: chooses the assignment, reviews the packet, starts each sitting from an ordinary terminal and declares the ending, with a reason. |
-| Operator | Runs Berman's commands. Often the same person as the commissioner. When an assistant, a script or an agent operates, it records the commissioner's decisions and makes none of them. |
-| Worker | The Codex or Claude session that receives the assignment as its opening message, works in the project's checkout and writes its account in the notes directory it is given. These guides also say fieldworker. |
-
-The software has three parts. The executor and the connector run on the
-macOS host where the project is; the controller runs in a Linux virtual
-machine, the guest. A study is what the guest keeps together: its inputs, its
-engagements and their recordings ([words used here](docs/operating.md#words-used-here)).
-
-| Part | Runs | Does |
-| --- | --- | --- |
-| Native executor | On macOS, beside the project | Prepares the worker's packet outside the checkout, launches the harness and stages what its hooks observe. |
-| Connector | In the operator's macOS terminal, over SSH | Carries each command to the guest and the collected evidence after it. |
-| Controller and custody | In a Linux guest | Holds the study's recipes and plans, issues each assignment, records the commissioner's ending, preserves a verifiable recording and publishes a reading edition. |
-
-The worker receives the assignment and its instructions. Plans and earlier
-recordings are kept in the guest and are not sent to the host.
-
-## Start with the cheatsheet
+Use Python 3.13 or later, Git, and the actor’s usual CLI and login. From the software checkout:
 
 ```sh
-berman cheatsheet
-```
-
-The cheatsheet reads the study's recorded situation and prints the commands
-that apply now, written out so they can be pasted. Use it to begin an
-engagement, to find out where one stands, and to pick up after an
-interruption. It changes nothing. An excerpt:
-
-```text
-Engagements
-  run-001 (example, claude): prepared
-    Packet: /Users/me/.local/share/berman/spool/operations/…/packet
-    After the packet is reviewed, the commissioner starts the first sitting from an ordinary terminal. Repeating this never starts a second process.
-      berman-research launch run-001
-```
-
-`berman cheatsheet --config FILE` selects a study other than the default.
-With no study connected it says how to check the installation and connect one.
-Its first line names the version that answered. A workstation can hold more
-than one installation, and the cheatsheet prints a full path instead of a bare
-`berman` whenever `PATH` would lead to a different one.
-
-## Install
-
-Use Python 3.14 and Git. From this checkout on macOS:
-
-```sh
-python3.14 -m venv .venv
-. .venv/bin/activate
-python -m pip install .
+python3 -m venv "$HOME/.local/share/berman/venv"
+"$HOME/.local/share/berman/venv/bin/python" -m pip install .
+export PATH="$HOME/.local/share/berman/venv/bin:$PATH"
 berman verify
-berman cheatsheet
 ```
 
-Install the same build in the Linux guest and bind a macOS checkout and harness
-to a study. [Install the guest](docs/guest-deployment.md) ·
-[Example study](examples/minimal-study/README.md)
+The checkout, actor, and episode files share a Linux environment. A terminal on another computer can reach it over SSH. [Development on a Mac with Lima and rootless Podman](apparatus/lima/README.md)
 
-## Read more
+## Try an episode
 
-| For | Read |
-| --- | --- |
-| Running an engagement from commission to closeout, the words Berman uses, and study inputs | [Operating a study](docs/operating.md) |
-| What is recorded, what a recording establishes and does not, and reading editions | [Recordings and editions](docs/custody.md) |
-| Packets, hooks, launch, staging and native qualification | [Native executor](docs/executor.md) |
-| What the software cannot do or has not established | [Current limits](docs/limitations.md) |
-| Changing Berman, its checks and what each one establishes | [Developing Berman](docs/development.md) |
+Choose a checkout where ordinary work is already under way. Keep the episode directory outside the checkout and the actor’s configuration directory. This example uses the optional note-taking job. To write your own additional job, edit the generated `job.md` and pass that file instead.
 
-`berman verify` checks the installed software. It says nothing about a
-harness on this machine: that takes a
-[native qualification](docs/executor.md#qualification-evidence).
-[MIT License](LICENSE)
+```sh
+berman template "$HOME/jobs"
+berman open "$HOME/episodes/notes" --project "$HOME/code/my-project" \
+  --actor claude --job "$HOME/jobs/note-taking.md"
+berman start "$HOME/episodes/notes"
+```
+
+Read the opening before starting. Launch from an ordinary interactive terminal and work with the actor as usual. The actor gets the project’s normal instructions and permissions, plus write access to the episode’s return directory. For Codex, set up the Linux hook before the first sitting. [Actor setup and resumption](docs/operating.md)
+
+After the sitting, decide whether to resume or close. Supply the actual reason when closing.
+
+```sh
+berman status "$HOME/episodes/notes"
+berman close "$HOME/episodes/notes" --reason "I have the account I need for the handoff."
+berman verify "$HOME/episodes/notes/record"
+```
+
+Open `record/opening.md`, then read the actor’s files under `record/return/` if present. `record/coverage.json` describes the scope and gaps. To work through a question about one or more episodes:
+
+```sh
+berman review "$HOME/episodes/notes/record" \
+  --question "Which decision should I revisit with the team, and why?" \
+  --output "$HOME/reviews/handoff"
+```
+
+The chosen directory contains your question, verified copies of the selected sources, and an answer file for you or a reader you choose. [Reading and verifying records](docs/records.md) · [Developing Berman](docs/development.md) · [MIT License](LICENSE)

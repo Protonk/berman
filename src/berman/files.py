@@ -1,8 +1,11 @@
 """Shared file, JSON, digest and time operations for custody and native capture."""
+
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 import stat
 import tempfile
@@ -68,7 +71,7 @@ def keep(path, data):
 
 
 def digest_json(value):
-    """The recorded digest of a definition or plan: sorted keys and json.dumps default separators."""
+    """Digest a JSON value using sorted keys and the default separators."""
     return digest(json.dumps(value, sort_keys=True, ensure_ascii=False).encode())
 
 
@@ -77,27 +80,35 @@ def safe_directory(path):
         raise ValueError(f'Expected a directory without symlinks: {path}')
 
 
-def inventory(root):
-    """Inventory bytes and metadata, including directory and symlink mtimes."""
-    safe_directory(root)
-    result = []
-    for parent, dirs, files in os.walk(root, followlinks=False):
-        for name in sorted(dirs + files):
-            path = Path(parent) / name
-            before = path.lstat()
-            item = {'path': path.relative_to(root).as_posix(), 'mode': oct(stat.S_IMODE(before.st_mode)),
-                    'mtime_ns': before.st_mtime_ns}
-            if stat.S_ISLNK(before.st_mode):
-                item.update(type='symlink', target=os.readlink(path))
-            elif stat.S_ISDIR(before.st_mode):
-                item.update(type='directory')
-            elif stat.S_ISREG(before.st_mode):
-                data = path.read_bytes()
-                after = path.stat()
-                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(data) != after.st_size:
-                    raise ValueError(f'File changed during inventory: {path}')
-                item.update(type='file', size=len(data), sha256=digest(data))
-            else:
-                raise ValueError(f'Unsupported file type: {path}')
-            result.append(item)
-    return sorted(result, key=lambda row: row['path'])
+@contextmanager
+def lock(folder, name, blocking=True):
+    safe_directory(folder)
+    with (folder / name).open('a+b') as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        except BlockingIOError:
+            raise Decision('A sitting or close is in progress') from None
+        yield stream
+
+
+@contextmanager
+def new_directory(destination):
+    """Publish a complete new directory. Concurrent Berman publishers serialize the rename."""
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise Decision(f'Destination already exists: {destination}')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    safe_directory(destination.parent)
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.berman-') as temporary:
+        tree = Path(temporary) / 'new'
+        tree.mkdir(mode=0o700)
+        yield tree
+        fd = os.open(destination.parent, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            if destination.exists() or destination.is_symlink():
+                raise Decision(f'Destination already exists: {destination}')
+            tree.rename(destination)
+            os.fsync(fd)
+        finally:
+            os.close(fd)

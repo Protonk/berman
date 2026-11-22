@@ -1,0 +1,12 @@
+FROM docker.io/library/python:3.14-slim-trixie
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/berman
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY src/ src/
+RUN python -m pip wheel --no-deps --wheel-dir=/tmp/wheels . && python -m pip install /tmp/wheels/*.whl
+COPY AGENTS.md ./
+COPY docs/ docs/
+COPY apparatus/ apparatus/
+COPY tests/ tests/
+WORKDIR /tmp
+CMD ["python", "-I", "-m", "unittest", "discover", "-s", "/opt/berman/tests", "-t", "/opt/berman"]
