@@ -7,12 +7,12 @@ import subprocess
 from uuid import uuid4
 
 from berman import capture, files, project, records
-from berman.installation import PACKAGE
+from berman.installation import JOB_TEMPLATES, PACKAGE
 
 
 def install_template(destination):
     with files.new_directory(destination) as stage:
-        for name in ('job.md', 'note-taking.md'):
+        for name in JOB_TEMPLATES:
             shutil.copyfile(PACKAGE / 'templates' / name, stage / name)
     return str(destination)
 

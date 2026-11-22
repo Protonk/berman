@@ -11,7 +11,7 @@ uv run python -m unittest discover -s tests -t .
 uv run berman verify
 ```
 
-The CLI calls `episodes.py` for an opening, the interactive sittings and the manager’s ending. `capture.py` attributes native events and `snapshots.py` publishes transcript generations. `records.py` collects a closed episode, verifies copies, and assembles selected sources for a question. The wheel carries both job files in `src/berman/templates/`.
+The CLI calls `episodes.py` for an opening, the interactive sittings and the manager’s ending. `capture.py` attributes native events and `snapshots.py` publishes transcript generations. `records.py` collects a closed episode, verifies copies, and assembles selected sources for a question. The wheel carries the editable job and both examples in `src/berman/templates/`.
 
 The suite uses real temporary Git checkouts, subprocesses, and scripted actor executables to exercise ordinary work, commissioned work, resume, closure, detached verification and review. Capture tests check what happens to bytes across interrupted and non-prefix transcript updates. A real actor login, reviewed Codex hooks, a manager-chosen project and a native sitting are separate evidence.
 

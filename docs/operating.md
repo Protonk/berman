@@ -1,6 +1,6 @@
 # Operating an episode
 
-Write an additional job in an ordinary UTF-8 file. Describe what should catch the actor’s attention during ordinary work, what action to take if it happens, and what would be worth returning. Some episodes will give the actor no occasion to act on a particular request. The file produced by `berman template` gives the manager space to make those decisions. Its companion `note-taking.md` is a complete optional job.
+Write an additional job in an ordinary UTF-8 file. Describe what should catch the actor’s attention during ordinary work, what to do while the episode continues, and what to leave for the manager. `berman template` supplies an editable `job.md` and two complete examples. With `note-taking.md` the actor adds accounts as work proceeds. With `handover.md` the actor revises one document so someone arriving at any point can pick up the work. Pass the chosen file to `open --job`.
 
 ## Open and start
 

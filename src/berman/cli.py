@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from berman import capture, episodes, files, records
-from berman.installation import PACKAGE, verify_wheel, version
+from berman.installation import JOB_TEMPLATES, PACKAGE, verify_wheel, version
 
 
 def path(value):
@@ -21,7 +21,7 @@ def parser():
     app = argparse.ArgumentParser(prog='berman', description=__doc__)
     commands = app.add_subparsers(dest='command', required=True)
     template = commands.add_parser(
-        'template', help='create an editable additional job and the optional note-taking example'
+        'template', help='create an editable additional job and the note-taking and handover examples'
     )
     template.add_argument('destination', type=path)
     opening = commands.add_parser('open', help='open an episode and fix the additional instructions')
@@ -57,7 +57,7 @@ def parser():
 def installation(check=False):
     paths = sorted(p for p in PACKAGE.rglob('*') if p.is_file() and p.suffix in ('.py', '.md'))
     members = {str(p.relative_to(PACKAGE)): files.digest(p.read_bytes()) for p in paths}
-    if not {'templates/job.md', 'templates/note-taking.md'} <= members.keys():
+    if any(f'templates/{name}' not in members for name in JOB_TEMPLATES):
         raise ValueError('Incomplete installation: the job templates are missing')
     result = {'version': version(), 'source_sha256': files.digest_json(members), 'files_sha256': members}
     if check:

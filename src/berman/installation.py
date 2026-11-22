@@ -4,6 +4,7 @@ from importlib import metadata, resources
 from pathlib import Path
 
 PACKAGE = Path(str(resources.files('berman')))
+JOB_TEMPLATES = ('job.md', 'note-taking.md', 'handover.md')
 
 
 def version():

@@ -208,6 +208,10 @@ class EpisodeTests(unittest.TestCase):
         self.cli('template', destination)
         note = destination / 'note-taking.md'
         self.assertIn('a reader who was not there', note.read_text())
+        handover = destination / 'handover.md'
+        self.assertIn('HANDOVER.md', handover.read_text())
+        state = self.cli('open', self.folder, '--actor', 'claude', '--project', self.project, '--job', handover)
+        self.assertEqual(state['job'], handover.read_text())
         note.write_text('custom')
         self.cli('template', destination, error='exists')
         self.assertEqual(note.read_text(), 'custom')
