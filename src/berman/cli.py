@@ -59,6 +59,9 @@ def parser():
     review.add_argument('--output', required=True, type=path)
     commands.add_parser('codex-hooks', help='print the Linux Codex hook entries for review and installation')
     commands.add_parser('version', help='identify the installed build')
+    help_command = commands.add_parser('help', help='show help for Berman or one command')
+    help_command.add_argument('topic', nargs='?', choices=commands.choices, metavar='COMMAND')
+    help_command.set_defaults(topics=commands.choices)
     return app
 
 
@@ -74,9 +77,14 @@ def installation(check=False):
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
+    app = parser()
+    args = app.parse_args(argv)
     try:
         match args.command:
+            case 'help':
+                target = args.topics[args.topic] if args.topic else app
+                target.print_help()
+                return 0
             case 'template':
                 result = episodes.install_template(args.destination)
             case 'open':

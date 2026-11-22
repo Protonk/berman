@@ -21,6 +21,8 @@ The checkout, actor, and episode files share a Linux environment. A terminal on 
 
 ## Try an episode
 
+Run `berman help` for the command list or `berman help open` for the opening arguments.
+
 Choose a checkout where ordinary work is already under way. Keep the episode directory outside the checkout and the actor’s configuration directory. This example asks only for notes. For a handover alone, pass `handover.md` as the job. To request both, repeat `--job` with the second file. The template also supplies `job.md` for writing your own instructions.
 
 ```sh

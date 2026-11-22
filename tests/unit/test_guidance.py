@@ -1,15 +1,29 @@
 """Keep the maintained operating instructions usable from a source checkout."""
 
-import re
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+import re
 import unittest
 
-from berman.cli import parser
+from berman.cli import main, parser
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class GuidanceTests(unittest.TestCase):
+    def test_help_aliases_match_the_parser_output(self):
+        commands = parser()._subparsers._group_actions[0].choices
+        for topic in (None, *commands):
+            with self.subTest(topic=topic):
+                arguments = [topic] if topic else []
+                with redirect_stdout(StringIO()) as original, self.assertRaises(SystemExit) as result:
+                    main([*arguments, '--help'])
+                self.assertEqual(result.exception.code, 0)
+                with redirect_stdout(StringIO()) as alias:
+                    self.assertEqual(main(['help', *arguments]), 0)
+                self.assertEqual(alias.getvalue(), original.getvalue())
+
     def test_local_links_and_documented_commands(self):
         documents = [
             ROOT / 'README.md',
