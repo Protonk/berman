@@ -132,7 +132,9 @@ elif actor == 'claude':
     }
     print(json.dumps(result))
 else:
-    events = [{'type': 'thread.started', 'thread_id': reported}, {'type': 'turn.started'}]
+    # Codex reports reconnection attempts as errors whether or not the turn later completes.
+    retry = {'type': 'error', 'message': 'Reconnecting... 1/5 (stream disconnected)'}
+    events = [{'type': 'thread.started', 'thread_id': reported}, {'type': 'turn.started'}, retry]
     if option('FIXTURE_DENY'):
         item = {'id': 'item_0', 'type': 'command_execution', 'command': 'touch x', 'status': 'declined'}
         events.append({'type': 'item.completed', 'item': item})

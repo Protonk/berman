@@ -45,8 +45,12 @@ def arguments(folder, session, resuming, hooks, attended):
 
 
 def outcome(output):
-    """The session, final message and declined operations in one codex exec event stream."""
-    sessions, messages, denials, limitations = [], [], [], []
+    """The session, final message and declined operations in one codex exec event stream.
+
+    Codex reports each reconnection attempt as an error event. Those matter only when the turn
+    did not complete; the retained output keeps all of them.
+    """
+    sessions, messages, denials, limitations, errors = [], [], [], [], []
     finished, malformed, events = None, 0, 0
     for line in output.splitlines():
         if not line.strip():
@@ -75,7 +79,7 @@ def outcome(output):
             finished = 'failed'
             limitations.append(f'The native turn failed: {message or "no reason given"}.')
         elif kind == 'error':
-            limitations.append(f'The native output reports an error: {message or "no reason given"}.')
+            errors.append(message or 'no reason given')
         if kind == 'item.completed' and item.get('status') == 'declined':
             denials.append({'tool': item.get('type'), 'input': item.get('command', item.get('changes'))})
     if malformed:
@@ -86,6 +90,8 @@ def outcome(output):
         limitations.append('The native output holds no events.')
     elif finished is None:
         limitations.append('The native output does not show the turn finishing.')
+        if errors:
+            limitations.append(f'Its last reported error: {errors[-1]}')
     elif finished == 'completed' and not messages:
         limitations.append('The completed turn has no final message.')
     return {

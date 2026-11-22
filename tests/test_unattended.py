@@ -149,8 +149,9 @@ class UnattendedTests(test_episodes.EpisodeCase):
                 del self.env['FIXTURE_FAIL']
                 self.assertIsNone(failed['response'])
                 self.assertEqual(failed['exit'], 1)
-                self.assertIn('the turn could not finish', failed['limitations'][-1])
-                self.assertTrue(any('error' in item or 'failed' in item for item in failed['limitations'][:-1]))
+                self.assertEqual(len(failed['limitations']), 2)
+                self.assertRegex(failed['limitations'][0], 'reports an error|turn failed')
+                self.assertIn('the turn could not finish', failed['limitations'][1])
                 self.env['FIXTURE_SILENT'] = '1'
                 silent = self.send('silent', 'Anything?')
                 del self.env['FIXTURE_SILENT']
