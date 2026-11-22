@@ -1,6 +1,6 @@
 # Berman
 
-Berman supports intermittent management of work in a software project. Most days an actor can open the project in its usual environment and get on with the work. The manager can leave an encounter entirely outside Berman. When something deserves attention alongside the work, the manager opens an **episode**.
+Berman supports intermittent management of work in a software project. Most days an actor can open the project in its usual environment and get on with the work. When the manager chooses that route, Berman supplies no instructions and collects no telemetry. When something deserves attention alongside the work, the manager opens an **episode**.
 
 The **actor** is the agent doing the ordinary work, currently through Codex or Claude Code. At the opening, Berman gives the actor the manager’s additional instructions and a place to leave a response. The manager might ask for occasional notes about decisions as they happen. The actor can continue independently, talk with the manager, or consult someone else. The opening matters because it might be the only exchange they have.
 
