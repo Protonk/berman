@@ -1,12 +1,12 @@
 # Reading an episode
 
-Start with `opening.md` for the assignment and `ending.json` for the manager’s reason. Read `return/` for what the actor deliberately left. An empty return is possible. The manager can act on what came back, ask a new question, or let the project proceed independently.
+Start with `opening.md` for the assignment and `ending.json` for the producer’s reason. Read `return/` for what the actor deliberately left. An empty return is possible. The producer can act on what came back, ask a new question, or let the project proceed independently.
 
 A record contains only these members.
 
 | Within a record | What it can tell you |
 | --- | --- |
-| `opening.md`, `ending.json` | The message the actor received and the manager’s reason for closing. |
+| `opening.md`, `ending.json` | The message the actor received and the producer’s reason for closing. |
 | `return/` | The regular files the actor left in the return directory. |
 | `episode.json`, `final-project.json` | The opening, actor, project path, and observed Git revision and worktree status at the boundaries where available. |
 | `sittings/` | Which sittings were requested, which executable started, and which exits the launcher observed. |
@@ -28,4 +28,4 @@ berman review FIRST/record SECOND/record \
   --output "$HOME/reviews/assumptions"
 ```
 
-Choose the destination for the audience. A private working directory can hold a manager’s investigation. A reader can later put a decision into the project’s usual decision log. Berman creates a fresh directory, verifies the selected records and copies them under `sources/<episode-id>/`. The selection and manifest digests are in `sources.json`; the reader writes in `answer.md`. Cite paths within that directory and, for a conversation, the passage or raw line supporting a conclusion. Answering the question is work for the reader. The command runs locally and makes no model call.
+Choose the destination for the audience. A private working directory can hold a producer’s investigation. A reader can later put a decision into the project’s usual decision log. Berman creates a fresh directory, verifies the selected records and copies them under `sources/<episode-id>/`. The selection and manifest digests are in `sources.json`; the reader writes in `answer.md`. Cite paths within that directory and, for a conversation, the passage or raw line supporting a conclusion. Answering the question is work for the reader. The command runs locally and makes no model call.

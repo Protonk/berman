@@ -1,4 +1,4 @@
-"""Intermittent project management in a local Linux checkout."""
+"""A producer uses Berman for intermittent project management by correspondence in a local Linux checkout."""
 
 import argparse
 import json
@@ -40,7 +40,7 @@ def parser():
         ('start', 'start the first interactive sitting'),
         ('resume', 'continue the same actor session'),
         ('status', 'show the opening, sittings, and ending'),
-        ('close', 'record the manager’s ending and collect the return'),
+        ('close', 'record the producer’s ending and collect the return'),
     ]:
         cmd = commands.add_parser(name, help=meaning)
         cmd.add_argument('episode', type=path)
@@ -52,7 +52,7 @@ def parser():
     verify = commands.add_parser('verify', help='identify the installation or verify an episode record')
     verify.add_argument('record', type=path, nargs='?')
     verify.add_argument('--sha256', help='expected digest of the manifest from a separate copy')
-    review = commands.add_parser('review', help='prepare verified sources and an answer file for a manager’s question')
+    review = commands.add_parser('review', help='prepare verified sources and an answer file for a producer’s question')
     review.add_argument('records', type=path, nargs='+')
     review.add_argument('--question', required=True)
     review.add_argument('--output', required=True, type=path)

@@ -151,7 +151,7 @@ class EpisodeTests(unittest.TestCase):
             ids.append(self.opening(actor)['id'])
             self.cli('start', self.folder)
             sources.append(self.cli('close', self.folder, '--reason', name)['record'])
-        output = self.base / 'returning-manager'
+        output = self.base / 'returning-producer'
         result = self.cli(
             'review', *sources, '--question', 'What evidence would change the next decision?', '--output', output
         )

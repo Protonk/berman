@@ -1,10 +1,10 @@
 # Berman
 
-Berman supports intermittent management of work in a software project. Most days an actor can open the project in its usual environment and get on with the work. When the manager chooses that route, Berman supplies no instructions and collects no telemetry. When something deserves attention alongside the work, the manager opens an **episode**.
+A **producer** uses Berman for intermittent project management by correspondence. Most days an actor can open the software project in its usual environment and get on with the work. When the producer chooses that route, Berman supplies no instructions and collects no telemetry. When something deserves attention alongside the work, the producer opens an **episode**.
 
-The **actor** is the agent doing the ordinary work, currently through Codex or Claude Code. At the opening, Berman gives the actor the manager’s additional instructions and a place to leave a response. The manager might ask for occasional notes, a handover kept current, or both. Asking for that attention is a deliberate intervention. It can change how the actor spends its time or which decisions it makes, and its effect on the project is an open question. The actor can continue independently, talk with the manager, or consult someone else. The opening matters because it might be the only exchange they have.
+The **actor** is the agent doing the ordinary work, currently through Codex or Claude Code. At the opening, Berman gives the actor the producer’s additional instructions and a place to leave a response. The producer might ask for occasional notes, a handover kept current, or both. Asking for that attention is a deliberate intervention. It can change how the actor spends its time or which decisions it makes, and its effect on the project is an open question. The actor can continue independently, talk with the producer, or consult someone else. The opening matters because it might be the only exchange they have.
 
-An episode can span several sittings. The manager decides when it ends and supplies the reason. Berman collects what the actor deliberately left, along with the telemetry it could attribute to the episode. A manager returning to the project can read both, see gaps in the record, and decide what deserves another episode.
+An episode can span several sittings. The producer decides when it ends and supplies the reason. Berman collects what the actor deliberately left, along with the telemetry it could attribute to the episode. A producer returning to the project can read both, see gaps in the record, and decide what deserves another episode.
 
 ## Install on Linux
 

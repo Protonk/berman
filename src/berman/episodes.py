@@ -1,4 +1,4 @@
-"""An episode is opened and closed by its manager. Native process exits are sitting facts."""
+"""An episode is opened and closed by its producer. Native process exits are sitting facts."""
 
 import os
 from pathlib import Path
@@ -108,7 +108,7 @@ def launch(folder, request=None, prompt=None):
     with files.lock(folder, '.sitting.lock', blocking=False) as lease:
         state = load(folder)
         if (folder / 'ending.json').exists():
-            raise ValueError('The manager has closed this episode')
+            raise ValueError('The producer has closed this episode')
         sittings = folder / 'sittings'
         recent = [files.read(p) for p in sorted(sittings.glob('*.json'))]
         for sitting in recent:
@@ -169,7 +169,7 @@ def launch(folder, request=None, prompt=None):
 
 def close(folder, reason):
     if not reason.strip():
-        raise ValueError('The manager must supply an ending reason')
+        raise ValueError('The producer must supply an ending reason')
     with files.lock(folder, '.sitting.lock', blocking=False), files.lock(folder, '.capture.lock'):
         state = load(folder)
         ending = folder / 'ending.json'
