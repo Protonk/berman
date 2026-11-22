@@ -210,8 +210,68 @@ class EpisodeTests(unittest.TestCase):
         self.assertIn('a reader who was not there', note.read_text())
         handover = destination / 'handover.md'
         self.assertIn('HANDOVER.md', handover.read_text())
-        state = self.cli('open', self.folder, '--actor', 'claude', '--project', self.project, '--job', handover)
-        self.assertEqual(state['job'], handover.read_text())
+        for selected, other in ((note, handover), (handover, note)):
+            with self.subTest(selected=selected.name):
+                state = self.cli(
+                    'open',
+                    self.folder / selected.stem,
+                    '--actor',
+                    'claude',
+                    '--project',
+                    self.project,
+                    '--job',
+                    selected,
+                )
+                self.assertEqual(state['jobs'], [selected.read_text()])
+                self.assertIn(selected.read_text().rstrip(), state['opening'])
+                self.assertNotIn(other.read_text().splitlines()[0], state['opening'])
         note.write_text('custom')
         self.cli('template', destination, error='exists')
         self.assertEqual(note.read_text(), 'custom')
+
+    def test_compose_jobs_in_one_actor_opening_and_record(self):
+        destination = self.base / 'jobs'
+        self.cli('template', destination)
+        note = destination / 'note-taking.md'
+        handover = destination / 'handover.md'
+        command = ('open', self.folder, '--actor', 'codex', '--project', self.project)
+        selection = ('--job', handover, '--job', note)
+        state = self.cli(*command, *selection)
+        jobs = [handover.read_text(), note.read_text()]
+        self.assertEqual(state['jobs'], jobs)
+        self.assertLess(state['opening'].index(jobs[0].rstrip()), state['opening'].index(jobs[1].rstrip()))
+        self.assertEqual(self.cli(*command, *selection), state)
+        self.cli(*command, '--job', note, '--job', handover, error='different instructions')
+        self.cli(*command, '--job', handover, error='different instructions')
+        handover.unlink()
+        note.unlink()
+        self.cli('start', self.folder)
+        self.cli('close', self.folder, '--reason', 'The opening was delivered.')
+        record = self.folder / 'record'
+        self.assertEqual((record / 'opening.md').read_text(), state['opening'])
+        self.assertEqual(json.loads((record / 'episode.json').read_text())['jobs'], jobs)
+        self.cli('verify', record)
+
+    def test_blank_second_job_leaves_no_episode(self):
+        blank = self.base / 'blank.md'
+        blank.write_text('  \n')
+        self.cli(
+            'open',
+            self.folder,
+            '--actor',
+            'claude',
+            '--project',
+            self.project,
+            '--job',
+            self.job,
+            '--job',
+            blank,
+            error='blank.md',
+        )
+        self.assertFalse(self.folder.exists())
+
+    def test_reopen_single_job_episode_created_before_repeatable_jobs(self):
+        state = self.opening('claude')
+        del state['jobs']
+        (self.folder / 'episode.json').write_text(json.dumps(state))
+        self.assertEqual(self.opening('claude'), state)

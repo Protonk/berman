@@ -17,7 +17,7 @@ def install_template(destination):
     return str(destination)
 
 
-def open_episode(folder, checkout, actor, job):
+def open_episode(folder, checkout, actor, job, *additional_jobs):
     project_path = Path(
         subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', '--show-toplevel'], text=True).strip()
     ).resolve()
@@ -26,23 +26,28 @@ def open_episode(folder, checkout, actor, job):
     for path in (project_path, native_home):
         if path.is_relative_to(folder) or folder.is_relative_to(path):
             raise ValueError('Keep the episode, checkout and harness home in separate directories')
-    instructions = job.read_text(encoding='utf-8')
-    if not instructions.strip():
-        raise ValueError('The additional job needs opening instructions')
+    jobs = []
+    for path in (job, *additional_jobs):
+        content = path.read_text(encoding='utf-8')
+        if not content.strip():
+            raise ValueError(f'The additional job needs opening instructions in {path}')
+        jobs.append(content)
     if folder.exists():
         state = load(folder)
-        if (state['project'], state['actor'], state['job'], state['home']) != (
+        if (state['project'], state['actor'], state.get('jobs', [state['job']]), state['home']) != (
             str(project_path),
             actor,
-            instructions,
+            jobs,
             str(native_home),
         ):
             raise files.Decision('An episode with different instructions or settings already occupies this path')
         return state
     ident = str(uuid4())
+    instructions = '\n\n---\n\n'.join(jobs)
+    assignment = 'this additional job' if len(jobs) == 1 else 'these additional jobs'
     opening = (
         f'Berman episode {ident}\n\nContinue the ordinary work in {project_path}. '
-        f'Alongside that work, carry out this additional job:\n\n{instructions.rstrip()}\n\n'
+        f'Alongside that work, carry out {assignment}:\n\n{instructions.rstrip()}\n\n'
         f'Return directory: {folder / "return"}\nKeep ordinary project changes in the checkout.\n'
     )
     state = {
@@ -54,6 +59,7 @@ def open_episode(folder, checkout, actor, job):
         'project': str(project_path),
         'home': str(native_home),
         'job': instructions,
+        'jobs': jobs,
         'opening': opening,
         'initial_project': project.git_state(project_path),
     }

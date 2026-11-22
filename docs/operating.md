@@ -1,10 +1,17 @@
 # Operating an episode
 
-Write an additional job in an ordinary UTF-8 file. Describe what should catch the actor’s attention during ordinary work, what to do while the episode continues, and what to leave for the manager. `berman template` supplies an editable `job.md` and two complete examples. With `note-taking.md` the actor adds accounts as work proceeds. With `handover.md` the actor revises one document so someone arriving at any point can pick up the work. Pass the chosen file to `open --job`.
+Write each additional job in its own UTF-8 file. Describe what should catch the actor’s attention during ordinary work, what to do while the episode continues, and what to leave for the manager. `berman template` supplies an editable `job.md` and two independent examples. With `note-taking.md` the actor adds occasional accounts under `return/notes/`. With `handover.md` the actor keeps `return/HANDOVER.md` current for someone picking up the work.
 
 ## Open and start
 
-`berman open EPISODE --project CHECKOUT --actor codex --job FILE` creates a private episode directory and fixes the opening instructions. Repeating the same open returns the existing episode. The actor receives the additional job in the opening message with the absolute return path. Read `EPISODE/opening.md` to inspect it. Project artifacts belong in their ordinary locations.
+Pass one `--job FILE` for each job you want the actor to take on. For a handover alone, use `--job "$HOME/jobs/handover.md"`. This opening asks for both examples.
+
+```sh
+berman open EPISODE --project CHECKOUT --actor codex \
+  --job "$HOME/jobs/handover.md" --job "$HOME/jobs/note-taking.md"
+```
+
+Berman creates a private episode directory and fixes the selected instructions in the order given. Repeating the same open returns the existing episode. Read `EPISODE/opening.md` to see the message the actor will receive, including the absolute return path. Project artifacts belong in their ordinary locations.
 
 `berman start EPISODE` starts the interactive CLI in the checkout. Berman inherits the actor’s normal settings and passes the return directory as an additional writable location. The Linux account must already have access to the project and the chosen harness. The operator can use a dedicated harness home by setting `CODEX_HOME` or `CLAUDE_CONFIG_DIR` before opening the episode. Berman binds that home at the opening.
 

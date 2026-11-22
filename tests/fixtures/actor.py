@@ -41,7 +41,7 @@ if '--' in args:
 else:
     prompt = ''
 if not transcript.exists():
-    assert 'additional job' in prompt and 'Record a decision' in prompt
+    assert prompt == (folder / 'opening.md').read_text()
     transcript.parent.mkdir(parents=True, exist_ok=True)
     transcript.write_text(json.dumps(first) + '\n')
 with transcript.open('a') as stream:

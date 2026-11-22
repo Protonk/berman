@@ -28,7 +28,15 @@ def parser():
     opening.add_argument('episode', type=path)
     opening.add_argument('--project', type=path, required=True, help='Git checkout for the ordinary work')
     opening.add_argument('--actor', choices=('codex', 'claude'), required=True)
-    opening.add_argument('--job', type=path, required=True, help='UTF-8 additional instructions')
+    opening.add_argument(
+        '--job',
+        dest='jobs',
+        metavar='FILE',
+        type=path,
+        action='append',
+        required=True,
+        help='UTF-8 instructions for one additional job. Repeat for each job in the opening.',
+    )
     for name, meaning in [
         ('start', 'start the first interactive sitting'),
         ('resume', 'continue the same actor session'),
@@ -72,7 +80,7 @@ def main(argv=None):
             case 'template':
                 result = episodes.install_template(args.destination)
             case 'open':
-                result = episodes.open_episode(args.episode, args.project, args.actor, args.job)
+                result = episodes.open_episode(args.episode, args.project, args.actor, *args.jobs)
             case 'start':
                 result = episodes.launch(args.episode)
             case 'resume':
