@@ -1,0 +1,15 @@
+FROM docker.io/library/debian:trixie-slim
+RUN export DEBIAN_FRONTEND=noninteractive && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/berman
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY src/ src/
+RUN python3 -m venv /opt/venv && /opt/venv/bin/python -m pip install --no-cache-dir .
+ENV PATH=/opt/venv/bin:$PATH
+COPY AGENTS.md ./
+COPY docs/ docs/
+COPY development/ development/
+COPY tests/ tests/
+WORKDIR /tmp
+CMD ["sh", "-c", "berman verify && python -I -m unittest discover -s /opt/berman/tests -t /opt/berman"]

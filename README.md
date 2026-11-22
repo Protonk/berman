@@ -17,7 +17,7 @@ export PATH="$HOME/.local/share/berman/venv/bin:$PATH"
 berman verify
 ```
 
-The checkout, actor, and episode files share a Linux environment. A terminal on another computer can reach it over SSH. [Development on a Mac with Lima and rootless Podman](apparatus/lima/README.md)
+The checkout, actor, and episode files share a Linux environment. A terminal on another computer can reach it over SSH. [Development on a Mac with Lima and rootless Podman](development/lima/README.md)
 
 ## Try an episode
 

@@ -5,7 +5,7 @@ Lima hosts a Debian Linux environment for this Apple silicon Mac. The source che
 From the software checkout on the Mac:
 
 ```sh
-limactl start --name=berman apparatus/lima/berman.yaml
+limactl start --name=berman development/lima/berman.yaml
 ssh -F "$HOME/.lima/berman/ssh.config" -o ControlMaster=no -o ControlPath=none -l berman-dev lima-berman
 ```
 

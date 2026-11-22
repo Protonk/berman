@@ -13,7 +13,7 @@ berman open EPISODE --project CHECKOUT --actor codex \
 
 Berman creates a private episode directory and fixes the selected instructions in the order given. Repeating the same open returns the existing episode. Read `EPISODE/opening.md` to see the message the actor will receive, including the absolute return path. Project artifacts belong in their ordinary locations.
 
-`berman start EPISODE` starts the interactive CLI in the checkout. Berman inherits the actor’s normal settings and passes the return directory as an additional writable location. The Linux account must already have access to the project and the chosen harness. The operator can use a dedicated harness home by setting `CODEX_HOME` or `CLAUDE_CONFIG_DIR` before opening the episode. Berman binds that home at the opening.
+`berman start EPISODE` starts the interactive CLI in the checkout. Berman inherits the actor’s normal settings and passes the return directory as an additional writable location. The Linux account must already have access to the project and the chosen harness. The manager can use a dedicated harness home by setting `CODEX_HOME` or `CLAUDE_CONFIG_DIR` before opening the episode. Berman binds that home at the opening.
 
 ## Set up the actor
 
@@ -26,7 +26,7 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}"
 ( set -C; berman codex-hooks > "${CODEX_HOME:-$HOME/.codex}/hooks.json" )
 ```
 
-Open the actual Codex CLI, sign in, and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the episode CLI with `--no-daemon` so its hooks receive the episode’s environment. The opening event must match the commissioned prompt and checkout before Berman binds the native session. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
+Open the actual Codex CLI, sign in, and review the entries with `/hooks`. Review them again if you change the installed path or commands. Berman starts the episode CLI with `--no-daemon` so its hooks receive the episode’s environment. Berman binds the native session only when the episode’s opening arrives as a prompt submitted in the checkout. During ordinary work the hook has no episode and returns immediately. An unreviewed or unavailable hook can leave a sitting without a transcript or a resumable Codex ID.
 
 ## Resume and close
 

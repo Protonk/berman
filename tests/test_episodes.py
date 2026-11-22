@@ -4,11 +4,20 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+
+RECORDS_GUIDE = Path(__file__).resolve().parents[1] / 'docs' / 'records.md'
+
+
+def documented_members():
+    """The names in the first column of the record table in the reading guide."""
+    rows = [line.split('|')[1] for line in RECORDS_GUIDE.read_text().splitlines() if line.startswith('| `')]
+    return {name for row in rows for name in re.findall(r'`([^`]+)`', row)}
 
 
 class EpisodeTests(unittest.TestCase):
@@ -56,6 +65,14 @@ class EpisodeTests(unittest.TestCase):
     def opening(self, actor):
         return self.cli('open', self.folder, '--actor', actor, '--project', self.project, '--job', self.job)
 
+    def assert_documented(self, record):
+        documented = documented_members()
+        for path in record.rglob('*'):
+            name = str(path.relative_to(record))
+            if path.is_file():
+                with self.subTest(member=name):
+                    self.assertTrue(name in documented or any(name.startswith(d) for d in documented if d[-1] == '/'))
+
     def full_episode(self, actor):
         subprocess.run([actor], cwd=self.project, env=self.env, check=True)
         self.assertFalse(self.folder.parent.exists())
@@ -77,6 +94,7 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(closed, self.cli('close', self.folder, '--reason', 'My decision is made.'))
         self.cli('start', self.folder, error='closed')
         record = self.folder / 'record'
+        self.assert_documented(record)
         self.assertIn('two callers', (record / 'return/decision.md').read_text())
         self.assertFalse((record / 'return/do-not-copy').exists())
         self.assertIn('do-not-copy', str(closed['coverage']))
@@ -193,6 +211,17 @@ class EpisodeTests(unittest.TestCase):
         empty.mkdir()
         self.cli('start', empty, error='No such file')
         self.assertEqual(list(empty.iterdir()), [])
+
+    def test_closing_finds_a_claude_transcript_when_no_callback_arrived(self):
+        self.env['FIXTURE_WITHOUT_HOOKS'] = '1'
+        self.opening('claude')
+        self.cli('start', self.folder)
+        self.assertFalse((self.folder / 'telemetry').exists())
+        receipt = self.cli('close', self.folder, '--reason', 'The callbacks never ran.')
+        record = self.folder / 'record'
+        self.assert_documented(record)
+        self.assertIn('done', (record / 'telemetry/parent/conversation.txt').read_text())
+        self.assertIn('No session callbacks were observed.', receipt['coverage']['limitations'])
 
     def test_unreadable_transcript_does_not_discard_the_actor_return(self):
         self.opening('claude')

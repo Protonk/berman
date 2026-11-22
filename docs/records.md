@@ -2,12 +2,17 @@
 
 Start with `opening.md` for the assignment and `ending.json` for the manager’s reason. Read `return/` for what the actor deliberately left. An empty return is possible. The manager can act on what came back, ask a new question, or let the project proceed independently.
 
+A record contains only these members.
+
 | Within a record | What it can tell you |
 | --- | --- |
+| `opening.md`, `ending.json` | The message the actor received and the manager’s reason for closing. |
+| `return/` | The regular files the actor left in the return directory. |
 | `episode.json`, `final-project.json` | The opening, actor, project path, and observed Git revision and worktree status at the boundaries where available. |
 | `sittings/` | Which sittings were requested, which executable started, and which exits the launcher observed. |
 | `telemetry/events/` | Callbacks attributed to the bound native session. An event can arrive before a transcript is readable. |
-| `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. Displaced versions and incomplete tails have separate entries when observed. |
+| `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. |
+| `telemetry/displaced/`, `telemetry/tails/` | Earlier transcript versions that a later capture did not extend, and incomplete final lines, when observed. |
 | `coverage.json` | Scope, missing observations, and entries that could not be collected. |
 | `manifest.json` | The episode identity and SHA-256 digests of all retained members. |
 

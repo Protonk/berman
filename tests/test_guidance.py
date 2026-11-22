@@ -8,7 +8,7 @@ import unittest
 
 from berman.cli import main, parser
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class GuidanceTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class GuidanceTests(unittest.TestCase):
             ROOT / 'README.md',
             ROOT / 'AGENTS.md',
             *(ROOT / 'docs').rglob('*.md'),
-            *(ROOT / 'apparatus').rglob('*.md'),
+            *(ROOT / 'development').rglob('*.md'),
         ]
         commands = set(parser()._subparsers._group_actions[0].choices)
         for path in documents:

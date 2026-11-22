@@ -47,6 +47,8 @@ if not transcript.exists():
 with transcript.open('a') as stream:
     stream.write(json.dumps(message) + '\n')
 (out / 'decision.md').write_text('We kept the reader because two callers still use it.\n')
+if os.environ.get('FIXTURE_WITHOUT_HOOKS'):
+    sys.exit(0)
 hooks = json.loads(definition.read_text())['hooks']
 for event in ('UserPromptSubmit', 'Stop', 'SessionEnd'):
     payload = {
