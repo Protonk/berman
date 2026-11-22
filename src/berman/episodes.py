@@ -34,7 +34,7 @@ def open_episode(folder, checkout, actor, job, *additional_jobs):
         jobs.append(content)
     if folder.exists():
         state = load(folder)
-        if (state['project'], state['actor'], state.get('jobs', [state['job']]), state['home']) != (
+        if (state['project'], state['actor'], state['jobs'], state['home']) != (
             str(project_path),
             actor,
             jobs,
@@ -58,7 +58,6 @@ def open_episode(folder, checkout, actor, job, *additional_jobs):
         'actor': actor,
         'project': str(project_path),
         'home': str(native_home),
-        'job': instructions,
         'jobs': jobs,
         'opening': opening,
         'initial_project': project.git_state(project_path),
@@ -111,7 +110,7 @@ def launch(folder, request=None, prompt=None):
         if request is not None and not recent:
             raise files.Decision('Start the first sitting before resuming')
         if (folder / 'opening.md').read_text() != state['opening']:
-            raise files.Decision('The opening differs from the commissioned instructions')
+            raise files.Decision('opening.md differs from the opening recorded in episode.json')
         actor = state['actor']
         executable = shutil.which(actor)
         if not executable:

@@ -239,6 +239,7 @@ class EpisodeTests(unittest.TestCase):
         state = self.cli(*command, *selection)
         jobs = [handover.read_text(), note.read_text()]
         self.assertEqual(state['jobs'], jobs)
+        self.assertNotIn('job', state)
         self.assertLess(state['opening'].index(jobs[0].rstrip()), state['opening'].index(jobs[1].rstrip()))
         self.assertEqual(self.cli(*command, *selection), state)
         self.cli(*command, '--job', note, '--job', handover, error='different instructions')
@@ -270,8 +271,8 @@ class EpisodeTests(unittest.TestCase):
         )
         self.assertFalse(self.folder.exists())
 
-    def test_reopen_single_job_episode_created_before_repeatable_jobs(self):
-        state = self.opening('claude')
-        del state['jobs']
-        (self.folder / 'episode.json').write_text(json.dumps(state))
-        self.assertEqual(self.opening('claude'), state)
+    def test_edited_opening_refuses_a_sitting(self):
+        self.opening('claude')
+        (self.folder / 'opening.md').write_text('Something else.\n')
+        self.cli('start', self.folder, error='opening.md differs')
+        self.assertFalse((self.folder / 'sittings').exists())

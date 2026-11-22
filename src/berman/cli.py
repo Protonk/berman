@@ -58,22 +58,23 @@ def parser():
     review.add_argument('--question', required=True)
     review.add_argument('--output', required=True, type=path)
     commands.add_parser('codex-hooks', help='print the Linux Codex hook entries for review and installation')
-    commands.add_parser('version', help='identify the installed build')
     help_command = commands.add_parser('help', help='show help for Berman or one command')
     help_command.add_argument('topic', nargs='?', choices=commands.choices, metavar='COMMAND')
     help_command.set_defaults(topics=commands.choices)
     return app
 
 
-def installation(check=False):
+def installation():
     paths = sorted(p for p in PACKAGE.rglob('*') if p.is_file() and p.suffix in ('.py', '.md'))
     members = {str(p.relative_to(PACKAGE)): files.digest(p.read_bytes()) for p in paths}
     if any(f'templates/{name}' not in members for name in JOB_TEMPLATES):
         raise ValueError('Incomplete installation: the job templates are missing')
-    result = {'version': version(), 'source_sha256': files.digest_json(members), 'files_sha256': members}
-    if check:
-        result['verification'] = verify_wheel(members)
-    return result
+    return {
+        'version': version(),
+        'source_sha256': files.digest_json(members),
+        'files_sha256': members,
+        'verification': verify_wheel(members),
+    }
 
 
 def main(argv=None):
@@ -101,14 +102,14 @@ def main(argv=None):
                 result = episodes.close(args.episode, args.reason)
             case 'verify' if args.record:
                 result = records.verify(args.record, args.sha256)
+            case 'verify':
+                if args.sha256:
+                    raise ValueError('--sha256 needs a record directory')
+                result = installation()
             case 'review':
                 result = records.review(args.records, args.question, args.output)
             case 'codex-hooks':
                 result = capture.hook_settings('codex')
-            case _:
-                if getattr(args, 'sha256', None):
-                    raise ValueError('--sha256 needs a record directory')
-                result = installation(check=args.command == 'verify')
         print(json.dumps(result, indent=2, ensure_ascii=False))
         if args.command in ('start', 'resume'):
             if result.get('error'):
