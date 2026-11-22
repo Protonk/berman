@@ -1,13 +1,54 @@
-"""Claude Code session callbacks and the reading copy of a Claude transcript.
+"""What Berman knows about Claude Code: its home, callbacks, launch, session store and transcripts.
 
-Berman registers these callbacks in per-launch settings and renders each staged parent
-transcript with `render` (berman.capture). Raw JSONL is always retained; the reading copy
-is derived from it and never substitutes for it.
+Berman launches Claude Code with the episode ID as its session ID and passes the callbacks as
+per-launch settings. Raw JSONL is always retained; the reading copy is derived from it and
+never substitutes for it.
 """
 
 import json
 
-EVENTS = ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'PreCompact', 'PostCompact', 'SessionEnd')
+from berman import files
+
+HOME_VARIABLE = 'CLAUDE_CONFIG_DIR'
+DEFAULT_HOME = '.claude'
+STORES = ('projects',)
+EVENTS = dict.fromkeys(
+    ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'PreCompact', 'PostCompact', 'SessionEnd'), 30
+)
+
+
+def assigned_session(state):
+    return state['id']
+
+
+def binds(state, event):
+    """Only the assigned session can bind the episode."""
+    return event['session_id'] == state['id']
+
+
+def arguments(folder, session, resuming, hooks):
+    """Write the per-launch callbacks and return the arguments for a sitting."""
+    settings = folder / 'claude-hooks.json'
+    files.write(settings, hooks)
+    start = '--resume' if resuming else '--session-id'
+    return ['--settings', str(settings), start, session, '--add-dir', str(folder / 'return')]
+
+
+def candidates(home, session):
+    return (home / 'projects').glob(f'*/{session}.jsonl')
+
+
+def owns(path, session):
+    """The store names each transcript after its session. Reading it checks the identity."""
+    return True
+
+
+def transcript(raw, path, session):
+    """Check that the transcript belongs to the session and render its reading copy."""
+    reader, messages, malformed, identities = render(raw)
+    if path.name != session + '.jsonl' or identities != {session}:
+        raise ValueError('Claude transcript identity differs from the assigned parent')
+    return reader, messages, malformed
 
 
 def render(data):

@@ -49,8 +49,7 @@ layers = [
   "berman.__main__",
   "berman.cli",
   "berman.episodes",
-  "berman.records",
-  "berman.capture | berman.project",
-  "berman.snapshots | berman.claude | berman.codex",
-  "berman.files | berman.installation",
+  "berman.records | berman.capture",
+  "berman.claude | berman.codex | berman.snapshots | berman.project | berman.installation",
+  "berman.files",
 ]

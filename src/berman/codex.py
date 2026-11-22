@@ -1,6 +1,74 @@
-"""Render the reading copy for a captured Codex session."""
+"""What Berman knows about Codex: its home, callbacks, launch, session store and transcripts.
+
+Codex reads the reviewed callbacks from its home and chooses its own session ID. The opening
+prompt, submitted in the checkout, binds that session to the episode. Raw JSONL is always
+retained; the reading copy is derived from it and never substitutes for it.
+"""
 
 import json
+from pathlib import Path
+
+from berman import files
+
+HOME_VARIABLE = 'CODEX_HOME'
+DEFAULT_HOME = '.codex'
+STORES = ('sessions', 'archived_sessions')
+# Codex grants callbacks at an interruption or the end of a session a short timeout.
+EVENTS = {'UserPromptSubmit': 30, 'Stop': 30, 'Interrupt': 3, 'SessionEnd': 3}
+FIRST_LINE = 128 * 1024
+
+
+def assigned_session(state):
+    return None
+
+
+def binds(state, event):
+    """The opening prompt, submitted in the checkout, binds the session Codex chose."""
+    return (
+        event['hook_event_name'] == 'UserPromptSubmit'
+        and event.get('prompt') == state['opening']
+        and bool(event.get('cwd'))
+        and Path(event['cwd']).resolve() == Path(state['project'])
+    )
+
+
+def arguments(folder, session, resuming, hooks):
+    """The callbacks come from the Codex home. --no-daemon lets them inherit the episode environment."""
+    if resuming:
+        return ['--no-daemon', 'resume', '--add-dir', str(folder / 'return'), session]
+    return ['--no-daemon', '--add-dir', str(folder / 'return')]
+
+
+def meta_session(line):
+    """The session ID recorded in a transcript's first line, or None."""
+    try:
+        value = json.loads(line)
+    except (ValueError, UnicodeError):
+        return None
+    if not isinstance(value, dict) or value.get('type') != 'session_meta':
+        return None
+    meta = value.get('payload')
+    if not isinstance(meta, dict):
+        return None
+    ident = meta.get('id') or meta.get('session_id')
+    return ident if isinstance(ident, str) else None
+
+
+def candidates(home, session):
+    return (p for part in STORES for p in (home / part).rglob(f'*{session}*.jsonl'))
+
+
+def owns(path, session):
+    with files.regular(path).open('rb') as stream:
+        line = stream.readline(FIRST_LINE + 1)
+    return len(line) <= FIRST_LINE and meta_session(line) == session
+
+
+def transcript(raw, path, session):
+    """Check that the transcript belongs to the session and render its reading copy."""
+    if meta_session(raw.partition(b'\n')[0]) != session:
+        raise ValueError('Codex transcript metadata differs from the assigned parent')
+    return render(raw)
 
 
 def render(data):

@@ -6,8 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from berman import capture, episodes, files, records
-from berman.installation import JOB_TEMPLATES, PACKAGE, verify_wheel, version
+from berman import capture, episodes, installation, records
 
 
 def path(value):
@@ -27,7 +26,7 @@ def parser():
     opening = commands.add_parser('open', help='open an episode and fix the additional instructions')
     opening.add_argument('episode', type=path)
     opening.add_argument('--project', type=path, required=True, help='Git checkout for the ordinary work')
-    opening.add_argument('--actor', choices=('codex', 'claude'), required=True)
+    opening.add_argument('--actor', choices=tuple(capture.HARNESSES), required=True)
     opening.add_argument(
         '--job',
         dest='jobs',
@@ -64,19 +63,6 @@ def parser():
     return app
 
 
-def installation():
-    paths = sorted(p for p in PACKAGE.rglob('*') if p.is_file() and p.suffix in ('.py', '.md'))
-    members = {str(p.relative_to(PACKAGE)): files.digest(p.read_bytes()) for p in paths}
-    if any(f'templates/{name}' not in members for name in JOB_TEMPLATES):
-        raise ValueError('Incomplete installation: the job templates are missing')
-    return {
-        'version': version(),
-        'source_sha256': files.digest_json(members),
-        'files_sha256': members,
-        'verification': verify_wheel(members),
-    }
-
-
 def main(argv=None):
     app = parser()
     args = app.parse_args(argv)
@@ -89,7 +75,7 @@ def main(argv=None):
             case 'template':
                 result = episodes.install_template(args.destination)
             case 'open':
-                result = episodes.open_episode(args.episode, args.project, args.actor, *args.jobs)
+                result = episodes.open_episode(args.episode, args.project, args.actor, args.jobs)
             case 'start':
                 result = episodes.launch(args.episode)
             case 'resume':
@@ -105,7 +91,7 @@ def main(argv=None):
             case 'verify':
                 if args.sha256:
                     raise ValueError('--sha256 needs a record directory')
-                result = installation()
+                result = installation.verify()
             case 'review':
                 result = records.review(args.records, args.question, args.output)
             case 'codex-hooks':

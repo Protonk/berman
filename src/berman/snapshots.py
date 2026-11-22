@@ -1,8 +1,9 @@
-"""Committed capture generations, shared by hook writers and read-only consumers.
+"""Committed transcript generations for the parent session of one episode.
 
-Only current.json publishes a generation. Staging is outside the packet. Superseded
-prefix bytes remain represented by the current transcript; non-prefix source revisions
-and incomplete tails are retained explicitly. Compaction never touches a frozen capture.
+Only current.json publishes a generation, and every reader and writer holds the episode's
+capture lock. Superseded prefix bytes remain in the current transcript; non-prefix source
+revisions and incomplete tails are kept under displaced/ and tails/. Staging uses a separate
+directory on the same filesystem.
 """
 
 import json
@@ -99,26 +100,19 @@ def read_generation(folder):
 
 
 def read(session):
-    """Read a published generation, retrying if its writer advanced the pointer."""
-    for _ in range(3):
-        ref = pointer(session)
-        if ref is None:
-            return None
-        try:
-            current = read_generation(Path(session) / 'snapshots' / ref['generation'])
-            rows = [json.loads(line) for line in current['history']]
-            if (
-                files.digest_json(current['metadata']) != ref['generation']
-                or [files.digest_json(row) for row in rows] != ref['committed']
-            ):
-                raise ValueError('Capture commit reference and retained history disagree')
-            obligations(Path(session), rows, current['tail'])
-            if pointer(session) == ref:
-                return current
-        except (OSError, ValueError, KeyError, TypeError):
-            if pointer(session) == ref:
-                raise
-    raise ValueError('Capture changed repeatedly while reading')
+    """Read the published generation and check the bytes its history still requires."""
+    ref = pointer(session)
+    if ref is None:
+        return None
+    current = read_generation(Path(session) / 'snapshots' / ref['generation'])
+    rows = [json.loads(line) for line in current['history']]
+    if (
+        files.digest_json(current['metadata']) != ref['generation']
+        or [files.digest_json(row) for row in rows] != ref['committed']
+    ):
+        raise ValueError('Capture commit reference and retained history disagree')
+    obligations(Path(session), rows, current['tail'])
+    return current
 
 
 def immutable(path, data, staging):
@@ -143,8 +137,12 @@ def immutable(path, data, staging):
     temporary.unlink()
 
 
-def recover(session, staging):
-    """Retain unpublished generations; finish only already-authorized supersession cleanup."""
+def recover(session):
+    """Remove every generation directory except the current one.
+
+    A superseded generation goes only after its non-prefix bytes are confirmed under displaced/.
+    A generation without a commit was never published; the next capture reads the source again.
+    """
     current = pointer(session)
     captured = read(session) if current else None
     rows = {files.digest_json(json.loads(line)): json.loads(line) for line in captured['history']} if captured else {}
@@ -168,16 +166,8 @@ def recover(session, staging):
                     checked,
                 )
     for folder in folders:
-        if current and folder.name == current['generation']:
-            continue
-        if folder.name in committed:
-            # Published history and retained bytes were both checked before any deletion.
+        if not current or folder.name != current['generation']:
             shutil.rmtree(folder)
-        else:
-            destination = Path(staging) / ('unpublished-' + folder.name)
-            if destination.exists():
-                raise ValueError('Both unpublished capture recovery locations exist')
-            os.rename(folder, destination)
 
 
 def publish(session, metadata, raw, reader, tail, staging):
@@ -187,8 +177,8 @@ def publish(session, metadata, raw, reader, tail, staging):
     files.safe_directory(session)
     files.safe_directory(staging)
     if session.stat().st_dev != staging.stat().st_dev:
-        raise ValueError('Capture staging and packet must share a filesystem')
-    recover(session, staging)
+        raise ValueError('Capture staging and session must share a filesystem')
+    recover(session)
     previous = read(session)
     current = pointer(session)
     expected_prefix = raw.startswith(previous['raw']) if previous else None
@@ -240,5 +230,5 @@ def publish(session, metadata, raw, reader, tail, staging):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, session / 'current.json')
-    recover(session, staging)
+    recover(session)
     return metadata

@@ -17,17 +17,18 @@ def install_template(destination):
     return str(destination)
 
 
-def open_episode(folder, checkout, actor, job, *additional_jobs):
+def open_episode(folder, checkout, actor, job_files):
+    harness = capture.HARNESSES[actor]
     project_path = Path(
         subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', '--show-toplevel'], text=True).strip()
     ).resolve()
-    home_var, default = ('CODEX_HOME', '.codex') if actor == 'codex' else ('CLAUDE_CONFIG_DIR', '.claude')
-    native_home = Path(os.environ.get(home_var) or Path.home() / default).expanduser().resolve()
+    home = os.environ.get(harness.HOME_VARIABLE) or Path.home() / harness.DEFAULT_HOME
+    native_home = Path(home).expanduser().resolve()
     for path in (project_path, native_home):
         if path.is_relative_to(folder) or folder.is_relative_to(path):
             raise ValueError('Keep the episode, checkout and harness home in separate directories')
     jobs = []
-    for path in (job, *additional_jobs):
+    for path in job_files:
         content = path.read_text(encoding='utf-8')
         if not content.strip():
             raise ValueError(f'The additional job needs opening instructions in {path}')
@@ -40,7 +41,7 @@ def open_episode(folder, checkout, actor, job, *additional_jobs):
             jobs,
             str(native_home),
         ):
-            raise files.Decision('An episode with different instructions or settings already occupies this path')
+            raise ValueError('An episode with different instructions or settings already occupies this path')
         return state
     ident = str(uuid4())
     instructions = '\n\n---\n\n'.join(jobs)
@@ -76,8 +77,16 @@ def load(folder):
     if state.get('schema') != 'berman.episode/1':
         raise ValueError('Expected a Berman episode directory')
     if state['directory'] != str(folder):
-        raise files.Decision('Operate this episode at its opened path. Its record can be read from any copy.')
+        raise ValueError('Operate this episode at its opened path. Its record can be read from any copy.')
     return state
+
+
+def bound_session(folder, state):
+    """The native session bound to the episode, or the one Berman assigns before the first sitting."""
+    binding = folder / 'session-id.json'
+    if binding.exists():
+        return files.read(binding)
+    return capture.HARNESSES[state['actor']].assigned_session(state)
 
 
 def status(folder):
@@ -99,36 +108,28 @@ def launch(folder, request=None, prompt=None):
     with files.lock(folder, '.sitting.lock', blocking=False) as lease:
         state = load(folder)
         if (folder / 'ending.json').exists():
-            raise files.Decision('The manager has closed this episode')
+            raise ValueError('The manager has closed this episode')
         sittings = folder / 'sittings'
         recent = [files.read(p) for p in sorted(sittings.glob('*.json'))]
         for sitting in recent:
             if sitting['request'] == request:
                 if sitting['prompt'] != prompt:
-                    raise files.Decision('This request already started a sitting with different instructions')
+                    raise ValueError('This request already started a sitting with different instructions')
                 return sitting
         if request is not None and not recent:
-            raise files.Decision('Start the first sitting before resuming')
+            raise ValueError('Start the first sitting before resuming')
         if (folder / 'opening.md').read_text() != state['opening']:
-            raise files.Decision('opening.md differs from the opening recorded in episode.json')
+            raise ValueError('opening.md differs from the opening recorded in episode.json')
         actor = state['actor']
+        harness = capture.HARNESSES[actor]
         executable = shutil.which(actor)
         if not executable:
-            raise files.Decision(f'Install {actor} in the Linux development environment before launching')
-        sid = state['id'] if actor == 'claude' else None
-        binding = folder / 'session-id.json'
-        if request is not None and actor == 'codex':
-            if not binding.exists():
-                raise files.Decision('No Codex session was bound. Review the episode hook in the native CLI.')
-            sid = files.read(binding)
+            raise ValueError(f'Install {actor} in the Linux development environment before launching')
+        session = bound_session(folder, state)
+        if request is not None and session is None:
+            raise ValueError('No Codex session was bound. Review the episode hook in the native CLI.')
         files.safe_directory(folder / 'return')
-        options = ['--add-dir', str(folder / 'return')]
-        if actor == 'claude':
-            config = folder / 'claude-hooks.json'
-            files.write(config, capture.hook_settings('claude'))
-            argv = [executable, '--settings', str(config), '--resume' if request else '--session-id', sid, *options]
-        else:
-            argv = [executable, '--no-daemon', *(['resume'] if request else []), *options, *([sid] if request else [])]
+        argv = [executable, *harness.arguments(folder, session, request is not None, capture.hook_settings(actor))]
         text = prompt if request is not None else state['opening']
         if text:
             argv.extend(['--', text])
@@ -143,9 +144,8 @@ def launch(folder, request=None, prompt=None):
         }
         path = sittings / f'{number:06}.json'
         files.write(path, sitting)
-        native_key = 'CODEX_HOME' if actor == 'codex' else 'CLAUDE_CONFIG_DIR'
         env = dict(os.environ, BERMAN_EPISODE=str(folder))
-        env[native_key] = state['home']
+        env[harness.HOME_VARIABLE] = state['home']
         try:
             # Keep the lease in the child as well if the launcher is interrupted.
             process = subprocess.Popen(argv, cwd=state['project'], env=env, pass_fds=(lease.fileno(),))
@@ -175,17 +175,16 @@ def close(folder, reason):
         ending = folder / 'ending.json'
         if ending.exists():
             if files.read(ending)['reason'] != reason:
-                raise files.Decision('A different ending is already recorded')
+                raise ValueError('A different ending is already recorded')
         else:
             files.write(ending, {'reason': reason, 'at': files.now()})
         if (folder / 'record').exists():
             return records.verify(folder / 'record')
         limitations = []
-        sid_path = folder / 'session-id.json'
-        sid = files.read(sid_path) if sid_path.exists() else state['id'] if state['actor'] == 'claude' else None
-        if sid and (folder / 'sittings').is_dir():
+        session = bound_session(folder, state)
+        if session and (folder / 'sittings').is_dir():
             try:
-                capture.observe(folder / 'telemetry', state, sid, {'hook_event_name': 'closeout'})
+                capture.observe(folder / 'telemetry', state, session, {'hook_event_name': 'closeout'})
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 limitations.append(f'Final parent transcript observation: {exc}')
         return records.seal(folder, state, limitations)

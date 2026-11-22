@@ -40,11 +40,11 @@ class SnapshotRetentionTests(unittest.TestCase):
             recover = snapshots.recover
             calls = []
 
-            def stop_after_pointer(session, staging):
+            def stop_after_pointer(session):
                 calls.append(True)
                 if len(calls) == 2:
                     raise OSError('stopped after commit')
-                return recover(session, staging)
+                return recover(session)
 
             with patch.object(snapshots, 'recover', side_effect=stop_after_pointer):
                 with self.assertRaisesRegex(OSError, 'stopped after commit'):
@@ -63,7 +63,7 @@ class SnapshotRetentionTests(unittest.TestCase):
         self.publish(b'replacement\n', interrupt=True)
         (self.session / 'displaced' / (old['sha256'] + '.jsonl')).unlink()
         before = self.tree()
-        for action in (lambda: snapshots.read(self.session), lambda: snapshots.recover(self.session, self.staging)):
+        for action in (lambda: snapshots.read(self.session), lambda: snapshots.recover(self.session)):
             with self.assertRaises(FileNotFoundError):
                 action()
             self.assertEqual(self.tree(), before)
@@ -90,7 +90,7 @@ class SnapshotRetentionTests(unittest.TestCase):
         path.unlink()
         before = self.tree()
         with self.assertRaises(FileNotFoundError):
-            snapshots.recover(self.session, self.staging)
+            snapshots.recover(self.session)
         self.assertEqual(self.tree(), before)
 
     def test_current_tail_can_satisfy_a_repeated_prior_tail_obligation(self):
@@ -105,7 +105,7 @@ class SnapshotRetentionTests(unittest.TestCase):
         self.publish(b'original\ncontinued\n', interrupt=True)
         (original / 'capture.json').unlink()
         (original / 'transcript.jsonl').unlink()
-        snapshots.recover(self.session, self.staging)
+        snapshots.recover(self.session)
         self.assertFalse(original.exists())
         self.assertEqual(snapshots.read(self.session)['raw'], b'original\ncontinued\n')
 
@@ -113,6 +113,17 @@ class SnapshotRetentionTests(unittest.TestCase):
         self.publish(b'observed')
         (self.session / 'current.json').unlink()
         self.assertIsNone(snapshots.read(self.session))
+
+    def test_unpublished_generation_is_discarded_at_the_next_capture(self):
+        self.publish(b'original\n')
+        unpublished = self.session / 'snapshots' / ('0' * 64)
+        unpublished.mkdir()
+        (unpublished / 'transcript.jsonl').write_bytes(b'original\ninterrupted\n')
+        self.publish(b'original\ncontinued\n')
+        self.assertEqual(
+            [p.name for p in (self.session / 'snapshots').iterdir()], [snapshots.pointer(self.session)['generation']]
+        )
+        self.assertEqual(snapshots.read(self.session)['raw'], b'original\ncontinued\n')
 
     def test_prefix_claim_is_checked_against_bytes_before_publication(self):
         self.publish(b'original\n')

@@ -9,7 +9,7 @@ import stat
 import subprocess
 from uuid import UUID
 
-from berman import capture, files, project, snapshots
+from berman import files, project, snapshots
 
 MANIFEST = 'manifest.json'
 SCHEMA = 'berman.episode-record/1'
@@ -136,7 +136,7 @@ def seal(folder, state, limitations):
                         size = path.stat().st_size
                         if count >= 4096 or retained + size > 1024 * 1024 * 1024:
                             raise ValueError('episode record size or file limit reached')
-                        raw = capture.stable_bytes(path, capture.FILE_LIMIT)
+                        raw = files.stable_bytes(path, files.FILE_LIMIT)
                     except (OSError, ValueError) as exc:
                         problem = str(exc)
                 if problem:
