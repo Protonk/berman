@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "berman"
-version = "0.26.7"
+version = "0.26.8"
 description = "Intermittent project management with additional actor jobs and verifiable episode records on Linux."
 readme = "README.md"
 license = "MIT"
