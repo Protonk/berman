@@ -12,6 +12,10 @@ images:
 user:
   name: berman-admin
 mounts: []
+# Answer IPv6 lookups. Otherwise each AAAA query waits 2 s for a failure, and codex --no-daemon
+# gives up during startup. The guest has no IPv6 route, so lookups still list IPv4 first.
+hostResolver:
+  ipv6: true
 portForwards:
 - guestIP: "0.0.0.0"
   proto: any
