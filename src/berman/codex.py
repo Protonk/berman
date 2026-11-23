@@ -45,12 +45,13 @@ def arguments(folder, session, resuming, hooks, attended):
 
 
 def outcome(output):
-    """The session, final message and declined operations in one codex exec event stream.
+    """The session and final message in one codex exec event stream.
 
-    Codex reports each reconnection attempt as an error event. Those matter only when the turn
-    did not complete; the retained output keeps all of them.
+    Codex tells the actor, not the event stream, when it refuses an operation, so there are no
+    denials to report. Each reconnection attempt is an error event. Those matter only when the
+    turn did not complete; the retained output keeps all of them.
     """
-    sessions, messages, denials, limitations, errors = [], [], [], [], []
+    sessions, messages, limitations, errors = [], [], [], []
     finished, malformed, events = None, 0, 0
     for line in output.splitlines():
         if not line.strip():
@@ -80,8 +81,6 @@ def outcome(output):
             limitations.append(f'The native turn failed: {message or "no reason given"}.')
         elif kind == 'error':
             errors.append(message or 'no reason given')
-        if kind == 'item.completed' and item.get('status') == 'declined':
-            denials.append({'tool': item.get('type'), 'input': item.get('command', item.get('changes'))})
     if malformed:
         limitations.append(f'{malformed} native output lines were not JSON.')
     if len(set(sessions)) > 1:
@@ -97,7 +96,7 @@ def outcome(output):
     return {
         'session': sessions[0] if len(set(sessions)) == 1 else None,
         'response': messages[-1] if finished == 'completed' and messages else None,
-        'denials': denials,
+        'denials': None,
         'limitations': limitations,
     }
 

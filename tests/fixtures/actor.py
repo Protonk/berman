@@ -15,6 +15,9 @@ import sys
 import time
 from uuid import uuid4
 
+if os.environ.get('FIXTURE_DROP_LEASE'):
+    # The Codex binary does not keep descriptors it inherits beyond the standard three.
+    os.closerange(3, 1024)
 args = sys.argv[1:]
 actor = Path(sys.argv[0]).name
 project = Path.cwd()
@@ -135,9 +138,6 @@ else:
     # Codex reports reconnection attempts as errors whether or not the turn later completes.
     retry = {'type': 'error', 'message': 'Reconnecting... 1/5 (stream disconnected)'}
     events = [{'type': 'thread.started', 'thread_id': reported}, {'type': 'turn.started'}, retry]
-    if option('FIXTURE_DENY'):
-        item = {'id': 'item_0', 'type': 'command_execution', 'command': 'touch x', 'status': 'declined'}
-        events.append({'type': 'item.completed', 'item': item})
     # A turn can report progress in a message and still fail.
     events.append({'type': 'item.completed', 'item': {'id': 'item_1', 'type': 'agent_message', 'text': reply}})
     if failed:

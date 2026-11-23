@@ -47,7 +47,12 @@ def outcome(output):
             (item for item in reversed(value) if isinstance(item, dict) and item.get('type') == 'result'), None
         )
     if not isinstance(value, dict) or value.get('type') != 'result':
-        return {'session': None, 'response': None, 'denials': [], 'limitations': ['The native output holds no result.']}
+        return {
+            'session': None,
+            'response': None,
+            'denials': None,
+            'limitations': ['The native output holds no result.'],
+        }
     session = value.get('session_id')
     denials = [
         {'tool': item.get('tool_name'), 'input': item.get('tool_input')}
@@ -60,7 +65,13 @@ def outcome(output):
     else:
         subtype = value.get('subtype')
         errors = [item for item in value.get('errors') or () if isinstance(item, str)]
-        parts = [subtype if subtype != 'success' else None, text if isinstance(text, str) else None, *errors]
+        ending = value.get('terminal_reason')
+        parts = [
+            subtype if subtype != 'success' else None,
+            ending if ending != 'completed' else None,
+            text if isinstance(text, str) else None,
+            *errors,
+        ]
         detail = '; '.join(str(part) for part in parts if part) or 'no detail'
         response, limitations = None, [f'The native result reports an error: {detail}']
     return {

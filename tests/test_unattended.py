@@ -6,10 +6,12 @@ how the real Claude Code or Codex CLIs behave.
 
 import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
 import time
+import unittest
 
 from tests import test_episodes
 
@@ -61,7 +63,8 @@ class UnattendedTests(test_episodes.EpisodeCase):
                     self.assertFalse(sitting['attended'])
                     self.assertEqual(sitting['exit'], 0)
                     self.assertEqual(sitting['response'], f'done {number}: {message}')
-                    self.assertEqual((sitting['denials'], sitting['limitations']), ([], []))
+                    self.assertEqual(sitting['denials'], [] if actor == 'claude' else None)
+                    self.assertEqual(sitting['limitations'], [])
                     self.assertEqual(sitting['native_session'], sittings[0]['native_session'])
                 status = self.cli('status', self.folder)
                 self.assertIsNone(status['ending'])
@@ -161,7 +164,11 @@ class UnattendedTests(test_episodes.EpisodeCase):
                 denied = self.send('denied', 'Write the note.')
                 del self.env['FIXTURE_DENY']
                 self.assertEqual(denied['response'], 'done 3: Write the note.')
-                self.assertEqual(len(denied['denials']), 1)
+                # Codex reports refusals to the actor only, so Berman has none to list.
+                self.assertEqual(
+                    len(denied['denials']) if actor == 'claude' else denied['denials'], 1 if actor == 'claude' else None
+                )
+                self.assertIsNone(silent['denials'])
                 after = self.send('after', 'Try again more simply.')
                 self.assertEqual(after['response'], 'done 4: Try again more simply.')
                 self.assertIsNone(self.cli('status', self.folder)['ending'])
@@ -201,6 +208,21 @@ class UnattendedTests(test_episodes.EpisodeCase):
         receipt = self.cli('close', self.folder, '--reason', 'Enough for today.')
         self.assertIn('sittings/000001.json: process exit unobserved.', receipt['coverage']['limitations'])
 
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'process start times come from /proc')
+    def test_an_actor_that_drops_the_lease_still_holds_the_episode(self):
+        self.opening('codex', jobs=())
+        self.env.update(FIXTURE_SLEEP='2', FIXTURE_DROP_LEASE='1')
+        process = self.background('start', self.folder, '--unattended', '--prompt', 'Survey the modules.')
+        process.kill()
+        process.wait()
+        self.send(None, 'Survey the modules.', error='still running as process')
+        self.cli('close', self.folder, '--reason', 'Too early.', error='still running as process')
+        self.send('other', 'Something else.', error='still running as process')
+        retried = []
+        self.wait_for(lambda: self.retry(retried))
+        self.assertEqual(retried[0]['response'], 'done 1: Survey the modules.')
+        self.assertEqual(len(self.launches()), 1)
+
     def retry(self, retried):
         result = subprocess.run(
             [
@@ -219,7 +241,7 @@ class UnattendedTests(test_episodes.EpisodeCase):
             text=True,
             capture_output=True,
         )
-        if 'in progress' in result.stderr:
+        if 'in progress' in result.stderr or 'still running' in result.stderr:
             return False
         self.assertEqual(result.returncode, 0, result.stderr)
         retried.append(json.loads(result.stdout))

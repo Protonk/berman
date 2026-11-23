@@ -101,6 +101,27 @@ def bound_session(folder, state):
     return capture.HARNESSES[state['actor']].assigned_session(state)
 
 
+def recorded(folder):
+    return [files.read(p) for p in sorted((folder / 'sittings').glob('*.json'))]
+
+
+def process_start(pid):
+    """When a live process started, from /proc, or None if it has ended or /proc is absent."""
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rpartition(')')[2].split()
+    except OSError:
+        return None
+    return None if fields[0] == 'Z' else fields[19]
+
+
+def refuse_while_running(sittings):
+    """Some actor CLIs drop the inherited lease, so check the process a sitting recorded."""
+    for sitting in sittings:
+        started = sitting.get('pid_started')
+        if sitting['exit'] is None and started is not None and process_start(sitting['pid']) == started:
+            raise ValueError(f'The actor from sitting {sitting["number"]} is still running as process {sitting["pid"]}')
+
+
 def status(folder):
     state = load(folder)
     ending = folder / 'ending.json'
@@ -111,7 +132,7 @@ def status(folder):
         'opening': str(folder / 'opening.md'),
         'return': str(folder / 'return'),
         'ending': files.read(ending) if ending.exists() else None,
-        'sittings': [files.read(p) for p in sorted((folder / 'sittings').glob('*.json'))],
+        'sittings': recorded(folder),
         'record': str(folder / 'record') if (folder / 'record').is_dir() else None,
     }
 
@@ -124,13 +145,14 @@ def launch(folder, request=None, prompt=None, attended=True):
         actor = state['actor']
         harness = capture.HARNESSES[actor]
         sittings = folder / 'sittings'
-        recent = [files.read(p) for p in sorted(sittings.glob('*.json'))]
+        recent = recorded(folder)
+        refuse_while_running(recent)
         for sitting in recent:
             if sitting['request'] == request:
                 if (sitting['prompt'], sitting.get('attended', True)) != (prompt, attended):
                     raise ValueError('This request already started a sitting with different instructions')
                 if not attended and sitting.get('pid') and sitting['exit'] is None and 'response' not in sitting:
-                    # The launcher stopped before the exit. Holding the lease, no process still writes this output.
+                    # The launcher stopped before the exit, and no recorded process still writes this output.
                     sitting.update(account(folder, state, harness, sitting))
                     sitting['limitations'].insert(0, 'The launcher did not observe the process exit.')
                     files.write(sittings / f'{sitting["number"]:06}.json', sitting)
@@ -183,7 +205,7 @@ def launch(folder, request=None, prompt=None, attended=True):
             sitting['error'] = str(exc)
             files.write(path, sitting)
             raise
-        sitting['pid'] = process.pid
+        sitting.update(pid=process.pid, pid_started=process_start(process.pid))
         files.write(path, sitting)
         while True:
             try:
@@ -204,7 +226,7 @@ def account(folder, state, harness, sitting):
     try:
         result = harness.outcome(files.stable_bytes(folder / sitting['stdout'], files.FILE_LIMIT))
     except (OSError, ValueError) as exc:
-        result = {'session': None, 'response': None, 'denials': [], 'limitations': [f'Native output unread: {exc}']}
+        result = {'session': None, 'response': None, 'denials': None, 'limitations': [f'Native output unread: {exc}']}
     limitations = list(result['limitations'])
     reported = result['session']
     if reported is not None:
@@ -236,6 +258,7 @@ def close(folder, reason):
         raise ValueError('The producer must supply an ending reason')
     with files.lock(folder, '.sitting.lock', blocking=False), files.lock(folder, '.capture.lock'):
         state = load(folder)
+        refuse_while_running(recorded(folder))
         ending = folder / 'ending.json'
         if ending.exists():
             if files.read(ending)['reason'] != reason:

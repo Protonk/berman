@@ -9,7 +9,7 @@ A record contains only these members.
 | `opening.md`, `ending.json` | The message the actor received and the producer’s reason for closing. |
 | `return/` | The regular files the actor left in the return directory. |
 | `episode.json`, `final-project.json` | The opening, actor, project path, and the Git revision and worktree status Berman observed at the opening and at closing, where available. |
-| `sittings/` | Which sittings were requested and with what message, whether each was attended, which executable started, and which exits the launcher observed. An unattended sitting also keeps its native output and the response, refusals and limitations Berman read in it. |
+| `sittings/` | Which sittings were requested and with what message, whether each was attended, which executable started, and which exits the launcher observed. An unattended sitting also keeps its native output and the response, denials and limitations Berman read in it. |
 | `telemetry/events/` | Callbacks attributed to the bound native session. An event can arrive before a transcript is readable. |
 | `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. |
 | `telemetry/displaced/`, `telemetry/tails/` | Earlier transcript versions that a later capture did not extend, and incomplete final lines, when observed. |
