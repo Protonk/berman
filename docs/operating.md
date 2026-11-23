@@ -26,7 +26,7 @@ codex login --device-auth
 claude auth login
 ```
 
-**Claude Code.** Berman supplies a fresh native session ID and a hook settings file to the launched process.
+**Claude Code.** Berman supplies a fresh native session ID and a hook settings file to the launched process. In an attended sitting, Claude Code can ask whether to trust the checkout and the return directory. Print mode does not ask.
 
 **Codex.** Run `berman codex-hooks` from the installed environment. Review the printed command and merge its four groups into the corresponding events in the Linux Codex home’s `hooks.json`, preserving existing handlers. For a new home with no hook file:
 
@@ -72,6 +72,6 @@ berman close EPISODE --reason "The team has decided how to proceed."
 
 Each distinct resume request identifies one sitting of the same native session. Reuse its label, prompt and attendance when retrying. Repeating a request returns the recorded sitting and never starts the actor again. Repeating start also returns the first sitting. Keep sitting requests short and meaningful. A missing exit means the launcher did not observe it; inspect the native process before continuing. If the launcher stopped during an unattended sitting, repeat the same request after the actor exits to read what its output reports. Concurrent starts and closeouts refuse while a sitting holds the episode lock. The Codex CLI does not keep the lock it inherits, so Berman also refuses while the process a sitting recorded is still running. An interrupt from the terminal reaches the actor, and Berman records the resulting exit. Claude Code can exit with status 0 after an interrupt; its result then reports the interruption as an error. A native exit leaves the episode open.
 
-The checkout can change between any two Berman commands. Other people, sessions and tools can work in it without Berman, and their changes do not invalidate the episode. A sitting needs only the checkout, the actor’s CLI and, when resuming, the bound native session. Berman refuses a sitting while the checkout is missing and records any native failure to resume. Sessions that Berman did not launch stay outside the episode, even in the same checkout and harness home.
+The checkout can change between any two Berman commands. Other people, sessions and tools can work in it without Berman, and their changes do not invalidate the episode. A sitting needs only the checkout, the actor’s CLI and, when resuming, the bound native session. Berman refuses a sitting while the checkout is missing and records any native failure to resume. If the first sitting ends before the actor’s CLI starts a session, for example because the CLI cannot reach its service, there is no session to resume. Close that episode with the reason and open another. Sessions that Berman did not launch stay outside the episode, even in the same checkout and harness home.
 
 Closing records the producer’s reason, closes callback intake, and publishes `EPISODE/record`. A close interrupted during publication can be repeated with the original reason. Its output includes the manifest digest. Keep that digest separately when you need to verify a copy against the record you received.
