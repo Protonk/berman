@@ -19,10 +19,19 @@ IDENTITY = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}')
 
 
 def first_message(state, prompt):
-    """The first sitting delivers the opening, followed by the producer's message when there is one."""
+    """An opening sitting delivers the opening, followed by the producer's message when there is one."""
     if prompt is None:
         return state['opening']
     return f'{state["opening"]}\nMessage from the producer:\n\n{prompt}'
+
+
+def opening_message(folder, state):
+    """What the latest sitting delivered first, if it delivered the opening. Sittings run one at a time."""
+    paths = sorted((folder / 'sittings').glob('*.json'))
+    if not paths:
+        return None
+    sitting = files.read(paths[-1])
+    return first_message(state, sitting['prompt']) if sitting.get('opening', sitting['request'] is None) else None
 
 
 def find_parent(home, harness, session):
@@ -93,6 +102,14 @@ def observe(folder, state, session, event):
     return snapshots.publish(folder / 'session', record, raw, reader, tail, folder / 'scratch')
 
 
+def captured(session):
+    """Whether a transcript generation was ever published. An unreadable pointer counts as published."""
+    try:
+        return snapshots.pointer(session) is not None
+    except (OSError, ValueError):
+        return True
+
+
 def hook_settings(name):
     command = shlex.join([sys.executable, '-I', '-B', '-m', 'berman.capture', name])
     return {
@@ -116,11 +133,10 @@ def record(folder, name, event):
         if state['actor'] != name or (folder / 'ending.json').exists() or not (folder / 'sittings').is_dir():
             return
         bound = folder / 'session-id.json'
-        first = folder / 'sittings' / '000001.json'
         if bound.exists():
             if files.read(bound) != sid:
                 return
-        elif not first.exists() or not harness.binds(state, event, first_message(state, files.read(first)['prompt'])):
+        elif not harness.binds(state, event, opening_message(folder, state)):
             return
         files.keep(bound, files.json_bytes(sid))
         area = folder / 'telemetry'
@@ -130,6 +146,12 @@ def record(folder, name, event):
         try:
             result = observe(area, state, sid, event)
             row['generation'] = files.digest_json(result)
+        except FileNotFoundError as exc:
+            # Claude Code calls its first hooks before it writes the transcript. Later absence is a gap.
+            if not captured(area / 'session'):
+                row['observation'] = 'The native transcript did not exist yet.'
+            else:
+                row['limitation'] = str(exc)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             row['limitation'] = str(exc)
         files.write(path, row)

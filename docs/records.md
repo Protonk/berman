@@ -9,8 +9,8 @@ A record contains only these members.
 | `opening.md`, `ending.json` | The message the actor received and the producer’s reason for closing. |
 | `return/` | The regular files the actor left in the return directory. |
 | `episode.json`, `final-project.json` | The opening, actor, project path, and the Git revision and worktree status Berman observed at the opening and at closing, where available. |
-| `sittings/` | Which sittings were requested and with what message, whether each was attended, which executable started, and which exits the launcher observed. An unattended sitting also keeps its native output and the response, denials and limitations Berman read in it. |
-| `telemetry/events/` | Callbacks attributed to the bound native session. An event can arrive before a transcript is readable. |
+| `sittings/` | Which sittings were requested and with what message, whether each delivered the opening or was attended, which executable started, and which exits the launcher observed. An unattended sitting also keeps its native output and the response, denials and limitations Berman read in it. |
+| `telemetry/events/` | Callbacks attributed to the bound native session. An event that arrives before the transcript exists says so and is not counted as a gap. |
 | `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. |
 | `telemetry/displaced/`, `telemetry/tails/` | Earlier transcript versions that a later capture did not extend, and incomplete final lines, when observed. |
 | `coverage.json` | Scope, missing observations, and entries that could not be collected. |

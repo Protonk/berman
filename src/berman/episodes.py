@@ -105,6 +105,15 @@ def recorded(folder):
     return [files.read(p) for p in sorted((folder / 'sittings').glob('*.json'))]
 
 
+def session_started(folder, state):
+    """Whether a native session for the episode is known: bound, or Claude's assigned one on disk."""
+    if (folder / 'session-id.json').exists():
+        return True
+    harness = capture.HARNESSES[state['actor']]
+    session = harness.assigned_session(state)
+    return session is not None and any(harness.candidates(Path(state['home']), session))
+
+
 def process_start(pid):
     """When a live process started, from /proc, or None if it has ended or /proc is absent."""
     try:
@@ -137,7 +146,9 @@ def status(folder):
     }
 
 
-def launch(folder, request=None, prompt=None, attended=True):
+def launch(folder, request=None, prompt=None, attended=True, opening=None):
+    """Start or retry a sitting. An opening sitting delivers the opening; others resume the session."""
+    opening = request is None if opening is None else opening
     with files.lock(folder, '.sitting.lock', blocking=False) as lease:
         state = load(folder)
         if (folder / 'ending.json').exists():
@@ -149,7 +160,12 @@ def launch(folder, request=None, prompt=None, attended=True):
         refuse_while_running(recent)
         for sitting in recent:
             if sitting['request'] == request:
-                if (sitting['prompt'], sitting.get('attended', True)) != (prompt, attended):
+                recorded_as = (
+                    sitting['prompt'],
+                    sitting.get('attended', True),
+                    sitting.get('opening', request is None),
+                )
+                if recorded_as != (prompt, attended, opening):
                     raise ValueError('This request already started a sitting with different instructions')
                 if not attended and sitting.get('pid') and sitting['exit'] is None and 'response' not in sitting:
                     # The launcher stopped before the exit, and no recorded process still writes this output.
@@ -157,8 +173,15 @@ def launch(folder, request=None, prompt=None, attended=True):
                     sitting['limitations'].insert(0, 'The launcher did not observe the process exit.')
                     files.write(sittings / f'{sitting["number"]:06}.json', sitting)
                 return sitting
-        if request is not None and not recent:
+        if not opening and not recent:
             raise ValueError('Start the first sitting before resuming')
+        if opening and recent and session_started(folder, state):
+            raise ValueError('The actor’s session has already started. Continue it with resume.')
+        if not opening and not session_started(folder, state):
+            raise ValueError(
+                'No native session is known for this episode. If the first sitting ended before the actor’s CLI '
+                'started one, start again with a new --request. For Codex, also check that the episode hook ran.'
+            )
         if (folder / 'opening.md').read_text() != state['opening']:
             raise ValueError('opening.md differs from the opening recorded in episode.json')
         if not Path(state['project']).is_dir():
@@ -167,12 +190,10 @@ def launch(folder, request=None, prompt=None, attended=True):
         if not executable:
             raise ValueError(f'Install {actor} in the Linux development environment before launching')
         session = bound_session(folder, state)
-        if request is not None and session is None:
-            raise ValueError('No Codex session was bound. Review the episode hook in the native CLI.')
         files.safe_directory(folder / 'return')
         hooks = capture.hook_settings(actor)
-        argv = [executable, *harness.arguments(folder, session, request is not None, hooks, attended)]
-        text = prompt if request is not None else capture.first_message(state, prompt)
+        argv = [executable, *harness.arguments(folder, session, not opening, hooks, attended)]
+        text = capture.first_message(state, prompt) if opening else prompt
         if text:
             argv.extend(['--', text])
         number = len(recent) + 1
@@ -180,6 +201,7 @@ def launch(folder, request=None, prompt=None, attended=True):
             'number': number,
             'request': request,
             'prompt': prompt,
+            'opening': opening,
             'attended': attended,
             'started_at': files.now(),
             'executable': executable,

@@ -73,8 +73,35 @@ else:
     first = {'sessionId': sid, 'type': 'system'}
 if unattended:
     assert not sys.stdin.isatty() and sys.stdin.read() == ''
+if option('FIXTURE_NO_SESSION'):
+    # The CLI fails before it starts a session, as Codex did when it could not reach its service.
+    print('could not reach the service', file=sys.stderr)
+    sys.exit(1)
+
+
+def callback(event, prompt=''):
+    hooks = json.loads(definition.read_text())['hooks']
+    payload = {
+        'hook_event_name': event,
+        'session_id': sid,
+        'cwd': str(project),
+        'prompt': prompt,
+        'transcript_path': str(transcript),
+    }
+    result = subprocess.run(
+        shlex.split(hooks[event][0]['hooks'][0]['command']),
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == {}
+
 
 if not transcript.exists():
+    if option('FIXTURE_EARLY_HOOK'):
+        # Claude Code calls SessionStart before it writes the transcript.
+        callback('SessionStart')
     assert prompt.startswith((folder / 'opening.md').read_text())
     transcript.parent.mkdir(parents=True, exist_ok=True)
     transcript.write_text(json.dumps(first) + '\n')
@@ -98,23 +125,8 @@ if seconds := option('FIXTURE_SLEEP'):
     time.sleep(float(seconds))
 
 if not option('FIXTURE_WITHOUT_HOOKS'):
-    hooks = json.loads(definition.read_text())['hooks']
     for event in ('UserPromptSubmit', 'Stop', 'SessionEnd'):
-        payload = {
-            'hook_event_name': event,
-            'session_id': sid,
-            'cwd': str(project),
-            'prompt': prompt,
-            'transcript_path': str(transcript),
-        }
-        result = subprocess.run(
-            shlex.split(hooks[event][0]['hooks'][0]['command']),
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        assert json.loads(result.stdout) == {}
+        callback(event, prompt)
 
 if not unattended:
     sys.exit(0)

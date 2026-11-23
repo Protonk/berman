@@ -24,9 +24,10 @@ def assigned_session(state):
 
 
 def binds(state, event, first):
-    """The first sitting's message, submitted in the checkout, binds the session Codex chose."""
+    """The latest opening sitting's first message, submitted in the checkout, binds Codex's session."""
     return (
         event['hook_event_name'] == 'UserPromptSubmit'
+        and first is not None
         and event.get('prompt') == first
         and bool(event.get('cwd'))
         and Path(event['cwd']).resolve() == Path(state['project'])

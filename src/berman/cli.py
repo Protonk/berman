@@ -46,6 +46,10 @@ def parser():
         cmd.add_argument('episode', type=path)
         if name == 'resume':
             cmd.add_argument('--request', required=True, help='stable nonempty label for this sitting')
+        if name == 'start':
+            cmd.add_argument(
+                '--request', help='label for another attempt at the opening while no native session has started'
+            )
         if name in ('start', 'resume'):
             after = 'after the opening' if name == 'start' else 'in this sitting'
             cmd.add_argument('--prompt', help=f'message for the actor {after}; required with --unattended')
@@ -84,14 +88,14 @@ def main(argv=None):
             case 'open':
                 result = episodes.open_episode(args.episode, args.project, args.actor, args.jobs)
             case 'start' | 'resume':
-                request = args.request if args.command == 'resume' else None
-                if request is not None and not request.strip():
+                opening = args.command == 'start'
+                if args.request is not None and not args.request.strip():
                     raise ValueError('Supply a nonempty request label')
-                if (args.unattended or request is None) and args.prompt is not None and not args.prompt.strip():
+                if (args.unattended or opening) and args.prompt is not None and not args.prompt.strip():
                     raise ValueError('Supply a nonempty prompt')
                 if args.unattended and args.prompt is None:
                     raise ValueError('An unattended sitting needs a message in --prompt')
-                result = episodes.launch(args.episode, request, args.prompt, not args.unattended)
+                result = episodes.launch(args.episode, args.request, args.prompt, not args.unattended, opening)
             case 'status':
                 result = episodes.status(args.episode)
             case 'close':

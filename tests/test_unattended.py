@@ -247,6 +247,66 @@ class UnattendedTests(test_episodes.EpisodeCase):
         retried.append(json.loads(result.stdout))
         return True
 
+    def test_an_opening_that_started_no_session_can_be_tried_again(self):
+        for actor in ACTORS:
+            with self.subTest(actor=actor):
+                self.folder = self.base / 'episodes' / f'{actor}-again'
+                self.opening(actor, jobs=())
+                self.env['FIXTURE_NO_SESSION'] = '1'
+                failed = self.send(None, 'Begin.', code=1)
+                del self.env['FIXTURE_NO_SESSION']
+                self.assertIsNone(failed['response'])
+                self.assertIn('could not reach the service', failed['limitations'][-1])
+                self.assertEqual(self.send(None, 'Begin.', code=1), failed)
+                self.send('next', 'More.', error='No native session is known')
+                retry = ('start', self.folder, '--request', 'again', '--unattended', '--prompt', 'Begin.')
+                again = self.cli(*retry)
+                self.assertTrue(again['opening'])
+                self.assertEqual(again['response'], 'done 1: Begin.')
+                launches = len(self.launches())
+                self.assertEqual(self.cli(*retry), again)
+                self.assertEqual(len(self.launches()), launches)
+                self.cli(
+                    'resume', self.folder, '--request', 'again', '--unattended', '--prompt', 'Begin.', error='different'
+                )
+                self.assertEqual(self.send('next', 'More.')['response'], 'done 2: More.')
+                self.cli('start', self.folder, '--request', 'third', '--prompt', 'Begin.', error='already started')
+                self.cli('close', self.folder, '--reason', 'The second attempt reached the actor.')
+                self.assertIn('done 2: More.', (self.folder / 'record/telemetry/parent/conversation.txt').read_text())
+
+    def test_codex_hook_binds_an_attended_second_opening(self):
+        self.opening('codex', jobs=())
+        self.env['FIXTURE_NO_SESSION'] = '1'
+        self.cli('start', self.folder, code=1)
+        del self.env['FIXTURE_NO_SESSION']
+        self.cli('resume', self.folder, '--request', 'next', error='No native session is known')
+        self.cli('start', self.folder, '--request', 'again', '--prompt', 'Begin with the tests.')
+        self.assertTrue((self.folder / 'session-id.json').exists())
+        self.assertEqual(self.cli('resume', self.folder, '--request', 'next')['exit'], 0)
+
+    def test_a_callback_before_the_transcript_exists_is_not_a_gap(self):
+        self.env['FIXTURE_EARLY_HOOK'] = '1'
+        state = self.opening('claude', jobs=())
+        self.send(None, 'Begin.')
+        rows = [json.loads(p.read_text()) for p in (self.folder / 'telemetry/events').iterdir()]
+        early = [row for row in rows if row['event']['hook_event_name'] == 'SessionStart']
+        self.assertEqual([row.get('observation') for row in early], ['The native transcript did not exist yet.'])
+        self.assertNotIn('limitation', early[0])
+        # Once a transcript has been captured, its absence is a gap.
+        gone = Path(self.env['CLAUDE_CONFIG_DIR']) / 'projects' / 'example' / 'gone.jsonl'
+        event = {'hook_event_name': 'Stop', 'session_id': state['id'], 'transcript_path': str(gone)}
+        subprocess.run(
+            [sys.executable, '-I', '-m', 'berman.capture', 'claude'],
+            input=json.dumps(event),
+            text=True,
+            env=dict(self.env, BERMAN_EPISODE=str(self.folder)),
+            capture_output=True,
+            check=True,
+        )
+        limitations = self.cli('close', self.folder, '--reason', 'Checked.')['coverage']['limitations']
+        self.assertEqual(len([item for item in limitations if 'gone.jsonl' in item]), 1)
+        self.assertFalse([item for item in limitations if 'SessionStart' in item or 'did not exist' in item])
+
     def test_codex_output_binds_a_session_no_callback_bound(self):
         self.env['FIXTURE_WITHOUT_HOOKS'] = '1'
         self.opening('codex', jobs=())
