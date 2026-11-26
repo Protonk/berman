@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import signal
 import subprocess
-import sys
 import time
 import unittest
 
@@ -32,7 +31,7 @@ class UnattendedTests(test_episodes.EpisodeCase):
 
     def background(self, *args):
         """Run Berman in its own process group so a test can signal it alone or with the actor."""
-        command = [sys.executable, '-I', '-m', 'berman', *map(str, args)]
+        command = [*test_episodes.BERMAN, *map(str, args)]
         process = subprocess.Popen(
             command, cwd=self.base, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
         )
@@ -208,7 +207,9 @@ class UnattendedTests(test_episodes.EpisodeCase):
         receipt = self.cli('close', self.folder, '--reason', 'Enough for today.')
         self.assertIn('sittings/000001.json: process exit unobserved.', receipt['coverage']['limitations'])
 
-    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'process start times come from /proc')
+    @unittest.skipUnless(
+        test_episodes.UNDER_TEST or Path('/proc/self/stat').exists(), 'the Python reads process start times from /proc'
+    )
     def test_an_actor_that_drops_the_lease_still_holds_the_episode(self):
         self.opening('codex', jobs=())
         self.env.update(FIXTURE_SLEEP='2', FIXTURE_DROP_LEASE='1')
@@ -226,10 +227,7 @@ class UnattendedTests(test_episodes.EpisodeCase):
     def retry(self, retried):
         result = subprocess.run(
             [
-                sys.executable,
-                '-I',
-                '-m',
-                'berman',
+                *test_episodes.BERMAN,
                 'start',
                 self.folder,
                 '--unattended',
@@ -296,7 +294,7 @@ class UnattendedTests(test_episodes.EpisodeCase):
         gone = Path(self.env['CLAUDE_CONFIG_DIR']) / 'projects' / 'example' / 'gone.jsonl'
         event = {'hook_event_name': 'Stop', 'session_id': state['id'], 'transcript_path': str(gone)}
         subprocess.run(
-            [sys.executable, '-I', '-m', 'berman.capture', 'claude'],
+            test_episodes.callback('claude'),
             input=json.dumps(event),
             text=True,
             env=dict(self.env, BERMAN_EPISODE=str(self.folder)),

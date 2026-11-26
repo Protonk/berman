@@ -1,0 +1,35 @@
+[package]
+name = "berman"
+version = "0.26.9"
+edition = "2024"
+rust-version = "1.99"
+description = "A producer uses Berman for intermittent project management by correspondence, with additional actor jobs and verifiable episode records."
+license = "MIT"
+repository = "https://github.com/Protonk/berman"
+build = "src/berman/build.rs"
+autobins = false
+autotests = false
+
+[lib]
+name = "berman"
+path = "src/berman/lib.rs"
+
+[[bin]]
+name = "berman"
+path = "src/berman/main.rs"
+
+[dependencies]
+clap = { version = "4.5", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions"] }
+getrandom = "0.3"
+libc = "0.2"
+serde = "1"
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
+sha2 = "0.10"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = true

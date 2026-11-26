@@ -12,6 +12,14 @@ import tempfile
 import unittest
 
 RECORDS_GUIDE = Path(__file__).resolve().parents[1] / 'docs' / 'records.md'
+# BERMAN_UNDER_TEST names another executable with the same commands, such as a native build.
+UNDER_TEST = os.environ.get('BERMAN_UNDER_TEST')
+BERMAN = [UNDER_TEST] if UNDER_TEST else [sys.executable, '-I', '-m', 'berman']
+
+
+def callback(actor):
+    """The command a harness runs for each callback."""
+    return [UNDER_TEST, 'capture', actor] if UNDER_TEST else [sys.executable, '-I', '-m', 'berman.capture', actor]
 
 
 def documented_members():
@@ -52,7 +60,7 @@ class EpisodeCase(unittest.TestCase):
 
     def cli(self, *args, error=None, code=0):
         result = subprocess.run(
-            [sys.executable, '-I', '-m', 'berman', *map(str, args)],
+            [*BERMAN, *map(str, args)],
             cwd=self.base,
             env=self.env,
             text=True,
@@ -174,7 +182,7 @@ class EpisodeTests(EpisodeCase):
 
     def test_ordinary_callback_requires_no_episode_files(self):
         result = subprocess.run(
-            [sys.executable, '-I', '-m', 'berman.capture', 'codex'],
+            callback('codex'),
             env=self.env,
             input='ordinary input',
             text=True,
@@ -191,7 +199,7 @@ class EpisodeTests(EpisodeCase):
         first = set(events.iterdir())
         row = {'hook_event_name': 'Stop', 'session_id': 'different'}
         env = dict(self.env, BERMAN_EPISODE=str(self.folder))
-        cmd = [sys.executable, '-I', '-m', 'berman.capture', 'codex']
+        cmd = callback('codex')
         subprocess.run(cmd, input=json.dumps(row), text=True, env=env, capture_output=True, check=True)
         self.assertEqual(first, set(events.iterdir()))
         self.cli('close', self.folder, '--reason', 'Done.')
