@@ -314,3 +314,83 @@ fn an_episode_keeps_its_identity_when_its_directory_moves() {
     assert_eq!(receipt["record"], "episodes/archive/renamed");
     assert_eq!(receipt["episode"], id);
 }
+
+#[test]
+fn an_interrupted_close_converges_when_repeated() {
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    for number in 0..6 {
+        std::fs::write(returns.join(format!("large-{number}.bin")), berman::files::random(16 * 1024 * 1024)).unwrap();
+    }
+    let stored = || {
+        let size = |name: &str| std::fs::metadata(world.data().join(name)).map(|m| m.len()).unwrap_or(0);
+        size("library.db") + size("library.db-wal")
+    };
+    let before = stored();
+    let mut command = world.command(&support::berman());
+    command.args(["close", EPISODE, "--reason", "Collected."]);
+    let mut closing = command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while stored() < before + 40 * 1024 * 1024 {
+        assert!(
+            std::time::Instant::now() < deadline && closing.try_wait().unwrap().is_none(),
+            "close was not caught collecting"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    closing.kill().unwrap();
+    closing.wait().unwrap();
+    // The ending is recorded, no record is published, and nothing has left the return directory.
+    let status = world.cli(&["status", EPISODE]);
+    let ending = status["ending"].clone();
+    assert_eq!((ending["reason"].as_str(), &status["record"]), (Some("Collected."), &Value::Null));
+    assert_eq!(std::fs::read_dir(&returns).unwrap().count(), 7);
+    world.refuses(&["start", EPISODE], "closed");
+    world.refuses(&["close", EPISODE, "--reason", "Another reason."], "different ending");
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(world.json(&format!("{EPISODE}/ending.json")), ending);
+    assert_eq!((&receipt["return"], &receipt["preserved"]), (&Value::Null, &json!([])));
+    assert_eq!(receipt["coverage"]["limitations"], json!([]));
+    assert_eq!(world.ls(&format!("{EPISODE}/return")).len(), 7);
+    assert!(!returns.exists());
+    assert_eq!(world.cli(&["close", EPISODE, "--reason", "Collected."])["sha256"], receipt["sha256"]);
+}
+
+#[test]
+fn cleanup_resumes_from_the_committed_inventory() {
+    use std::os::unix::fs::PermissionsExt;
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    std::fs::create_dir(returns.join("notes")).unwrap();
+    std::fs::write(returns.join("notes/first.md"), "first").unwrap();
+    // Collection can read the directory, and cleanup cannot yet remove anything from it.
+    for directory in [returns.join("notes"), returns.clone()] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o500)).unwrap();
+    }
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(receipt["coverage"]["limitations"], json!([]));
+    assert_eq!(world.read(&format!("{EPISODE}/return/notes/first.md")), "first");
+    let left = receipt["preserved"].as_array().unwrap();
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert_eq!(receipt["return"], json!(text(&returns)));
+    for directory in [returns.clone(), returns.join("notes")] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    // Something arrives after collection, and a collected file changes. Neither is in the record, and both stay.
+    std::fs::write(returns.join("late.md"), "arrived after collection").unwrap();
+    std::fs::write(returns.join("decision.md"), "changed after collection").unwrap();
+    let again = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(again["sha256"], receipt["sha256"]);
+    assert_eq!(again["preserved"], json!([text(&returns.join("decision.md")), text(&returns.join("late.md"))]));
+    assert!(!returns.join("notes").exists());
+    assert!(world.read(&format!("{EPISODE}/return/decision.md")).contains("two callers"));
+    std::fs::remove_file(returns.join("late.md")).unwrap();
+    std::fs::remove_file(returns.join("decision.md")).unwrap();
+    let done = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!((&done["return"], &done["preserved"], &done["sha256"]), (&Value::Null, &json!([]), &receipt["sha256"]));
+    world.cli(&["verify", EPISODE]);
+}

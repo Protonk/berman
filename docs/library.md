@@ -46,7 +46,7 @@ Suppose an instruction meant for one project reaches an actor working in another
 
 The installed program, the hook command and Berman’s own directory can be found. They name no project. Lock files beside the library are named by episode ID.
 
-On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, which Spotlight does not index. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
+On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, which Spotlight does not index. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. Whether a Linux desktop index would list them has not been checked: none was enabled where Berman was tested. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
 
 ## Arranging and removing
 
