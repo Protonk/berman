@@ -278,6 +278,18 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
 /// bytes were stored stand in for them, which is enough to notice a member that was removed or
 /// replaced. Returns the generation's description, or None when no transcript was ever captured.
 pub fn check(library: &Library, node: i64, thorough: bool) -> Result<Option<Value>> {
+    check_with(library, node, &mut |kept| match thorough {
+        true => library.measure(kept.content),
+        false => Ok((kept.sha256.clone(), kept.size)),
+    })
+}
+
+/// The same check, with the caller deciding how the digest and length of stored bytes are found.
+pub fn check_with(
+    library: &Library,
+    node: i64,
+    digest: &mut dyn FnMut(&Stored) -> Result<(String, u64)>,
+) -> Result<Option<Value>> {
     let capture = format!("{PARENT}/capture.json");
     if !library.exists(node, &capture)? {
         if library.exists(node, PARENT)? {
@@ -289,8 +301,7 @@ pub fn check(library: &Library, node: i64, thorough: bool) -> Result<Option<Valu
     let mut measured: HashMap<String, (String, u64)> = HashMap::new();
     let mut measure = |path: String| -> Result<(String, u64)> {
         if !measured.contains_key(&path) {
-            let kept = stored(library, node, &path)?;
-            let found = if thorough { library.measure(kept.content)? } else { (kept.sha256, kept.size) };
+            let found = digest(&stored(library, node, &path)?)?;
             measured.insert(path.clone(), found);
         }
         Ok(measured[&path].clone())

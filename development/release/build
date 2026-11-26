@@ -1,0 +1,57 @@
+#!/bin/sh
+# Build the release files for one committed revision: its source archive, a tested binary for
+# macOS on Apple silicon from this Mac, one for Linux on arm64 from the Lima guest, and their digests.
+#
+#   development/release/build COMMIT DESTINATION
+#
+# DESTINATION must not exist. Nothing is tagged, pushed or published. Each binary is built from
+# the archive in a temporary directory, so the files depend on the commit alone, and each passes
+# the suite on its own system before it is packaged.
+set -eu
+[ $# -eq 2 ] || { echo "usage: development/release/build COMMIT DESTINATION" >&2; exit 2; }
+root=$(git rev-parse --show-toplevel)
+commit=$(git -C "$root" rev-parse --verify "$1^{commit}")
+[ ! -e "$2" ] || { echo "Destination already exists: $2" >&2; exit 1; }
+mkdir -p "$2"
+out=$(cd "$2" && pwd)
+version=$(git -C "$root" show "$commit:Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+name=berman-$version
+instance=${BERMAN_LIMA_INSTANCE:-berman}
+guest() {
+    ssh -F "$HOME/.lima/$instance/ssh.config" -o ControlMaster=no -o ControlPath=none -o BatchMode=yes \
+        -l berman-dev "lima-$instance" "$@"
+}
+package() { # TARGET BINARY SOURCES VERIFY: one archive holding the program, the license and the README
+    mkdir "$out/$name-$1"
+    cp "$2" "$out/$name-$1/berman"
+    cp "$3/LICENSE" "$3/README.md" "$out/$name-$1/"
+    "$4" > "$out/verify-$1.json"
+    tar -czf "$out/$name-$1.tar.gz" -C "$out" "$name-$1"
+    rm -r "$out/$name-$1"
+}
+
+git -C "$root" archive --format=tar.gz --prefix="$name/" "$commit" > "$out/$name.tar.gz"
+
+work=$(mktemp -d)
+remote=$(guest 'mktemp -d "$HOME/.cache/berman-release.XXXXXX"')
+trap 'rm -rf "$work"; guest "rm -rf $remote"' EXIT
+
+echo "Building and testing $name ($commit) for macOS"
+tar -xzf "$out/$name.tar.gz" -C "$work"
+(cd "$work/$name" && BERMAN_COMMIT=$commit cargo test --release --locked && BERMAN_COMMIT=$commit cargo build --release --locked)
+mac=$(rustc -vV | sed -n 's/^host: //p')
+berman_verify_mac() { "$work/$name/target/release/berman" verify; }
+package "$mac" "$work/$name/target/release/berman" "$work/$name" berman_verify_mac
+
+echo "Building and testing $name ($commit) for Linux in the Lima guest"
+guest "tar -xzf - -C $remote" < "$out/$name.tar.gz"
+guest "cd $remote/$name && export PATH=\"\$HOME/.cargo/bin:\$PATH\" TMPDIR=$remote/tmp BERMAN_COMMIT=$commit && \
+    mkdir $remote/tmp && cargo test --release --locked && cargo build --release --locked"
+linux=$(guest "export PATH=\"\$HOME/.cargo/bin:\$PATH\"; cd $remote/$name && rustc -vV" | sed -n 's/^host: //p')
+guest "cat $remote/$name/target/release/berman" > "$work/berman-linux"
+berman_verify_linux() { guest "$remote/$name/target/release/berman verify"; }
+package "$linux" "$work/berman-linux" "$work/$name" berman_verify_linux
+
+(cd "$out" && shasum -a 256 "$name.tar.gz" "$name-$mac.tar.gz" "$name-$linux.tar.gz" > SHA256SUMS)
+echo "Release files for $name at $commit:"
+ls -l "$out"

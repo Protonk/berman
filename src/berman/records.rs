@@ -86,7 +86,7 @@ pub fn verify(tree: &dyn Tree, expected: Option<&str>) -> Result<Value> {
     }))
 }
 
-/// Commit the correspondence and publish the record in one transaction, with the inventory cleanup works from.
+/// Commit the correspondence, then publish the record with the inventory cleanup works from in one transaction.
 ///
 /// Return files are read as stable regular files without following links. A file that changes
 /// while it is read, cannot be read, or would pass a limit stays where it is and is named in
@@ -99,13 +99,13 @@ pub fn publish(
     mut limitations: Vec<String>,
     returns: Option<&Path>,
 ) -> Result<()> {
-    library.transaction(|| {
-        match project::git_state(Path::new(state["project"].as_str().unwrap_or_default())) {
-            Ok(observed) => drop(library.write_json(node, "final-project.json", &observed)?),
-            Err(error) => limitations.push(format!("Final checkout observation unavailable: {error}")),
-        }
-        let (mut retained, mut count) = (0u64, 0usize);
-        let mut inventory = Vec::new();
+    // An interrupted close may have committed part of the return. Collection starts again from the directory.
+    if let Some(partial) = library.find(node, "return")? {
+        library.remove(&partial)?;
+    }
+    let (mut retained, mut count) = (0u64, 0usize);
+    let mut inventory = Vec::new();
+    {
         match returns.filter(|directory| files::exists(directory)) {
             None => limitations.push("The actor return directory was missing.".into()),
             Some(directory) if files::safe_directory(directory).is_err() => {
@@ -122,9 +122,12 @@ pub fn publish(
                             if count >= RECORD_FILES || retained + size > RECORD_BYTES {
                                 return refuse("episode record size or file limit reached");
                             }
-                            let stored = library.store_file(&path, Some(files::FILE_LIMIT))?;
-                            library.place(node, &label, &stored, false)?;
-                            Ok(stored)
+                            // Each file is its own transaction, so the journal never holds more than one file.
+                            library.transaction(|| {
+                                let stored = library.store_file(&path, Some(files::FILE_LIMIT))?;
+                                library.place(node, &label, &stored, false)?;
+                                Ok(stored)
+                            })
                         })()
                         .map_err(|error| error.to_string()),
                     };
@@ -140,7 +143,15 @@ pub fn publish(
                 }
             }
         }
-        match capture::check(library, node, true) {
+    }
+    library.transaction(|| {
+        match project::git_state(Path::new(state["project"].as_str().unwrap_or_default())) {
+            Ok(observed) => drop(library.write_json(node, "final-project.json", &observed)?),
+            Err(error) => limitations.push(format!("Final checkout observation unavailable: {error}")),
+        }
+        // Every stored byte is read and digested once here: for the capture's own checks and for the manifest.
+        let shelf = Shelf::new(library, node);
+        match capture::check_with(library, node, &mut |kept| shelf.measure_content(kept.content)) {
             Ok(Some(metadata)) => {
                 if json::truthy(&metadata["unparsed_jsonl_lines"]) {
                     let lines = json::line(&metadata["unparsed_jsonl_lines"]);
@@ -205,10 +216,9 @@ pub fn publish(
                       Other sessions and activity outside the bound session are outside capture.",
         });
         library.write_json(node, "coverage.json", &coverage)?;
-        let members = hashes(&Shelf { library, node })?;
+        let members = hashes(&shelf)?;
         library.write_json(node, MANIFEST, &json!({"schema": SCHEMA, "episode": state["id"], "members": members}))?;
-        library.set_cleanup(id, Some(&json!(inventory)))?;
-        verify(&Shelf { library, node }, None).map(drop)
+        library.set_cleanup(id, Some(&json!(inventory)))
     })
 }
 
@@ -263,13 +273,13 @@ impl Source {
 /// The library directory a reference names: an episode by ID, or any directory by path.
 fn shelf<'a>(library: &'a Library, reference: &str) -> Result<Shelf<'a>> {
     if files::is_uuid(reference) {
-        return Ok(Shelf { library, node: episodes::resolve(library, reference)?.1 });
+        return Ok(Shelf::new(library, episodes::resolve(library, reference)?.1));
     }
     let found = library.expect(ROOT, reference)?;
     if !found.directory {
         return refuse(format!("Expected a record directory in the library: {reference}"));
     }
-    Ok(Shelf { library, node: found.id })
+    Ok(Shelf::new(library, found.id))
 }
 
 pub fn verify_source(
@@ -326,7 +336,7 @@ pub fn review(library: &Library, sources: &[Source], question: &str, output: &st
                     library.copy(&from, &destination)?
                 }
             };
-            verify(&Shelf { library, node: copy.id }, verified["sha256"].as_str())?;
+            verify(&Shelf::new(library, copy.id), verified["sha256"].as_str())?;
             selected.push(json!({"episode": identity, "path": relative, "sha256": verified["sha256"]}));
         }
         library.write_json(directory.id, "sources.json", &json!(selected))?;
@@ -377,7 +387,7 @@ pub fn import(library: &Library, directory: &Path, destination: &str) -> Result<
             }
             library.transaction(|| {
                 let copy = library.put(directory, destination, false)?;
-                verify(&Shelf { library, node: copy.id }, verified["sha256"].as_str())?;
+                verify(&Shelf::new(library, copy.id), verified["sha256"].as_str())?;
                 library.add_episode(identity, copy.id, "imported", None)?;
                 Ok(json!({
                     "imported": "record",
@@ -402,7 +412,7 @@ pub fn import(library: &Library, directory: &Path, destination: &str) -> Result<
                 let copy = library.put(directory, destination, false)?;
                 for source in &sources {
                     let node = library.expect(copy.id, source["path"].as_str().unwrap_or_default())?.id;
-                    verify(&Shelf { library, node }, source["sha256"].as_str())?;
+                    verify(&Shelf::new(library, node), source["sha256"].as_str())?;
                 }
                 Ok(json!({
                     "imported": "review",

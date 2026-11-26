@@ -6,59 +6,72 @@ The **actor** is the agent working in the project, currently through Codex or Cl
 
 An episode can span several sittings. The producer can attend a sitting in the actor’s interactive CLI, or send a message for an unattended sitting and read the response Berman reports. Between sittings, people, other sessions and tools can change the project without going through Berman. The producer decides when the episode ends and supplies the reason. Berman collects what the actor deliberately left, along with the telemetry it could attribute to the episode. A producer returning to the project can read both, see gaps in the record, and decide what deserves another episode.
 
-## Install on Linux
+## Install on Linux or macOS
 
-Use Python 3.13 or later, Git, and the actor’s usual CLI and login. From the software checkout:
+Berman is one program. Install it in the login that has Git, the project, and the actor’s usual CLI. A release carries a build for Linux on arm64 and one for macOS on Apple silicon, with their SHA-256 digests.
 
 ```sh
-python3 -m venv "$HOME/.local/share/berman/venv"
-"$HOME/.local/share/berman/venv/bin/python" -m pip install .
-export PATH="$HOME/.local/share/berman/venv/bin:$PATH"
+tar -xzf berman-VERSION-TARGET.tar.gz
+install -d "$HOME/.local/bin"
+install -m 0755 berman-VERSION-TARGET/berman "$HOME/.local/bin/berman"
 berman verify
 ```
 
-The checkout, actor, and episode files share a Linux environment. A terminal on another computer can reach it over SSH. [Development on a Mac with Lima and rootless Podman](development/lima/README.md)
+To build from the software checkout, use the Rust toolchain that `rust-toolchain.toml` names, with a C compiler, `make` and `perl` for the embedded storage engine. [Developing Berman](docs/development.md)
+
+```sh
+cargo install --locked --path . --root "$HOME/.local"
+```
+
+Then create the producer’s library, once for each login. Berman keeps episodes and reviews as directories and files inside one encrypted file, so their names and contents do not appear on disk outside it. The key goes in the login keychain on macOS or a Secret Service on Linux. On a Linux login without one, such as a server reached over SSH, pass `--key file` to keep it in a file only that login can read. [The producer’s library](docs/library.md)
+
+```sh
+berman library init
+```
 
 ## Try an episode
 
 Run `berman help` for the command list or `berman help open` for the opening arguments.
 
-Choose the checkout the actor will work in. Keep the episode directory outside the checkout and the actor’s configuration directory. This example asks only for notes. For a handover alone, pass `handover.md` as the job. To request both, repeat `--job` with the second file. Omit `--job` for an episode without an additional job. The template also supplies `job.md` for writing your own instructions.
+Choose the checkout the actor will work in and a place in the library for the episode. This example asks only for notes. For a handover alone, pass `handover.md` as the job. To request both, repeat `--job` with the second file. Omit `--job` for an episode without an additional job. The template also supplies `job.md` for writing your own instructions.
 
 ```sh
 berman template "$HOME/jobs"
-berman open "$HOME/episodes/notes" --project "$HOME/code/my-project" \
+berman open episodes/notes --project "$HOME/code/my-project" \
   --actor claude --job "$HOME/jobs/note-taking.md"
-berman start "$HOME/episodes/notes"
+berman library cat episodes/notes/opening.md
+berman start episodes/notes
 ```
 
-Read the opening before starting. Launch from an ordinary interactive terminal and work with the actor as usual. The actor gets the project’s normal instructions and permissions, plus write access to the episode’s return directory. For Codex, set up the Linux hook before the first sitting. [Actor setup and resumption](docs/operating.md)
+Read the opening before starting. Launch from an ordinary interactive terminal and work with the actor as usual. The actor gets the project’s normal instructions and permissions, plus write access to the episode’s return directory, a real directory outside the checkout that the opening names. For Codex, set up its hook before the first sitting. [Actor setup and resumption](docs/operating.md)
 
 To correspond without the interactive CLI, send a message for an unattended sitting. Berman waits for the actor and prints the sitting, including the `response` the actor’s CLI reported and any `limitations`. Read it and decide what to say next.
 
 ```sh
-berman open "$HOME/episodes/survey" --project "$HOME/code/my-project" --actor codex
-berman start "$HOME/episodes/survey" --unattended --prompt "Which parts of the test suite are slowest?"
-berman resume "$HOME/episodes/survey" --request profile --unattended \
+berman open episodes/survey --project "$HOME/code/my-project" --actor codex
+berman start episodes/survey --unattended --prompt "Which parts of the test suite are slowest?"
+berman resume episodes/survey --request profile --unattended \
   --prompt "Profile the slowest one and tell me what you find."
 ```
 
 Running `claude -p` or `codex exec` directly remains ordinary work outside Berman. [Unattended sittings](docs/operating.md#unattended-sittings)
 
-After a sitting, decide whether to resume or close. Supply the actual reason when closing.
+After a sitting, decide whether to resume or close. Supply the actual reason when closing. Closing moves what the actor left into the episode and removes the return directory.
 
 ```sh
-berman status "$HOME/episodes/notes"
-berman close "$HOME/episodes/notes" --reason "I have the account I need for the handoff."
-berman verify "$HOME/episodes/notes/record"
+berman status episodes/notes
+berman close episodes/notes --reason "I have the account I need for the handoff."
+berman verify episodes/notes
+berman library ls episodes/notes/return
 ```
 
-Open `record/opening.md`, then read the actor’s files under `record/return/` if present. Unattended responses stay in their sitting records under `record/sittings/`. `record/coverage.json` describes the scope and gaps. To work through a question about one or more episodes:
+Read `opening.md`, then the actor’s files under `return/` if present, with `berman library cat`. Unattended responses stay in their sitting records under `sittings/`. `coverage.json` describes the scope and gaps. To work through a question about one or more episodes:
 
 ```sh
-berman review "$HOME/episodes/notes/record" \
+berman review episodes/notes \
   --question "Which decision should I revisit with the team, and why?" \
-  --output "$HOME/reviews/handoff"
+  --output reviews/handoff
+berman library export reviews/handoff "$HOME/handoff"
 ```
 
-The chosen directory contains your question, verified copies of the selected sources, and an answer file for you or a reader you choose. [Reading and verifying records](docs/records.md) · [Developing Berman](docs/development.md) · [MIT License](LICENSE)
+The review holds your question, verified copies of the selected records, and an answer file for you or a reader you choose. The export writes it as an ordinary directory for that reader. [Reading and verifying records](docs/records.md) · [MIT License](LICENSE)

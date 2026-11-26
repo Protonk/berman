@@ -1,5 +1,7 @@
 //! A record can be read from a directory on disk or from a directory in the library. Verification treats both alike.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -83,10 +85,27 @@ impl Tree for Directory {
     }
 }
 
-/// A directory in the library.
+/// A directory in the library. Each stored content is digested once for as long as the shelf is used.
 pub struct Shelf<'a> {
     pub library: &'a Library,
     pub node: i64,
+    measured: RefCell<HashMap<i64, (String, u64)>>,
+}
+
+impl<'a> Shelf<'a> {
+    pub fn new(library: &'a Library, node: i64) -> Shelf<'a> {
+        Shelf { library, node, measured: RefCell::new(HashMap::new()) }
+    }
+
+    /// The SHA-256 and length of the bytes actually stored for a content.
+    pub fn measure_content(&self, content: i64) -> Result<(String, u64)> {
+        if let Some(known) = self.measured.borrow().get(&content) {
+            return Ok(known.clone());
+        }
+        let found = self.library.measure(content)?;
+        self.measured.borrow_mut().insert(content, found.clone());
+        Ok(found)
+    }
 }
 
 impl Tree for Shelf<'_> {
@@ -105,7 +124,7 @@ impl Tree for Shelf<'_> {
 
     fn measure(&self, name: &str) -> Result<(String, u64)> {
         match self.library.expect(self.node, name)?.content {
-            Some(content) => self.library.measure(content),
+            Some(content) => self.measure_content(content),
             None => refuse(format!("Expected a file in the library: {name}")),
         }
     }

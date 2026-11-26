@@ -1,15 +1,18 @@
 FROM docker.io/library/debian:trixie-slim
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /opt/berman
-COPY pyproject.toml README.md LICENSE MANIFEST.in ./
-COPY src/ src/
-RUN python3 -m venv /opt/venv && /opt/venv/bin/python -m pip install --no-cache-dir .
-ENV PATH=/opt/venv/bin:$PATH
-COPY AGENTS.md ./
-COPY docs/ docs/
-COPY development/ development/
-COPY tests/ tests/
-WORKDIR /tmp
-CMD ["sh", "-c", "berman verify && python -I -m unittest discover -s /opt/berman/tests -t /opt/berman"]
+    && apt-get install -y --no-install-recommends ca-certificates curl gcc git libc6-dev make perl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/sh builder
+# The suite checks that some directories cannot be listed, which holds only for an unprivileged login.
+USER builder
+ENV HOME=/home/builder PATH=/home/builder/.cargo/bin:/home/builder/.local/bin:$PATH
+WORKDIR /home/builder/berman
+COPY --chown=builder rust-toolchain.toml ./
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain none && rustup show active-toolchain
+COPY --chown=builder . .
+# Install as the README describes, then build the suite so that running it needs no network.
+RUN cargo install --locked --path . --root "$HOME/.local" \
+    && cargo test --locked --no-run && cargo build --locked --example scripted-actor
+ENV CARGO_NET_OFFLINE=true
+CMD ["sh", "-c", "berman verify && cargo test --locked"]

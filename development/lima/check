@@ -1,0 +1,31 @@
+#!/bin/sh
+# Build and test one committed revision in the Lima guest, from a source archive.
+#
+#   development/lima/check [--container] [COMMIT]
+#
+# The guest holds no Berman clone and no repository credentials. It receives the archive and the
+# commit ID in a temporary directory, builds with the toolchain rust-toolchain.toml names, and
+# runs the suite. --container also runs the packaging check in rootless Podman.
+set -eu
+container=no
+if [ "${1:-}" = "--container" ]; then container=yes; shift; fi
+root=$(git rev-parse --show-toplevel)
+commit=$(git -C "$root" rev-parse --verify "${1:-HEAD}^{commit}")
+instance=${BERMAN_LIMA_INSTANCE:-berman}
+guest() {
+    ssh -F "$HOME/.lima/$instance/ssh.config" -o ControlMaster=no -o ControlPath=none -o BatchMode=yes \
+        -l berman-dev "lima-$instance" "$@"
+}
+work=$(guest 'mktemp -d "$HOME/.cache/berman-check.XXXXXX"')
+trap 'guest "rm -rf $work"' EXIT
+git -C "$root" archive --format=tar "$commit" | guest "tar -xf - -C $work"
+# The dependencies' build is kept between checks. Temporary files go to disk: the guest's /tmp is in memory.
+guest "cd $work && export PATH=\"\$HOME/.cargo/bin:\$PATH\" CARGO_TARGET_DIR=\"\$HOME/.cache/berman/target\" \
+    TMPDIR=\"$work/tmp\" BERMAN_COMMIT=$commit && mkdir tmp && cargo fmt --check && \
+    cargo clippy --locked --all-targets -- -D warnings && cargo test --locked && \
+    \"\$CARGO_TARGET_DIR/debug/berman\" verify"
+if [ "$container" = yes ]; then
+    guest "cd $work && podman build -q -t localhost/berman-check -f development/container/Containerfile . && \
+        podman run --rm --network=none localhost/berman-check"
+fi
+echo "Checked $commit in the Lima guest."

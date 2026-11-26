@@ -1,5 +1,0 @@
-graft docs
-graft development
-graft tests
-include AGENTS.md uv.lock .python-version
-global-exclude __pycache__ *.py[cod] .DS_Store

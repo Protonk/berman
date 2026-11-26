@@ -546,7 +546,7 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
         if library.read_json(node, "ending.json")?["reason"].as_str() != Some(reason) {
             return refuse("A different ending is already recorded");
         }
-        let mut receipt = records::verify(&Shelf { library, node }, None)?;
+        let mut receipt = records::verify(&Shelf::new(library, node), None)?;
         receipt["return"] = Value::Null;
         receipt["preserved"] = json!([]);
         return Ok(receipt);
@@ -576,7 +576,7 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
         records::publish(library, id, node, &state, limitations, returns.as_deref())?;
     }
     // Read the committed record back before anything outside the library is retired.
-    let mut receipt = records::verify(&Shelf { library, node }, None)?;
+    let mut receipt = records::verify(&Shelf::new(library, node), None)?;
     let cleanup = library.episode(id)?.and_then(|episode| episode.cleanup);
     if let Some(directory) = &returns {
         let inventory: Value = match &cleanup {
