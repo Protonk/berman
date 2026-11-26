@@ -8,6 +8,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::error::{At, Error, Result, refuse};
 use crate::files;
@@ -15,6 +16,8 @@ use crate::places::Places;
 
 const SERVICE: &str = "berman-library";
 const SECURITY: &str = "/usr/bin/security";
+/// Seconds a system key store is given to answer.
+const PATIENCE: u64 = 15;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Store {
@@ -54,6 +57,9 @@ fn is_key(text: &str) -> bool {
 }
 
 /// Run a system tool, giving it text on standard input and returning what it prints.
+///
+/// A store that is locked can wait for a person to unlock it. A callback has no person, so the
+/// tool is given a few seconds and then stopped.
 fn tool(program: &str, arguments: &[&str], input: &str) -> Result<String> {
     let missing = |_| Error::Refused(format!("{program} is not available in this login"));
     let mut child = Command::new(program)
@@ -66,6 +72,17 @@ fn tool(program: &str, arguments: &[&str], input: &str) -> Result<String> {
     if let Some(mut stdin) = child.stdin.take() {
         // A tool that needs no input may close the pipe first.
         let _ = stdin.write_all(input.as_bytes());
+    }
+    let patience = Instant::now() + Duration::from_secs(PATIENCE);
+    while child.try_wait()?.is_none() {
+        if Instant::now() >= patience {
+            let _ = child.kill();
+            let _ = child.wait();
+            return refuse(format!(
+                "{program} did not answer within {PATIENCE} seconds. The store may be waiting for someone to unlock it"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
     let output = child.wait_with_output()?;
     if !output.status.success() {
