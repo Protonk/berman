@@ -148,12 +148,19 @@ fn callbacks_as_a_transcript_grows_and_is_rewritten() {
     }
     grow(&setup.transcript, &setup.id, &mut noise, largest * MIB + 64 * 1024);
     row(&format!("append 64 KiB to {largest} MiB"), &callback(&setup));
-    // A rewrite: the first line changes, so nothing captured before is a prefix.
-    let content = std::fs::read(&setup.transcript).unwrap();
-    let first = content.iter().position(|byte| *byte == b'\n').unwrap();
-    let mut rewritten = format!("{}", json!({"sessionId": setup.id, "type": "summary"})).into_bytes();
-    rewritten.extend_from_slice(&content[first..]);
-    std::fs::write(&setup.transcript, rewritten).unwrap();
+    // A rewrite: a longer first line moves every later byte, so nothing captured before is a prefix or a
+    // shared chunk. The copy is streamed: on Linux a child starts with its parent's peak memory.
+    let rewritten = setup.transcript.with_extension("rewritten");
+    {
+        use std::io::{BufRead, BufReader};
+        let mut source = BufReader::new(std::fs::File::open(&setup.transcript).unwrap());
+        let mut first = Vec::new();
+        source.read_until(b'\n', &mut first).unwrap();
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&rewritten).unwrap());
+        writeln!(out, "{}", json!({"sessionId": setup.id, "type": "summary", "summary": "rewritten"})).unwrap();
+        std::io::copy(&mut source, &mut out).unwrap();
+    }
+    std::fs::rename(&rewritten, &setup.transcript).unwrap();
     row(&format!("rewrite at {largest} MiB"), &callback(&setup));
     let capture = setup.world.json(&format!("{episode}/telemetry/parent/capture.json"));
     assert_eq!(capture["previous_snapshot_is_prefix"], false);
