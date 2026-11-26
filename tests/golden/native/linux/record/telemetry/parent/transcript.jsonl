@@ -1,0 +1,5 @@
+{"type": "session_meta", "payload": {"id": "12345678-1234-1234-1234-123456789012"}}
+{"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": "Berman episode 53dc5e91-5f4e-446a-8abc-cd6202b8ea25\n\nThis session is part of a Berman episode its producer opened in /tmp/.tmpENVppD/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /tmp/.tmpENVppD/.local/state/berman/returns/5da744233bb44f748b3b2f2ed9b533cc\nKeep ordinary project changes in the checkout.\n\nMessage from the producer:\n\nWhat is in this checkout?"}]}}
+{"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"text": "done 1: What is in this checkout?"}]}}
+{"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": "Continue."}]}}
+{"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"text": "done 2: Continue."}]}}

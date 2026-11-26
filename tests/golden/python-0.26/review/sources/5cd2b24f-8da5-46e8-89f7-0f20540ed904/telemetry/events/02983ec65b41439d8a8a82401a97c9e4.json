@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-26T15:05:13.315527Z",
+  "event": {
+    "hook_event_name": "SessionEnd",
+    "session_id": "12345678-1234-1234-1234-123456789012",
+    "cwd": "/tmp/tmp4z4tjlas/normal checkout",
+    "prompt": "Continue.",
+    "transcript_path": "/tmp/tmp4z4tjlas/.codex/sessions/12345678-1234-1234-1234-123456789012.jsonl"
+  },
+  "generation": "1c1ce539775f13a19b4a5405f3a166409c79e8480c8362152fc8796a58df2b40"
+}

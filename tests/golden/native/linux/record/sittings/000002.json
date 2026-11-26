@@ -1,0 +1,13 @@
+{
+  "number": 2,
+  "request": "again",
+  "prompt": "Continue.",
+  "opening": false,
+  "attended": true,
+  "started_at": "2026-11-26T15:12:37.517720Z",
+  "executable": "/tmp/.tmpENVppD/bin/codex",
+  "exit": 0,
+  "pid": 43137,
+  "pid_started": "19362190",
+  "exited_at": "2026-11-26T15:12:37.527153Z"
+}

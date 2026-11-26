@@ -1,0 +1,18 @@
+{
+  "schema": "berman.episode/1",
+  "id": "5cd2b24f-8da5-46e8-89f7-0f20540ed904",
+  "opened_at": "2026-11-26T15:05:13.173704Z",
+  "directory": "/tmp/tmp4z4tjlas/episodes/codex",
+  "actor": "codex",
+  "project": "/tmp/tmp4z4tjlas/normal checkout",
+  "home": "/tmp/tmp4z4tjlas/.codex",
+  "jobs": [
+    "Record a decision when one arises.\n"
+  ],
+  "opening": "Berman episode 5cd2b24f-8da5-46e8-89f7-0f20540ed904\n\nThis session is part of a Berman episode its producer opened in /tmp/tmp4z4tjlas/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /tmp/tmp4z4tjlas/episodes/codex/return\nKeep ordinary project changes in the checkout.\n",
+  "initial_project": {
+    "observed_at": "2026-11-26T15:05:13.174517Z",
+    "head": null,
+    "status": "?? ordinary.txt\n"
+  }
+}

@@ -1,0 +1,43 @@
+CODEX EPISODE SESSION: DERIVED READING COPY
+
+Source: transcript.jsonl. Each block cites its raw JSONL line and JSON pointer.
+Visible user/assistant messages, tool calls/results, and harness task errors.
+Reasoning, developer context, transport metadata and duplicate message events stay raw.
+
+========================================================================
+SOURCE: transcript.jsonl#L2 /payload/content/0/text
+TIME: not recorded | ROLE: user | KIND: message
+NAME:  | CALL ID: 
+Berman episode 081261ef-c295-4a74-b295-b0dd51ef8886
+
+This session is part of a Berman episode its producer opened in /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/normal checkout. Berman keeps a record of the session for the producer.
+
+Alongside any other work in the session, carry out this additional job:
+
+Record a decision when one arises.
+
+Return directory: /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/Library/Application Support/Berman/working.noindex/returns/4c3c22640a5947cc89e10bf88eaa58af
+Keep ordinary project changes in the checkout.
+
+Message from the producer:
+
+What is in this checkout?
+
+========================================================================
+SOURCE: transcript.jsonl#L3 /payload/content/0/text
+TIME: not recorded | ROLE: assistant | KIND: message
+NAME:  | CALL ID: 
+done 1: What is in this checkout?
+
+========================================================================
+SOURCE: transcript.jsonl#L4 /payload/content/0/text
+TIME: not recorded | ROLE: user | KIND: message
+NAME:  | CALL ID: 
+Continue.
+
+========================================================================
+SOURCE: transcript.jsonl#L5 /payload/content/0/text
+TIME: not recorded | ROLE: assistant | KIND: message
+NAME:  | CALL ID: 
+done 2: Continue.
+

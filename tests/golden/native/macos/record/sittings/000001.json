@@ -1,0 +1,19 @@
+{
+  "number": 1,
+  "request": null,
+  "prompt": "What is in this checkout?",
+  "opening": true,
+  "attended": false,
+  "started_at": "2026-11-26T15:12:35.336010Z",
+  "executable": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/bin/codex",
+  "exit": 0,
+  "stdout": "sittings/000001.stdout",
+  "stderr": "sittings/000001.stderr",
+  "pid": 81218,
+  "pid_started": "1795705955.337620",
+  "exited_at": "2026-11-26T15:12:35.822027Z",
+  "native_session": "12345678-1234-1234-1234-123456789012",
+  "response": "done 1: What is in this checkout?",
+  "denials": null,
+  "limitations": []
+}

@@ -183,7 +183,8 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
     let home = PathBuf::from(state["home"].as_str().unwrap_or_default());
     library.transaction(|| {
         let capture = format!("{PARENT}/capture.json");
-        let old = if library.exists(node, &capture)? { Some(library.read_json(node, &capture)?) } else { None };
+        // The stored generation and what its history requires must be in place before anything is built on them.
+        let old = check(library, node, false)?;
         let named = json::text(event, "transcript_path").filter(|path| !path.is_empty());
         let known = old.as_ref().and_then(|metadata| json::text(metadata, "source_transcript"));
         let mut path = PathBuf::from(named.or(known).unwrap_or_default());
@@ -194,19 +195,6 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
         let climbs = path.components().any(|part| part == std::path::Component::ParentDir);
         if climbs || !harness.stores().iter().any(|store| path.starts_with(home.join(store))) {
             return refuse("No transcript path in the assigned native session store");
-        }
-        if let Some(metadata) = &old {
-            // The stored generation must still be the one its description names before anything is built on it.
-            let agrees = |name: &str, key: &str| -> Result<bool> {
-                Ok(metadata[key].as_str() == Some(&stored(library, node, &format!("{PARENT}/{name}"))?.sha256))
-            };
-            let tail = match tail_name(metadata)? {
-                Some(name) => agrees(name, "partial_tail_sha256")?,
-                None => true,
-            };
-            if !agrees("transcript.jsonl", "sha256")? || !agrees("conversation.txt", "reader_sha256")? || !tail {
-                return refuse("Capture bytes, reader, metadata or history disagree");
-            }
         }
         let previous = old.as_ref().and_then(|metadata| metadata["saved_bytes"].as_u64());
         let seen = read_source(library, harness, &path, session, previous)?;
@@ -286,8 +274,10 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
 
 /// Check the published generation against the bytes stored for it and the bytes its history still requires.
 ///
-/// Returns the generation's description, or None when no transcript was ever captured.
-pub fn check(library: &Library, node: i64) -> Result<Option<Value>> {
+/// A thorough check reads and digests the stored bytes. Otherwise the digests recorded when the
+/// bytes were stored stand in for them, which is enough to notice a member that was removed or
+/// replaced. Returns the generation's description, or None when no transcript was ever captured.
+pub fn check(library: &Library, node: i64, thorough: bool) -> Result<Option<Value>> {
     let capture = format!("{PARENT}/capture.json");
     if !library.exists(node, &capture)? {
         if library.exists(node, PARENT)? {
@@ -299,8 +289,9 @@ pub fn check(library: &Library, node: i64) -> Result<Option<Value>> {
     let mut measured: HashMap<String, (String, u64)> = HashMap::new();
     let mut measure = |path: String| -> Result<(String, u64)> {
         if !measured.contains_key(&path) {
-            let content = stored(library, node, &path)?.content;
-            measured.insert(path.clone(), library.measure(content)?);
+            let kept = stored(library, node, &path)?;
+            let found = if thorough { library.measure(kept.content)? } else { (kept.sha256, kept.size) };
+            measured.insert(path.clone(), found);
         }
         Ok(measured[&path].clone())
     };

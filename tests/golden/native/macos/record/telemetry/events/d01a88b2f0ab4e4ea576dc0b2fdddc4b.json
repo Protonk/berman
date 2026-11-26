@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-26T15:12:35.865851Z",
+  "event": {
+    "hook_event_name": "SessionEnd",
+    "session_id": "12345678-1234-1234-1234-123456789012",
+    "cwd": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/normal checkout",
+    "prompt": "Continue.",
+    "transcript_path": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/.codex/sessions/12345678-1234-1234-1234-123456789012.jsonl"
+  },
+  "generation": "2c03c39f6e9544deea1e0cc9e9ee71faae17e4a539ab0f24475177fccb266e1e"
+}

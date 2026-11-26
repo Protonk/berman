@@ -1,0 +1,18 @@
+{
+  "schema": "berman.episode/2",
+  "id": "081261ef-c295-4a74-b295-b0dd51ef8886",
+  "opened_at": "2026-11-26T15:12:35.312326Z",
+  "actor": "codex",
+  "project": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/normal checkout",
+  "home": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/.codex",
+  "return": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/Library/Application Support/Berman/working.noindex/returns/4c3c22640a5947cc89e10bf88eaa58af",
+  "jobs": [
+    "Record a decision when one arises.\n"
+  ],
+  "opening": "Berman episode 081261ef-c295-4a74-b295-b0dd51ef8886\n\nThis session is part of a Berman episode its producer opened in /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/Library/Application Support/Berman/working.noindex/returns/4c3c22640a5947cc89e10bf88eaa58af\nKeep ordinary project changes in the checkout.\n",
+  "initial_project": {
+    "observed_at": "2026-11-26T15:12:35.330674Z",
+    "head": null,
+    "status": ""
+  }
+}

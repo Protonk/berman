@@ -1,0 +1,26 @@
+{
+  "schema": "berman.episode-record/1",
+  "episode": "cb4833f0-6b00-4575-a003-f10923ccf43a",
+  "members": {
+    "coverage.json": "68301e2cca0a7045dbb6c56bb8c5244a0e3e55d3de65ccb6568154637207330e",
+    "ending.json": "576d5e273df622092e877eb56815d1422dbb3afc0aea7a16ebf5ef30378f77b7",
+    "episode.json": "7b85d844b415a1cc381b237de184ed0cd721a259c444e1b9125ff58a37968a66",
+    "final-project.json": "85168b291c03b2cf65d7a8519d5ba2950921d0ca3e25a3dd1c29906c82704c26",
+    "opening.md": "0539e2e97ba0315882f62b4a17850b231828582d53e2d30f99a9124b05c91f0f",
+    "return/decision.md": "538db631123680c4a3465753143a4fb92636b4ca7f14f70c2cb9b12e6da07b2b",
+    "sittings/000001.json": "a6cd13865aee70bc1dad6513e394b44a401cdf117e4ad651353b52ac8950ae71",
+    "sittings/000001.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sittings/000001.stdout": "c50308650daca793c3df4138c0a772acd890048fde84ef31c3e5bd795c120c11",
+    "sittings/000002.json": "85b853dd4e0a2c2a7dfd6f6acf82e40c7e06af044582e9f97133a93e8f4fcf27",
+    "telemetry/events/3a86fd7e13d04bd6861880e01b533218.json": "020131e115bd87d828c7613250d63c926d0cdceee5df9cf0fce21a67f5fbb261",
+    "telemetry/events/3fca5d25ed8f4cb1ab95d505e9ce0488.json": "6b42c67afa3b9ad48b251a05b0fc87938ed6e721e638206473b2d07f6dbfca16",
+    "telemetry/events/5b3d32e7d9d64715aee3b7eac570540f.json": "adac485096ed8fb1da7c1442f7e69e6c12424fdba917194b834034a4c5612b3c",
+    "telemetry/events/7317d0e3926748048c08de451c105c56.json": "4102ea689d821846bd7f56271cdee27c13206f0afbc81cd0dec88fdc0b114b72",
+    "telemetry/events/9cc83d3921534cc59b93424ac9493ba1.json": "f08baed9f9527086eeb4a25c6dab0ac54f10fcc929a68bff96a0380ee3ff5cbc",
+    "telemetry/events/f33db4e12eef45f680745eb3345b2382.json": "bafcbe09215f126aee23cb329c7134a97bd2c5174a7a1a6a8bf5742f292eebe7",
+    "telemetry/parent/capture.json": "f57b9bcaeb2e0f60c7476565b2bb9952043107755441515a3222dc623863db2e",
+    "telemetry/parent/captures.jsonl": "2382ac8cc7947ed170b6e7e59eba12ecbf1ac268c02099440fd0974c008d8f2f",
+    "telemetry/parent/conversation.txt": "b8ac06074799260340c11033573e93384c602ba2872f076492a01fdbe9a82f75",
+    "telemetry/parent/transcript.jsonl": "f30e3272b210653910d2e9e0867c041bf1e30a95f8bbb1bb9d59a7de48626a50"
+  }
+}

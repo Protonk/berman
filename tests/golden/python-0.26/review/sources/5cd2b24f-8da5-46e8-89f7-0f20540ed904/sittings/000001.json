@@ -1,0 +1,19 @@
+{
+  "number": 1,
+  "request": null,
+  "prompt": "What is in this checkout?",
+  "opening": true,
+  "attended": false,
+  "started_at": "2026-11-26T15:05:13.196783Z",
+  "executable": "/tmp/tmp4z4tjlas/bin/codex",
+  "exit": 0,
+  "stdout": "sittings/000001.stdout",
+  "stderr": "sittings/000001.stderr",
+  "pid": 28054,
+  "pid_started": "19317298",
+  "exited_at": "2026-11-26T15:05:13.247182Z",
+  "native_session": "12345678-1234-1234-1234-123456789012",
+  "response": "done 1: What is in this checkout?",
+  "denials": null,
+  "limitations": []
+}

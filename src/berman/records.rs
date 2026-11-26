@@ -140,7 +140,7 @@ pub fn publish(
                 }
             }
         }
-        match capture::check(library, node) {
+        match capture::check(library, node, true) {
             Ok(Some(metadata)) => {
                 if json::truthy(&metadata["unparsed_jsonl_lines"]) {
                     let lines = json::line(&metadata["unparsed_jsonl_lines"]);

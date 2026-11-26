@@ -1,0 +1,13 @@
+{
+  "number": 2,
+  "request": "again",
+  "prompt": "Continue.",
+  "opening": false,
+  "attended": true,
+  "started_at": "2026-11-26T15:05:13.070292Z",
+  "executable": "/tmp/tmp4z4tjlas/bin/claude",
+  "exit": 0,
+  "pid": 28042,
+  "pid_started": "19317286",
+  "exited_at": "2026-11-26T15:05:13.121558Z"
+}

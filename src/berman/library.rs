@@ -213,6 +213,13 @@ impl Library {
         }
     }
 
+    /// Fold the write-ahead log into the database file, and return the size of that file.
+    pub fn checkpoint(&self) -> Result<u64> {
+        self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        let database = self.places.database();
+        Ok(std::fs::metadata(&database).at(&database)?.len())
+    }
+
     /// Make the next commit reach the disk before it returns.
     pub fn durable(&self) -> Result<()> {
         self.conn.pragma_update(None, "synchronous", "FULL")?;

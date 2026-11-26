@@ -1,0 +1,5 @@
+{"sessionId": "cb4833f0-6b00-4575-a003-f10923ccf43a", "type": "system"}
+{"sessionId": "cb4833f0-6b00-4575-a003-f10923ccf43a", "message": {"role": "user", "content": "Berman episode cb4833f0-6b00-4575-a003-f10923ccf43a\n\nThis session is part of a Berman episode its producer opened in /tmp/tmp4z4tjlas/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /tmp/tmp4z4tjlas/episodes/claude/return\nKeep ordinary project changes in the checkout.\n\nMessage from the producer:\n\nWhat is in this checkout?"}}
+{"sessionId": "cb4833f0-6b00-4575-a003-f10923ccf43a", "message": {"role": "assistant", "content": "done 1: What is in this checkout?"}}
+{"sessionId": "cb4833f0-6b00-4575-a003-f10923ccf43a", "message": {"role": "user", "content": "Continue."}}
+{"sessionId": "cb4833f0-6b00-4575-a003-f10923ccf43a", "message": {"role": "assistant", "content": "done 2: Continue."}}

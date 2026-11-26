@@ -1,0 +1,10 @@
+{
+  "claude": {
+    "episode": "cb4833f0-6b00-4575-a003-f10923ccf43a",
+    "sha256": "7388c221d5b568a1d3cfc71926a537a345e7b13a9e7142b1a08655f22f89df04"
+  },
+  "codex": {
+    "episode": "5cd2b24f-8da5-46e8-89f7-0f20540ed904",
+    "sha256": "6fbc100bebb7020163de37489dc840bc69e8f51ee2008d4e34d4995252e9785c"
+  }
+}

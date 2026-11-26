@@ -30,6 +30,10 @@ sha2 = "0.10"
 [build-dependencies]
 sha2 = "0.10"
 
+# Digests and storage run optimized in tests too, so the suite can use transcripts of realistic size.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 opt-level = 3
 debug = false

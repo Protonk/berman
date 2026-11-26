@@ -1,0 +1,13 @@
+{
+  "number": 2,
+  "request": "again",
+  "prompt": "Continue.",
+  "opening": false,
+  "attended": true,
+  "started_at": "2026-11-26T15:12:35.831718Z",
+  "executable": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/bin/codex",
+  "exit": 0,
+  "pid": 81250,
+  "pid_started": "1795705955.832215",
+  "exited_at": "2026-11-26T15:12:35.868039Z"
+}

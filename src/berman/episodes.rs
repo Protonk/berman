@@ -97,10 +97,12 @@ pub fn open_episode(
     let project_path = project::top(checkout)?;
     let native_home = harness_home(harness);
     let places = &library.places;
-    for own in [&places.data, &places.returns] {
-        if own.starts_with(&project_path) || project_path.starts_with(own) || native_home.starts_with(own) {
-            return refuse("Keep the checkout and harness home apart from the library and the return directories");
-        }
+    // The checkout stays clear of everything Berman keeps. A harness home may be one of the dedicated homes.
+    let own = [&places.data, &places.returns, &places.homes];
+    let overlaps = |path: &Path| own.iter().any(|kept| kept.starts_with(path) || path.starts_with(kept));
+    let dedicated = native_home.starts_with(&places.homes) && native_home != places.homes;
+    if overlaps(&project_path) || (overlaps(&native_home) && !dedicated) {
+        return refuse("Keep the checkout and harness home apart from the library and the return directories");
     }
     let mut jobs = Vec::new();
     for path in job_files {

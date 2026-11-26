@@ -1,0 +1,19 @@
+{
+  "number": 1,
+  "request": null,
+  "prompt": "What is in this checkout?",
+  "opening": true,
+  "attended": false,
+  "started_at": "2026-11-26T15:12:37.484735Z",
+  "executable": "/tmp/.tmpENVppD/bin/codex",
+  "exit": 0,
+  "stdout": "sittings/000001.stdout",
+  "stderr": "sittings/000001.stderr",
+  "pid": 43129,
+  "pid_started": "19362187",
+  "exited_at": "2026-11-26T15:12:37.515207Z",
+  "native_session": "12345678-1234-1234-1234-123456789012",
+  "response": "done 1: What is in this checkout?",
+  "denials": null,
+  "limitations": []
+}

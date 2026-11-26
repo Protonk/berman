@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-26T15:05:13.042245Z",
+  "event": {
+    "hook_event_name": "SessionEnd",
+    "session_id": "cb4833f0-6b00-4575-a003-f10923ccf43a",
+    "cwd": "/tmp/tmp4z4tjlas/normal checkout",
+    "prompt": "Berman episode cb4833f0-6b00-4575-a003-f10923ccf43a\n\nThis session is part of a Berman episode its producer opened in /tmp/tmp4z4tjlas/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /tmp/tmp4z4tjlas/episodes/claude/return\nKeep ordinary project changes in the checkout.\n\nMessage from the producer:\n\nWhat is in this checkout?",
+    "transcript_path": "/tmp/tmp4z4tjlas/.claude/projects/example/cb4833f0-6b00-4575-a003-f10923ccf43a.jsonl"
+  },
+  "generation": "ae5fba4dd700c6025b878cd21165e066b169f79fa172966081e56e6fd2d2e92d"
+}

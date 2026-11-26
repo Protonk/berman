@@ -1,0 +1,5 @@
+{"type": "thread.started", "thread_id": "12345678-1234-1234-1234-123456789012"}
+{"type": "turn.started"}
+{"type": "error", "message": "Reconnecting... 1/5 (stream disconnected)"}
+{"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "done 1: What is in this checkout?"}}
+{"type": "turn.completed", "usage": {}}
