@@ -138,7 +138,23 @@ fn library_commands() -> Command {
         )
 }
 
+/// Show each value's placeholder in capitals, as the guides write them.
+fn capitals(command: Command) -> Command {
+    let command = command.mut_args(|argument| {
+        if argument.get_value_names().is_none() && argument.get_action().takes_values() {
+            let name = argument.get_id().as_str().to_uppercase();
+            return argument.value_name(name);
+        }
+        argument
+    });
+    command.mut_subcommands(capitals)
+}
+
 fn application() -> Command {
+    capitals(commands())
+}
+
+fn commands() -> Command {
     let record = "a record in the library by path or episode ID, or a directory on disk given as /…, ./…, ../… or ~/…";
     Command::new("berman")
         .about("A producer uses Berman for intermittent project management by correspondence in a local checkout.")

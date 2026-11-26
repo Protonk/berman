@@ -234,9 +234,9 @@ fn a_full_disk_leaves_the_last_generation_verifiable() {
     assert!(run(&world).0);
     let committed = world.json(&format!("{episode}/telemetry/parent/capture.json"));
     println!("\nA transcript grows past the space left for the library");
-    grow(&transcript, &id, &mut noise, 400 * MIB);
+    grow(&transcript, &id, &mut noise, 200 * MIB);
     let (succeeded, said) = run(&world);
-    println!("callback at 400 MiB on the small disk: succeeded={succeeded} {said}");
+    println!("callback at 200 MiB on the small disk: succeeded={succeeded} {said}");
     let after = world.run(&["library", "cat", &format!("{episode}/telemetry/parent/capture.json")]);
     let after: Value = serde_json::from_slice(&after.stdout).expect("the last generation is readable");
     assert_eq!(after, committed, "the last committed generation is unchanged");

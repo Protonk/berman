@@ -21,11 +21,16 @@ pub fn verify() -> Result<Value> {
     for (name, content) in JOB_TEMPLATES {
         templates.insert(format!("templates/{name}"), json!(files::digest(content.as_bytes())));
     }
+    // Both systems embed one storage engine, so a library made on either opens on the other.
+    let storage = rusqlite::Connection::open_in_memory()?;
+    let cipher: String = storage.query_row("PRAGMA cipher_version", [], |row| row.get(0))?;
+    let sqlite: String = storage.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
     Ok(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "source_sha256": env!("BERMAN_SOURCE_SHA256"),
         "commit": option_env!("BERMAN_COMMIT").filter(|commit| !commit.is_empty()),
         "target": env!("BERMAN_TARGET"),
+        "storage": format!("SQLCipher {cipher} on SQLite {sqlite}"),
         "executable": files::text(&executable),
         "executable_sha256": digest,
         "templates_sha256": templates,
