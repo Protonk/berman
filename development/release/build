@@ -33,7 +33,7 @@ package() { # TARGET BINARY SOURCES VERIFY: one archive holding the program, the
 git -C "$root" archive --format=tar.gz --prefix="$name/" "$commit" > "$out/$name.tar.gz"
 
 work=$(mktemp -d)
-remote=$(guest 'mktemp -d "$HOME/.cache/berman-release.XXXXXX"')
+remote=$(guest 'mkdir -p "$HOME/.cache" && mktemp -d "$HOME/.cache/berman-release.XXXXXX"')
 trap 'rm -rf "$work"; guest "rm -rf $remote"' EXIT
 
 echo "Building and testing $name ($commit) for macOS"

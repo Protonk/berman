@@ -16,7 +16,7 @@ guest() {
     ssh -F "$HOME/.lima/$instance/ssh.config" -o ControlMaster=no -o ControlPath=none -o BatchMode=yes \
         -l berman-dev "lima-$instance" "$@"
 }
-work=$(guest 'mktemp -d "$HOME/.cache/berman-check.XXXXXX"')
+work=$(guest 'mkdir -p "$HOME/.cache" && mktemp -d "$HOME/.cache/berman-check.XXXXXX"')
 trap 'guest "rm -rf $work"' EXIT
 git -C "$root" archive --format=tar "$commit" | guest "tar -xf - -C $work"
 # The dependencies' build is kept between checks. Temporary files go to disk: the guest's /tmp is in memory.
