@@ -37,23 +37,33 @@ fn base(variable: &str, fallback: &str) -> Result<PathBuf> {
 
 impl Places {
     /// The places for this login. BERMAN_LIBRARY names another data directory.
+    ///
+    /// The working directories follow from the data directory alone, so a command that inherits
+    /// BERMAN_LIBRARY from a sitting finds the same places as the command that launched it.
     pub fn find() -> Result<Places> {
-        let chosen = std::env::var_os("BERMAN_LIBRARY").map(PathBuf::from).filter(|path| path.is_absolute());
+        let chosen = match std::env::var_os("BERMAN_LIBRARY").map(PathBuf::from) {
+            Some(path) if path.as_os_str().is_empty() => None,
+            Some(path) if !path.is_absolute() => {
+                return refuse(format!("BERMAN_LIBRARY must be an absolute path: {}", path.display()));
+            }
+            Some(path) => Some(files::resolve(&path)),
+            None => None,
+        };
         if cfg!(target_os = "macos") {
             let data = match chosen {
-                Some(path) => files::resolve(&path),
+                Some(path) => path,
                 None => home()?.join("Library/Application Support/Berman"),
             };
             // Spotlight skips a directory whose name ends in .noindex.
             let working = data.join("working.noindex");
             Ok(Places { returns: working.join("returns"), homes: working.join("homes"), data })
         } else {
-            let (data, working) = match chosen {
-                Some(path) => (files::resolve(&path), files::resolve(&path).join("working")),
-                None => (
-                    base("XDG_DATA_HOME", ".local/share")?.join("berman"),
-                    base("XDG_STATE_HOME", ".local/state")?.join("berman"),
-                ),
+            let usual = base("XDG_DATA_HOME", ".local/share")?.join("berman");
+            let data = chosen.unwrap_or_else(|| usual.clone());
+            let working = if data == usual {
+                base("XDG_STATE_HOME", ".local/state")?.join("berman")
+            } else {
+                data.join("working")
             };
             Ok(Places { returns: working.join("returns"), homes: working.join("homes"), data })
         }

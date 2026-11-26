@@ -268,7 +268,7 @@ fn relay(library: &Library, episode: &str, name: &str) -> Result<Child> {
 pub fn relay_output(library: &Library, episode: &str, name: &str) -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut buffer = vec![0u8; 1 << 16];
-    let mut kept = 0u64;
+    let (mut kept, mut failed) = (0u64, false);
     loop {
         let count = match input.read(&mut buffer) {
             Ok(0) => break,
@@ -276,14 +276,15 @@ pub fn relay_output(library: &Library, episode: &str, name: &str) -> Result<()> 
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         };
-        // Keep what fits the limit for one file. The rest is read and dropped so the actor can finish.
+        // Keep what fits the limit for one file. The rest is read and dropped so the actor can finish, and
+        // so is everything after a piece the library could not take.
         let room = files::FILE_LIMIT.saturating_sub(kept).min(count as u64) as usize;
         kept += count as u64;
-        if room > 0 {
-            library.append_stream(episode, name, &buffer[..room])?;
+        if room > 0 && !failed {
+            failed = library.append_stream(episode, name, &buffer[..room]).is_err();
         }
     }
-    library.end_stream(episode, name, kept > files::FILE_LIMIT)
+    library.end_stream(episode, name, failed || kept > files::FILE_LIMIT)
 }
 
 /// Start or retry a sitting. An opening sitting delivers the opening; others resume the session.
@@ -481,7 +482,9 @@ fn account(library: &Library, id: &str, node: i64, state: &Value, harness: Harne
     let mut output = |name: &str| -> Result<Vec<u8>> {
         let path = sitting[name].as_str().unwrap_or_default();
         if library.settle_stream(id, node, path)? {
-            cut.push(format!("The native {name} exceeded {} bytes; the rest was not kept.", files::FILE_LIMIT));
+            cut.push(format!(
+                "The native {name} was not kept in full: it passed the limit for one file or could not be stored."
+            ));
         }
         library.read(node, path)
     };
@@ -564,7 +567,10 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
         library.write_json(node, "ending.json", &json!({"reason": reason, "at": files::now()}))?;
     }
     let returns = return_directory(library, &episode);
-    if !library.exists(node, records::MANIFEST)? {
+    // The cleanup inventory is committed with the record, so its presence says the record was published before.
+    let published = episode.cleanup.is_some();
+    let mut receipt = None;
+    if !published {
         let mut limitations = Vec::new();
         if let (Some(session), true) = (bound_session(library, id, &state)?, library.exists(node, "sittings")?) {
             let closeout = json!({"hook_event_name": "closeout"});
@@ -572,18 +578,23 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
                 limitations.push(format!("Final parent transcript observation: {error}"));
             }
         }
+        // Output a relay carried for a sitting whose launcher stopped is still waiting to become a file.
+        for name in library.waiting_streams(id)? {
+            library.settle_stream(id, node, &name)?;
+        }
         library.durable()?;
         records::publish(library, id, node, &state, limitations, returns.as_deref())?;
+        library.clear_streams(id)?;
+        // Read the committed record back before anything outside the library is retired.
+        receipt = Some(records::verify(&Shelf::new(library, node), None)?);
     }
-    // Read the committed record back before anything outside the library is retired.
-    let mut receipt = records::verify(&Shelf::new(library, node), None)?;
     let cleanup = library.episode(id)?.and_then(|episode| episode.cleanup);
     if let Some(directory) = &returns {
         let inventory: Value = match &cleanup {
             Some(text) => serde_json::from_str(text)?,
             None => json!([]),
         };
-        records::retire(directory, &inventory);
+        records::retire(library, node, directory, &inventory)?;
         if fs::remove_dir(directory).is_ok() || !files::exists(directory) {
             library.forget_return(id)?;
             for kind in ["sitting", "capture"] {
@@ -591,6 +602,11 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
             }
         }
     }
+    // A record the producer has since changed no longer verifies. Cleanup above does not depend on that.
+    let mut receipt = match receipt {
+        Some(receipt) => receipt,
+        None => records::verify(&Shelf::new(library, node), None)?,
+    };
     let left = library.episode(id)?.and_then(|episode| return_directory(library, &episode));
     receipt["return"] = json!(left.as_deref().map(files::text));
     receipt["preserved"] = json!(preserved(left.as_deref()));

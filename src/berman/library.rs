@@ -141,10 +141,14 @@ impl Library {
         places::private(&places.data.join("locks"))?;
         let identity = files::uuid();
         let key = keys::create(store, &places, &identity)?;
+        // SQLite gives the write-ahead log the database file's permissions. Creating the file is also what
+        // decides between two setups at once: the one that loses removes only its own key.
+        let database = places.database();
+        if let Err(error) = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&database) {
+            keys::discard(store, &places, &identity);
+            return Err(error).at(&database);
+        }
         let made = (|| {
-            // SQLite gives the write-ahead log the database file's permissions.
-            let database = places.database();
-            std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&database).at(&database)?;
             let conn = Library::connect(&places, &key)?;
             conn.execute_batch(&format!("BEGIN IMMEDIATE; {TABLES} COMMIT;"))?;
             conn.execute("INSERT INTO meta(key, value) VALUES('schema', ?1), ('id', ?2)", params![SCHEMA, identity])?;
@@ -535,7 +539,12 @@ impl Library {
                 return refuse(format!("Episode {episode} still has a return directory. Close it before removing it."));
             }
             for found in nodes.iter().rev() {
-                self.conn.execute("UPDATE episodes SET node = NULL WHERE node = ?1", [found.id])?;
+                // A closed episode leaves with its directory, so its record can be imported again later.
+                self.conn.execute(
+                    "DELETE FROM streams WHERE episode IN (SELECT id FROM episodes WHERE node = ?1)",
+                    [found.id],
+                )?;
+                self.conn.execute("DELETE FROM episodes WHERE node = ?1", [found.id])?;
                 self.conn.execute("DELETE FROM nodes WHERE id = ?1", [found.id])?;
             }
             for content in nodes.iter().filter_map(|found| found.content) {
@@ -896,6 +905,19 @@ impl Library {
             self.conn.execute("DELETE FROM streams WHERE episode = ?1 AND name = ?2", params![episode, name])?;
             Ok(cut)
         })
+    }
+
+    /// The outputs of an episode's sittings that have pieces waiting to become files.
+    pub fn waiting_streams(&self, episode: &str) -> Result<Vec<String>> {
+        let mut statement = self.conn.prepare("SELECT DISTINCT name FROM streams WHERE episode = ?1 ORDER BY name")?;
+        let rows = statement.query_map([episode], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
+    }
+
+    /// Drop pieces that arrived after their output was settled.
+    pub fn clear_streams(&self, episode: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM streams WHERE episode = ?1", [episode])?;
+        Ok(())
     }
 
     pub fn setting(&self, key: &str) -> Result<Option<String>> {

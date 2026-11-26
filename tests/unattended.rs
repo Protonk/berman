@@ -437,3 +437,32 @@ fn independent_sessions_stay_outside_the_episode() {
         }
     }
 }
+
+#[test]
+fn closing_after_a_lost_launcher_keeps_the_output_the_actor_wrote() {
+    let mut world = World::new();
+    let episode = "episodes/lost-then-closed";
+    world.open(episode, "codex", &[]);
+    world.env.insert("FIXTURE_SLEEP".into(), "1".into());
+    let mut process = background(&world, &["start", episode, "--unattended", "--prompt", "Survey the modules."]);
+    process.kill().unwrap();
+    process.wait().unwrap();
+    // The producer closes without repeating the request first.
+    let mut receipt = None;
+    wait_for(|| {
+        let result = world.run(&["close", episode, "--reason", "Enough for today."]);
+        let said = String::from_utf8_lossy(&result.stderr);
+        if said.contains("in progress") || said.contains("still running") {
+            return false;
+        }
+        assert!(result.status.success(), "{said}");
+        receipt = Some(serde_json::from_slice::<Value>(&result.stdout).unwrap());
+        true
+    });
+    let found = limitations(&receipt.unwrap()["coverage"]);
+    assert!(found.contains(&"sittings/000001.json: process exit unobserved.".to_string()));
+    let output = world.read(&format!("{episode}/sittings/000001.stdout"));
+    assert!(output.contains("done 1: Survey the modules."), "{output}");
+    assert!(world.exists(&format!("{episode}/sittings/000001.stderr")));
+    world.cli(&["verify", episode]);
+}

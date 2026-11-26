@@ -52,9 +52,9 @@ On macOS the return directories and dedicated homes are under `working.noindex` 
 
 A whole record can be moved or copied, and any member can be removed by name. The manifest continues to describe the bytes collected at closing, so verification of a changed record names each member that is missing, changed or unlisted. A copy shares stored bytes with its source, and bytes stay for as long as any file refers to them. A review’s verified copy of a record therefore survives changes to the record and its removal.
 
-An open episode’s directory cannot be removed while its return directory exists. Close the episode first.
+An episode’s directory cannot be removed while its return directory exists. Close the episode first, and deal with any files closing lists as preserved. Removing a closed episode’s directory removes the episode from the library, so its exported record can be imported again later.
 
-Stored names keep their spelling. Before an export writes anything, it creates every name at the destination. If that filesystem cannot hold two of the library’s names side by side, for example names that differ only in case, the export reports them and leaves nothing behind.
+Stored names keep their spelling. Before an export writes anything, it creates every name at the destination. If that filesystem cannot hold two of the library’s names side by side, for example names that differ only in case, the export reports them and leaves nothing behind. An export writes into a directory named `DESTINATION.berman-partial-…` beside the destination and renames it when complete. One that is killed part-way leaves that directory, which is plaintext and safe to delete.
 
 ## Records from earlier releases
 

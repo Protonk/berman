@@ -114,8 +114,10 @@ fn read_source(
             break;
         }
         total += count as u64;
+        // Look for a line end in the bytes just read alone, so one very long line is not searched again and again.
+        let ended = buffer[..count].iter().rposition(|byte| *byte == b'\n').map(|at| pending.len() + at);
         pending.extend_from_slice(&buffer[..count]);
-        let Some(last) = pending.iter().rposition(|byte| *byte == b'\n') else {
+        let Some(last) = ended else {
             continue;
         };
         let complete: Vec<u8> = pending.drain(..=last).collect();

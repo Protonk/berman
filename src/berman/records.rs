@@ -120,7 +120,7 @@ pub fn publish(
                         (None, Some(_)) => (|| {
                             let size = fs::metadata(&path).at(&path)?.len();
                             if count >= RECORD_FILES || retained + size > RECORD_BYTES {
-                                return refuse("episode record size or file limit reached");
+                                return refuse("the return's size or file limit was reached");
                             }
                             // Each file is its own transaction, so the journal never holds more than one file.
                             library.transaction(|| {
@@ -177,34 +177,23 @@ pub fn publish(
         if !library.exists(node, "sittings")? {
             limitations.push("No sitting was launched.".into());
         }
-        // Sittings and telemetry are already in the episode. They share the record's limits with the return.
-        for prefix in ["sittings", "telemetry/events", "telemetry/parent", "telemetry/displaced", "telemetry/tails"] {
+        // Sittings and telemetry are already in the episode and stay whole. The limits bound what closing brings in.
+        for prefix in ["sittings", "telemetry/events"] {
             let Some(directory) = library.find(node, prefix)? else {
                 continue;
             };
-            for (name, member) in library.files(directory.id)? {
+            for (name, member) in library.files(directory.id)?.into_iter().filter(|(name, _)| name.ends_with(".json")) {
                 let label = format!("{prefix}/{name}");
-                if count >= RECORD_FILES || retained + member.size > RECORD_BYTES {
-                    limitations.push(format!("Omitted {label}: episode record size or file limit reached"));
-                    library.remove(&member)?;
-                    continue;
-                }
-                retained += member.size;
-                count += 1;
-                if prefix == "sittings" && name.ends_with(".json") {
-                    let sitting = library.read_json(member.id, "")?;
-                    if sitting["exit"].is_null() {
+                let row = library.read_json(member.id, "")?;
+                if prefix == "sittings" {
+                    if row["exit"].is_null() {
                         limitations.push(format!("{label}: process exit unobserved."));
                     }
-                    for item in sitting["limitations"].as_array().into_iter().flatten() {
+                    for item in row["limitations"].as_array().into_iter().flatten() {
                         limitations.push(format!("{label}: {}", json::display(item)));
                     }
-                }
-                if prefix == "telemetry/events" {
-                    let row = library.read_json(member.id, "")?;
-                    if json::truthy(&row["limitation"]) {
-                        limitations.push(format!("{label}: {}", json::display(&row["limitation"])));
-                    }
+                } else if json::truthy(&row["limitation"]) {
+                    limitations.push(format!("{label}: {}", json::display(&row["limitation"])));
                 }
             }
         }
@@ -224,14 +213,19 @@ pub fn publish(
 
 /// Remove the return files the record holds, where each still has the bytes that were collected.
 ///
-/// Anything else stays: a file that changed, arrived later, or was never collected. Directories
-/// left empty are removed.
-pub fn retire(directory: &Path, inventory: &Value) {
+/// A file goes only while the library still holds it under `return/` with the collected digest.
+/// Anything else stays: a file that changed, arrived later, was never collected, or whose copy
+/// the producer has since removed from the record. Directories left empty are removed.
+pub fn retire(library: &Library, node: i64, directory: &Path, inventory: &Value) -> Result<()> {
     for item in inventory.as_array().into_iter().flatten() {
-        let path = directory.join(item["path"].as_str().unwrap_or_default());
-        let unchanged = files::regular(&path).is_ok()
-            && fs::File::open(&path).ok().and_then(|file| files::digest_reader(file).ok()).as_deref()
-                == item["sha256"].as_str();
+        let (Some(name), Some(digest)) = (item["path"].as_str(), item["sha256"].as_str()) else {
+            continue;
+        };
+        let held = library.find(node, &format!("return/{name}"))?.and_then(|member| member.sha256);
+        let path = directory.join(name);
+        let unchanged = held.as_deref() == Some(digest)
+            && files::regular(&path).is_ok()
+            && fs::File::open(&path).ok().and_then(|file| files::digest_reader(file).ok()).as_deref() == Some(digest);
         if unchanged {
             let _ = fs::remove_file(&path);
         }
@@ -251,6 +245,7 @@ pub fn retire(directory: &Path, inventory: &Value) {
     for emptied in directories.iter().skip(1).rev() {
         let _ = fs::remove_dir(emptied);
     }
+    Ok(())
 }
 
 /// A record a producer selected: in the library, or a directory on disk.
@@ -356,13 +351,29 @@ pub fn review(library: &Library, sources: &[Source], question: &str, output: &st
     })
 }
 
-/// What kind of Berman directory this is on disk, if any.
+/// The sources a review directory lists: for each, its path inside the review and its manifest digest.
+fn listed_sources(directory: &Path) -> Option<Vec<(String, String)>> {
+    let listed = files::read(&directory.join("sources.json")).ok()?;
+    let entries = listed.as_array().filter(|entries| !entries.is_empty())?;
+    entries
+        .iter()
+        .map(|entry| {
+            let path = parts(entry["path"].as_str()?).ok().filter(|names| !names.is_empty())?.join("/");
+            Some((path, entry["sha256"].as_str().filter(|digest| files::is_sha256(digest))?.to_string()))
+        })
+        .collect()
+}
+
+/// What kind of Berman directory this is on disk, if any. A file that only shares a name does not count.
 fn kind(directory: &Path) -> Option<&'static str> {
-    if files::read_regular(&directory.join(MANIFEST)).is_ok() {
+    let schema = |name: &str| {
+        files::read(&directory.join(name)).ok().and_then(|value| json::text(&value, "schema").map(str::to_string))
+    };
+    if schema(MANIFEST).as_deref() == Some(SCHEMA) {
         Some("record")
-    } else if files::read_regular(&directory.join("sources.json")).is_ok() {
+    } else if listed_sources(directory).is_some() {
         Some("review")
-    } else if files::read_regular(&directory.join("episode.json")).is_ok() {
+    } else if schema("episode.json").is_some_and(|found| episodes::SCHEMAS.contains(&found.as_str())) {
         Some("episode")
     } else {
         None
@@ -400,24 +411,30 @@ pub fn import(library: &Library, directory: &Path, destination: &str) -> Result<
             })
         }
         Some("review") => {
-            let listed = files::read(&directory.join("sources.json"))?;
-            let sources = listed.as_array().cloned().unwrap_or_default();
-            for source in &sources {
-                let Some(path) = source["path"].as_str().filter(|path| parts(path).is_ok()) else {
-                    return refuse("sources.json names a source this build cannot read");
-                };
-                verify(&Directory(directory.join(path)), source["sha256"].as_str())?;
+            let sources = listed_sources(directory).unwrap_or_default();
+            for (path, digest) in &sources {
+                verify(&Directory(directory.join(path)), Some(digest))?;
+            }
+            // A source the review does not list would be carried without having been verified.
+            if let Ok(present) = fs::read_dir(directory.join("sources")) {
+                for entry in present.flatten() {
+                    let name = format!("sources/{}", entry.file_name().to_string_lossy());
+                    if !sources.iter().any(|(path, _)| *path == name || path.starts_with(&format!("{name}/"))) {
+                        return refuse(format!("{name} is not listed in sources.json"));
+                    }
+                }
             }
             library.transaction(|| {
                 let copy = library.put(directory, destination, false)?;
-                for source in &sources {
-                    let node = library.expect(copy.id, source["path"].as_str().unwrap_or_default())?.id;
-                    verify(&Shelf::new(library, node), source["sha256"].as_str())?;
+                for (path, digest) in &sources {
+                    verify(&Shelf::new(library, library.expect(copy.id, path)?.id), Some(digest))?;
                 }
+                let listed: Vec<Value> =
+                    sources.iter().map(|(path, digest)| json!({"path": path, "sha256": digest})).collect();
                 Ok(json!({
                     "imported": "review",
                     "path": library.path(copy.id)?,
-                    "sources": sources,
+                    "sources": listed,
                     "from": files::text(directory),
                 }))
             })

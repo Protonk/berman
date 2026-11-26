@@ -272,7 +272,10 @@ pub fn new_directory<T>(destination: &Path, fill: impl FnOnce(&Path) -> Result<T
     let parent = destination.parent().unwrap_or(Path::new("/"));
     fs::create_dir_all(parent).at(parent)?;
     safe_directory(parent)?;
-    let temporary = parent.join(format!(".berman-{}", uuid_hex()));
+    // The staging directory is named for its destination and is not hidden, so one left by an interrupted
+    // command can be seen and removed.
+    let name = destination.file_name().unwrap_or_default().to_string_lossy();
+    let temporary = parent.join(format!("{name}.berman-partial-{}", uuid_hex()));
     let tree = temporary.join("new");
     create_private_directory(&tree)?;
     let result = (|| {

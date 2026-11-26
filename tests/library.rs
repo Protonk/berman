@@ -194,7 +194,7 @@ fn an_export_reports_names_the_filesystem_cannot_hold_apart() {
         world.refuses(&["library", "export", "reviews/case", &text(&out)], "Nothing was exported");
         assert!(!out.exists());
         let left: Vec<_> = std::fs::read_dir(&world.base).unwrap().flatten().map(|e| e.file_name()).collect();
-        assert!(!left.iter().any(|name| name.to_string_lossy().starts_with(".berman-")));
+        assert!(!left.iter().any(|name| name.to_string_lossy().contains(".berman-partial-")));
     } else {
         world.cli(&["library", "export", "reviews/case", &text(&out)]);
         assert_eq!(inventory(&out).len(), 3);
@@ -367,4 +367,83 @@ fn write_this_platform_s_record() {
     world.cli(&["library", "export", name, &text(&out.join("record"))]);
     let made = json!({"episode": receipt["episode"], "sha256": receipt["sha256"], "target": std::env::consts::OS});
     std::fs::write(out.join("digest.json"), format!("{made:#}\n")).unwrap();
+}
+
+#[test]
+fn a_removed_record_can_be_imported_again() {
+    let world = World::new();
+    let receipt = closed_episode(&world, "episodes/kept");
+    let (id, digest) = (receipt["episode"].as_str().unwrap(), receipt["sha256"].as_str().unwrap());
+    let out = world.base.join("exported");
+    world.cli(&["library", "export", "episodes/kept", &text(&out)]);
+    world.cli(&["library", "rm", "--recursive", "episodes/kept"]);
+    world.refuses(&["status", id], "No episode");
+    let imported = world.cli(&["import", &text(&out), "episodes/back"]);
+    assert_eq!((imported["episode"].as_str(), imported["sha256"].as_str()), (Some(id), Some(digest)));
+    assert_eq!(world.cli(&["verify", id])["record"], "episodes/back");
+}
+
+#[test]
+fn a_review_is_imported_only_with_every_source_listed_and_verified() {
+    let world = World::new();
+    let copy = |name: &str| {
+        let to = world.base.join(name);
+        assert!(
+            std::process::Command::new("cp")
+                .arg("-R")
+                .arg(golden().join("review"))
+                .arg(&to)
+                .status()
+                .unwrap()
+                .success()
+        );
+        to
+    };
+    let listed: Value = serde_json::from_slice(&std::fs::read(golden().join("review/sources.json")).unwrap()).unwrap();
+    // Not a list of sources at all: this is some other directory with a file of that name.
+    let other = copy("not-a-review");
+    std::fs::write(other.join("sources.json"), "{\"anything\": true}").unwrap();
+    world.refuses(&["import", &text(&other), "reviews/other"], "Expected a record or review directory");
+    // A source carried along without being listed.
+    let unlisted = copy("unlisted");
+    std::fs::write(unlisted.join("sources.json"), format!("{:#}", json!([listed[0]]))).unwrap();
+    world.refuses(&["import", &text(&unlisted), "reviews/unlisted"], "is not listed in sources.json");
+    // A path that leaves the review directory is read as a path inside it, where nothing is.
+    let outside = copy("outside");
+    let record = golden().join("claude/record");
+    let entry = json!([{"episode": listed[0]["episode"], "path": text(&record), "sha256": listed[0]["sha256"]}]);
+    std::fs::write(outside.join("sources.json"), format!("{entry:#}")).unwrap();
+    world.refuses(&["import", &text(&outside), "reviews/outside"], "No such file");
+    // An entry with no digest to verify against.
+    let undigested = copy("undigested");
+    let entry = json!([{"episode": listed[0]["episode"], "path": listed[0]["path"]}, listed[1]]);
+    std::fs::write(undigested.join("sources.json"), format!("{entry:#}")).unwrap();
+    world.refuses(&["import", &text(&undigested), "reviews/undigested"], "Expected a record or review directory");
+    assert!(world.ls("").is_empty());
+}
+
+#[test]
+fn legacy_lists_only_what_berman_made() {
+    let world = World::new();
+    let top = world.base.join("old");
+    std::fs::create_dir_all(top.join("app/nested")).unwrap();
+    // Another program's manifest, with a real record below it.
+    std::fs::write(top.join("app/manifest.json"), "{\"name\": \"pwa\"}").unwrap();
+    std::fs::write(top.join("app/sources.json"), "[]").unwrap();
+    let record = top.join("app/nested/record");
+    assert!(
+        std::process::Command::new("cp")
+            .arg("-R")
+            .arg(golden().join("claude/record"))
+            .arg(&record)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let listed = world.cli(&["legacy", &text(&top)]);
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    assert_eq!(
+        (listed[0]["kind"].as_str(), listed[0]["path"].as_str()),
+        (Some("record"), Some(text(&record).as_str()))
+    );
 }

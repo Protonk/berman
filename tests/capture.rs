@@ -108,6 +108,21 @@ fn a_growing_transcript_adds_history_and_shares_its_bytes() {
 }
 
 #[test]
+fn one_very_long_line_is_captured_whole_and_promptly() {
+    let session = Session::new();
+    // A single tool result can be tens of megabytes on one line.
+    let long = session.line(&"0123456789abcdef".repeat(2 * 1024 * 1024));
+    let content = format!("{}{long}{}", session.line("before"), session.line("after"));
+    let started = Instant::now();
+    let captured = session.capture(&content).unwrap();
+    assert!(started.elapsed() < Duration::from_secs(20), "a 32 MiB line took {:?}", started.elapsed());
+    assert_eq!(captured["sha256"], files::digest(content.as_bytes()));
+    assert_eq!(session.read(&format!("{PARENT}/transcript.jsonl")), content.as_bytes());
+    let reader = session.read(&format!("{PARENT}/conversation.txt"));
+    assert!(reader.len() > long.len() - 200 && reader.ends_with(b"after\n\n"));
+}
+
+#[test]
 fn a_rewrite_or_truncation_retains_the_displaced_bytes() {
     let session = Session::new();
     let original = session.line("original");

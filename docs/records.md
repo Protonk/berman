@@ -35,7 +35,7 @@ berman library export episodes/notes "$HOME/notes-record"
 berman verify "$HOME/notes-record" --sha256 DIGEST
 ```
 
-A record has the same members and manifest in the library and in an exported directory, on Linux and on macOS, so a copy made on one system verifies on another without the original project. An internal check can pass on an incomplete capture. The return is bounded to regular files, with up to 256 MiB per file and a shared limit of 4,096 files and 1 GiB across the return, sittings and telemetry. Collection records omissions. If the captured transcript does not agree with its own description at closing, the coverage says so and its members are kept as found.
+A record has the same members and manifest in the library and in an exported directory, on Linux and on macOS, so a copy made on one system verifies on another without the original project. An internal check can pass on an incomplete capture. The return is bounded to regular files, with up to 256 MiB per file and a limit of 4,096 files and 1 GiB across the return. Collection records omissions. Sittings and telemetry are already in the episode when it closes and are kept whole. A transcript is captured up to 256 MiB. If the captured transcript does not agree with its own description at closing, the coverage says so and its members are kept as found.
 
 ## Ask a question across episodes
 

@@ -16,7 +16,7 @@ A record has the same members and manifest format as before. `berman library exp
 
 ## The return directory
 
-The actor’s return directory is a real directory outside the checkout, the harness home and the library, with the same path at every sitting. Its parent can be entered but not listed. Closing copies its regular files into the episode under `return/`, publishes and re-reads the record, and then removes what it collected and the directory itself. A file that changed, could not be read, would pass a limit, is a link, or arrived late stays in place, and `close` and `status` list it under `preserved`. Repeating a close with the original reason finishes an interrupted one.
+The actor’s return directory is a real directory outside the checkout, the harness home and the library, with the same path at every sitting. Its parent can be entered but not listed. Closing copies its regular files into the episode under `return/`, publishes and re-reads the record, and then removes what it collected and the directory itself. A file that changed, could not be read, would pass a limit, is a link, or arrived late stays in place, and `close` and `status` list it under `preserved`. Repeating a close with the original reason finishes an interrupted one. The limits of 4,096 files and 1 GiB now apply to the return alone: sittings and telemetry are already in the episode and are never left out to fit.
 
 `berman harness-home ACTOR` prints a dedicated home for an actor’s CLI under a parent that cannot be listed, for producers who want the CLI’s own session history out of broad searches as well. [Actor setup](../operating.md#set-up-the-actor)
 
