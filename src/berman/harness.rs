@@ -131,12 +131,46 @@ impl Harness {
         }
     }
 
-    /// Check that complete transcript lines belong to the session and derive their reading copy.
-    pub fn transcript(self, raw: &[u8], path: &Path, session: &str) -> Result<Reading> {
+    /// The lines that begin every reading copy for this harness.
+    pub fn heading(self) -> Vec<u8> {
+        let lines: &[&str] = match self {
+            Harness::Codex => &codex::HEADING,
+            Harness::Claude => &claude::HEADING,
+        };
+        lines.iter().flat_map(|line| line.bytes().chain(std::iter::once(b'\n'))).collect()
+    }
+
+    /// Add one complete transcript line, numbered from 1, to a reading copy.
+    pub fn line(self, number: usize, raw: &[u8], reading: &mut Reading) {
         match self {
-            Harness::Codex => codex::transcript(raw, session),
-            Harness::Claude => claude::transcript(raw, path, session),
+            Harness::Codex => codex::line(number, raw, reading),
+            Harness::Claude => claude::line(number, raw, reading),
         }
+    }
+
+    /// Check a transcript's first line, where the harness names its session there.
+    pub fn first_line(self, first: &[u8], session: &str) -> Result<()> {
+        match self {
+            Harness::Codex => codex::belongs(first, session),
+            Harness::Claude => Ok(()),
+        }
+    }
+
+    /// Check a transcript that has been read whole against the session.
+    pub fn whole(self, reading: &Reading, path: &Path, session: &str) -> Result<()> {
+        match self {
+            Harness::Codex => Ok(()),
+            Harness::Claude => claude::belongs(reading, path, session),
+        }
+    }
+
+    /// The reading copy of complete transcript lines held in memory.
+    pub fn render(self, data: &[u8]) -> Reading {
+        let mut reading = Reading { text: self.heading(), ..Reading::default() };
+        for (index, raw) in lines(data).into_iter().enumerate() {
+            self.line(index + 1, raw, &mut reading);
+        }
+        reading
     }
 }
 

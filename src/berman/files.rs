@@ -163,6 +163,11 @@ pub fn read_regular(path: &Path) -> Result<Vec<u8>> {
     fs::read(path).at(path)
 }
 
+/// What must stay the same about a file while it is read.
+pub fn identity(metadata: &fs::Metadata) -> (u64, u64, i64, i64) {
+    (metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec())
+}
+
 /// Read a regular file whole, refusing one that changes during the read.
 pub fn stable_bytes(path: &Path, limit: u64) -> Result<Vec<u8>> {
     regular(path)?;
@@ -173,7 +178,6 @@ pub fn stable_bytes(path: &Path, limit: u64) -> Result<Vec<u8>> {
     let mut raw = Vec::with_capacity(before.len() as usize + 1);
     File::open(path).at(path)?.take(before.len() + 1).read_to_end(&mut raw).at(path)?;
     let after = fs::metadata(path).at(path)?;
-    let identity = |m: &fs::Metadata| (m.ino(), m.len(), m.mtime(), m.mtime_nsec());
     if identity(&before) != identity(&after) || raw.len() as u64 != after.len() {
         return refuse(format!("Source changed during observation: {}", path.display()));
     }

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::error::{Result, refuse};
 use crate::files;
-use crate::harness::{Launch, Outcome, Reading, blank, block, lines};
+use crate::harness::{Launch, Outcome, Reading, blank, block};
 use crate::json::{display, text, truthy};
 
 pub const HOME_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
@@ -101,86 +101,79 @@ pub fn candidates(home: &Path, session: &str) -> Vec<PathBuf> {
     projects.flatten().map(|entry| entry.path().join(&name)).filter(|path| files::exists(path)).collect()
 }
 
-/// Check that the transcript belongs to the session and render its reading copy.
-pub fn transcript(raw: &[u8], path: &Path, session: &str) -> Result<Reading> {
-    let reading = render(raw);
+/// Whether the transcript read belongs to the session: named for it, and naming no other.
+pub fn belongs(reading: &Reading, path: &Path, session: &str) -> Result<()> {
     let named = path.file_name().is_some_and(|name| name.to_string_lossy() == format!("{session}.jsonl"));
     if !named || reading.identities != [session] {
         return refuse("Claude transcript identity differs from the assigned parent");
     }
-    Ok(reading)
+    Ok(())
 }
 
-pub fn render(data: &[u8]) -> Reading {
-    let mut reading = Reading::default();
-    for heading in [
-        "CLAUDE EPISODE SESSION: DERIVED READING COPY",
-        "",
-        "Source: transcript.jsonl. Blocks cite raw JSONL lines and JSON pointers.",
-        "Visible messages and tool calls/results. Other content remains in the raw source.",
-        "",
-    ] {
-        reading.text.extend_from_slice(heading.as_bytes());
-        reading.text.push(b'\n');
+pub const HEADING: [&str; 5] = [
+    "CLAUDE EPISODE SESSION: DERIVED READING COPY",
+    "",
+    "Source: transcript.jsonl. Blocks cite raw JSONL lines and JSON pointers.",
+    "Visible messages and tool calls/results. Other content remains in the raw source.",
+    "",
+];
+
+/// Add one transcript line to the reading copy.
+pub fn line(number: usize, raw: &[u8], reading: &mut Reading) {
+    if blank(raw) {
+        return;
     }
-    for (index, raw) in lines(data).into_iter().enumerate() {
-        let number = index + 1;
-        if blank(raw) {
-            continue;
-        }
-        let Ok(event) = serde_json::from_slice::<Value>(raw) else {
-            reading.malformed.push(number as u64);
+    let Ok(event) = serde_json::from_slice::<Value>(raw) else {
+        reading.malformed.push(number as u64);
+        return;
+    };
+    if !event.is_object() {
+        return;
+    }
+    if let Some(identity) = text(&event, "sessionId")
+        && !reading.identities.iter().any(|known| known == identity)
+    {
+        reading.identities.push(identity.to_string());
+    }
+    let Some(message) = event.get("message").filter(|m| m.is_object()) else {
+        return;
+    };
+    let role = message.get("role").unwrap_or(&event["type"]);
+    let whole = message.get("content").and_then(Value::as_str);
+    let content = match (whole, message.get("content")) {
+        (Some(said), _) => vec![json!({"type": "text", "text": said})],
+        (None, Some(Value::Array(items))) => items.clone(),
+        (None, None) => Vec::new(),
+        _ => return,
+    };
+    let mut texts = String::new();
+    for (i, part) in content.iter().enumerate() {
+        let Some(kind) = text(part, "type").filter(|_| part.is_object()) else {
             continue;
         };
-        if !event.is_object() {
-            continue;
-        }
-        if let Some(identity) = text(&event, "sessionId")
-            && !reading.identities.iter().any(|known| known == identity)
-        {
-            reading.identities.push(identity.to_string());
-        }
-        let Some(message) = event.get("message").filter(|m| m.is_object()) else {
-            continue;
-        };
-        let role = message.get("role").unwrap_or(&event["type"]);
-        let whole = message.get("content").and_then(Value::as_str);
-        let content = match (whole, message.get("content")) {
-            (Some(said), _) => vec![json!({"type": "text", "text": said})],
-            (None, Some(Value::Array(items))) => items.clone(),
-            (None, None) => Vec::new(),
+        let field = match kind {
+            "text" => "text",
+            "tool_use" => "input",
+            "tool_result" => "content",
             _ => continue,
         };
-        let mut texts = String::new();
-        for (i, part) in content.iter().enumerate() {
-            let Some(kind) = text(part, "type").filter(|_| part.is_object()) else {
-                continue;
-            };
-            let field = match kind {
-                "text" => "text",
-                "tool_use" => "input",
-                "tool_result" => "content",
-                _ => continue,
-            };
-            let empty = Value::String(String::new());
-            let value = part.get(field).unwrap_or(&empty);
-            if let (true, Some(said)) = (kind == "text", value.as_str()) {
-                texts.push_str(said);
-            }
-            let pointer =
-                if whole.is_some() { "/message/content".to_string() } else { format!("/message/content/{i}/{field}") };
-            let time = event.get("timestamp").map(display).unwrap_or_else(|| "not recorded".into());
-            let name = part.get("name").map(display).unwrap_or_default();
-            let call = part.get("id").or_else(|| part.get("tool_use_id")).map(display).unwrap_or_default();
-            let heading = [
-                format!("TIME: {time} | ROLE: {} | KIND: {kind}", display(role)),
-                format!("NAME: {name} | CALL ID: {call}"),
-            ];
-            block(&mut reading.text, number, &pointer, heading, value);
+        let empty = Value::String(String::new());
+        let value = part.get(field).unwrap_or(&empty);
+        if let (true, Some(said)) = (kind == "text", value.as_str()) {
+            texts.push_str(said);
         }
-        if role.as_str() == Some("assistant") {
-            reading.assistant.push(files::digest(texts.as_bytes()));
-        }
+        let pointer =
+            if whole.is_some() { "/message/content".to_string() } else { format!("/message/content/{i}/{field}") };
+        let time = event.get("timestamp").map(display).unwrap_or_else(|| "not recorded".into());
+        let name = part.get("name").map(display).unwrap_or_default();
+        let call = part.get("id").or_else(|| part.get("tool_use_id")).map(display).unwrap_or_default();
+        let heading = [
+            format!("TIME: {time} | ROLE: {} | KIND: {kind}", display(role)),
+            format!("NAME: {name} | CALL ID: {call}"),
+        ];
+        block(&mut reading.text, number, &pointer, heading, value);
     }
-    reading
+    if role.as_str() == Some("assistant") {
+        reading.assistant.push(files::digest(texts.as_bytes()));
+    }
 }

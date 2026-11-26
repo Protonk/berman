@@ -35,6 +35,20 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<rusqlite::Error> for Error {
+    fn from(error: rusqlite::Error) -> Self {
+        match error.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::NotADatabase) => {
+                Error::Refused("The library key does not open the library. The library is unchanged.".into())
+            }
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => {
+                Error::Refused("The library is busy with another Berman command".into())
+            }
+            _ => Error::Refused(format!("Library storage: {error}")),
+        }
+    }
+}
+
 pub fn refuse<T>(text: impl Into<String>) -> Result<T> {
     Err(Error::Refused(text.into()))
 }

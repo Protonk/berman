@@ -175,80 +175,72 @@ pub fn owns(path: &Path, session: &str) -> Result<bool> {
     Ok(line.len() as u64 <= FIRST_LINE && meta_session(&line).as_deref() == Some(session))
 }
 
-/// Check that the transcript belongs to the session and render its reading copy.
-pub fn transcript(raw: &[u8], session: &str) -> Result<Reading> {
-    let first = raw.split(|byte| *byte == b'\n').next().unwrap_or_default();
+/// Whether a transcript's first line names the session.
+pub fn belongs(first: &[u8], session: &str) -> Result<()> {
     if meta_session(first).as_deref() != Some(session) {
         return refuse("Codex transcript metadata differs from the assigned parent");
     }
-    Ok(render(raw))
+    Ok(())
 }
 
-/// Render visible response items and harness task errors; retain raw records.
-pub fn render(data: &[u8]) -> Reading {
-    let mut reading = Reading::default();
-    for heading in [
-        "CODEX EPISODE SESSION: DERIVED READING COPY",
-        "",
-        "Source: transcript.jsonl. Each block cites its raw JSONL line and JSON pointer.",
-        "Visible user/assistant messages, tool calls/results, and harness task errors.",
-        "Reasoning, developer context, transport metadata and duplicate message events stay raw.",
-        "",
-    ] {
-        reading.text.extend_from_slice(heading.as_bytes());
-        reading.text.push(b'\n');
+pub const HEADING: [&str; 6] = [
+    "CODEX EPISODE SESSION: DERIVED READING COPY",
+    "",
+    "Source: transcript.jsonl. Each block cites its raw JSONL line and JSON pointer.",
+    "Visible user/assistant messages, tool calls/results, and harness task errors.",
+    "Reasoning, developer context, transport metadata and duplicate message events stay raw.",
+    "",
+];
+
+/// Add one transcript line to the reading copy: visible response items and harness task errors.
+pub fn line(number: usize, raw: &[u8], reading: &mut Reading) {
+    if blank(raw) {
+        return;
     }
-    for (index, raw) in lines(data).into_iter().enumerate() {
-        let number = index + 1;
-        if blank(raw) {
-            continue;
-        }
-        let Ok(event) = serde_json::from_slice::<Value>(raw) else {
-            reading.malformed.push(number as u64);
-            continue;
-        };
-        if !event.is_object() {
-            continue;
-        }
-        let nothing = Value::Object(Default::default());
-        let item = event.get("payload").unwrap_or(&nothing);
-        if !item.is_object() {
-            continue;
-        }
-        let empty = Value::String(String::new());
-        let mut kind = display(&item["type"]);
-        let mut role = item.get("role").map(display).unwrap_or_default();
-        let mut blocks: Vec<(String, &Value)> = Vec::new();
-        if text(&event, "type") == Some("event_msg") && kind == "task_complete" && truthy(&item["error"]) {
-            (role, kind) = ("harness".into(), "task_error".into());
-            blocks.push(("/payload/error".into(), &item["error"]));
-        } else if text(&event, "type") != Some("response_item") {
-            continue;
-        } else if kind == "message" && matches!(text(item, "role"), Some("user" | "assistant")) {
-            let mut texts = String::new();
-            for (i, part) in item["content"].as_array().into_iter().flatten().enumerate() {
-                if let Some(said) = text(part, "text").filter(|_| part.is_object()) {
-                    texts.push_str(said);
-                    blocks.push((format!("/payload/content/{i}/text"), &part["text"]));
-                }
-            }
-            if role == "assistant" {
-                reading.assistant.push(files::digest(texts.as_bytes()));
-            }
-        } else if kind == "function_call" || kind == "custom_tool_call" {
-            let field = if kind == "function_call" { "arguments" } else { "input" };
-            blocks.push((format!("/payload/{field}"), item.get(field).unwrap_or(&empty)));
-        } else if kind == "function_call_output" || kind == "custom_tool_call_output" {
-            blocks.push(("/payload/output".into(), item.get("output").unwrap_or(&empty)));
-        }
-        let time = event.get("timestamp").map(display).unwrap_or_else(|| "not recorded".into());
-        let name = item.get("name").map(display).unwrap_or_default();
-        let call = item.get("call_id").map(display).unwrap_or_default();
-        for (pointer, content) in blocks {
-            let heading =
-                [format!("TIME: {time} | ROLE: {role} | KIND: {kind}"), format!("NAME: {name} | CALL ID: {call}")];
-            block(&mut reading.text, number, &pointer, heading, content);
-        }
+    let Ok(event) = serde_json::from_slice::<Value>(raw) else {
+        reading.malformed.push(number as u64);
+        return;
+    };
+    if !event.is_object() {
+        return;
     }
-    reading
+    let nothing = Value::Object(Default::default());
+    let item = event.get("payload").unwrap_or(&nothing);
+    if !item.is_object() {
+        return;
+    }
+    let empty = Value::String(String::new());
+    let mut kind = display(&item["type"]);
+    let mut role = item.get("role").map(display).unwrap_or_default();
+    let mut blocks: Vec<(String, &Value)> = Vec::new();
+    if text(&event, "type") == Some("event_msg") && kind == "task_complete" && truthy(&item["error"]) {
+        (role, kind) = ("harness".into(), "task_error".into());
+        blocks.push(("/payload/error".into(), &item["error"]));
+    } else if text(&event, "type") != Some("response_item") {
+        return;
+    } else if kind == "message" && matches!(text(item, "role"), Some("user" | "assistant")) {
+        let mut texts = String::new();
+        for (i, part) in item["content"].as_array().into_iter().flatten().enumerate() {
+            if let Some(said) = text(part, "text").filter(|_| part.is_object()) {
+                texts.push_str(said);
+                blocks.push((format!("/payload/content/{i}/text"), &part["text"]));
+            }
+        }
+        if role == "assistant" {
+            reading.assistant.push(files::digest(texts.as_bytes()));
+        }
+    } else if kind == "function_call" || kind == "custom_tool_call" {
+        let field = if kind == "function_call" { "arguments" } else { "input" };
+        blocks.push((format!("/payload/{field}"), item.get(field).unwrap_or(&empty)));
+    } else if kind == "function_call_output" || kind == "custom_tool_call_output" {
+        blocks.push(("/payload/output".into(), item.get("output").unwrap_or(&empty)));
+    }
+    let time = event.get("timestamp").map(display).unwrap_or_else(|| "not recorded".into());
+    let name = item.get("name").map(display).unwrap_or_default();
+    let call = item.get("call_id").map(display).unwrap_or_default();
+    for (pointer, content) in blocks {
+        let heading =
+            [format!("TIME: {time} | ROLE: {role} | KIND: {kind}"), format!("NAME: {name} | CALL ID: {call}")];
+        block(&mut reading.text, number, &pointer, heading, content);
+    }
 }
