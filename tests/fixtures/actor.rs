@@ -226,6 +226,12 @@ fn main() {
             println!("{}", line(&event));
         }
     }
+    if let Some(gate) = option("FIXTURE_DELAY_STDERR") {
+        // A descendant keeps the stderr pipe after its parent exits. It then reports its final bytes.
+        #[allow(clippy::zombie_processes)]
+        let _writer = Command::new("sh").args(["-c", "i=0; while test ! -f \"$1\" && test $i -lt 400; do sleep .1; i=$((i+1)); done; echo delayed-report >&2", "writer", &gate])
+            .stdout(Stdio::null()).spawn().unwrap();
+    }
     if failed {
         eprintln!("the turn could not finish");
         exit(1);

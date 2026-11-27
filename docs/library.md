@@ -30,7 +30,7 @@ The key is 32 random bytes, generated once by `berman library init`. By default 
 
 A missing key is reported as missing. Berman does not create a second key or replace a library that already exists.
 
-To back up, copy `library.db`, any `library.db-wal` beside it, and `library.json` together while no Berman command is running, and keep a copy of the key from where `berman library where` says it is. Restore them to the same places. A backup without its key cannot be read. The return directory of an open episode is not in the library. Close open episodes before a backup, or copy their return directories as well: an episode restored without its return directory closes with the coverage saying the return was missing.
+To back up, copy `library.db`, any `library.db-wal` beside it, and `library.json` together while no Berman command is running, and keep a copy of the key from where `berman library where` says it is. Restore them to the same places. A backup without its key cannot be read. The return directory of an open episode is not in the library. Close open episodes before a backup, or copy their return directories and any sibling ending in `.retiring` left by interrupted cleanup as well: an episode restored without its return directory closes with the coverage saying the return was missing.
 
 ## What a search of the disk finds
 
@@ -46,7 +46,7 @@ Suppose an instruction meant for one project reaches an actor working in another
 
 The installed program, the hook command and Berman’s own directory can be found. They name no project. Lock files beside the library are named by episode ID.
 
-On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, which Spotlight does not index. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. Each return directory and dedicated home keeps the path it was given when it was made, whatever a later login’s environment says. Whether a Linux desktop index would list them has not been checked: none was enabled where Berman was tested. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
+On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, and a Spotlight check on an indexed Mac volume found the ordinary filename and full-text controls while both private paths produced zero matches. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. Each return directory and dedicated home keeps the path it was given when it was made, whatever a later login’s environment says. On Linux the working parent also contains an empty `.nomedia` file. The Debian container check uses GNOME LocalSearch with a recursively indexed directory. It finds an ordinary file by name and full text while the live return and dedicated harness history produce zero matches. Other desktop indexers have their own settings. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
 
 ## Arranging and removing
 

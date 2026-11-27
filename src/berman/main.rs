@@ -256,14 +256,16 @@ fn optional<'a>(matches: &'a ArgMatches, name: &str) -> Option<&'a str> {
 /// whatever a later login's environment says about where working directories go.
 fn harness_home(library: &Library, actor: &str) -> Result<PathBuf> {
     let key = format!("home.{actor}");
-    let home = match library.setting(&key)? {
-        Some(path) => PathBuf::from(path),
-        None => {
-            let home = library.places.homes.join(files::uuid_hex());
-            library.set_setting(&key, &files::text(&home))?;
-            home
-        }
-    };
+    let home = library.transaction(|| {
+        Ok(match library.setting(&key)? {
+            Some(path) => PathBuf::from(path),
+            None => {
+                let home = library.places.homes.join(files::uuid_hex());
+                library.set_setting(&key, &files::text(&home))?;
+                home
+            }
+        })
+    })?;
     if let Some(parent) = home.parent() {
         places::unlisted(parent)?;
     }
@@ -285,7 +287,7 @@ fn whereabouts(library: &Library) -> Value {
         "backup": format!(
             "With no Berman command running, copy library.db, any library.db-wal beside it, and library.json from \
              {} together, and keep a copy of the key from {key}. Restore all of them to the same places. An open \
-             episode's return directory is not in the library: close open episodes first, or copy those too.",
+             episode also needs its return directory and any sibling .retiring directory from interrupted cleanup.",
             places.data.display()
         ),
     })
@@ -324,13 +326,19 @@ fn library_command(name: &str, matches: &ArgMatches) -> Result<Option<Value>> {
             return Ok(None);
         }
         "cat" => {
-            let found = library.expect(ROOT, word(matches, "path"))?;
-            let Some(content) = found.content else {
-                return refuse(format!("{} is a directory. List it with: berman library ls", word(matches, "path")));
-            };
-            let mut out = std::io::stdout().lock();
-            library.stream(content, &mut out)?;
-            out.flush()?;
+            library.snapshot(|| {
+                let found = library.expect(ROOT, word(matches, "path"))?;
+                let Some(content) = found.content else {
+                    return refuse(format!(
+                        "{} is a directory. List it with: berman library ls",
+                        word(matches, "path")
+                    ));
+                };
+                let mut out = std::io::stdout().lock();
+                library.stream(content, &mut out)?;
+                out.flush()?;
+                Ok(())
+            })?;
             return Ok(None);
         }
         "mkdir" => json!({"created": library.path(library.make_directory(ROOT, word(matches, "path"))?.id)?}),
@@ -343,12 +351,15 @@ fn library_command(name: &str, matches: &ArgMatches) -> Result<Option<Value>> {
             json!({"moved": library.path(moved.id)?})
         }
         "rm" => {
-            let found = library.expect(ROOT, word(matches, "path"))?;
-            if found.directory && !matches.get_flag("recursive") && !library.children(found.id)?.is_empty() {
-                return refuse("The directory is not empty. Add --recursive to remove it with everything in it.");
-            }
-            let removed = library.path(found.id)?;
-            library.remove(&found)?;
+            let removed = library.transaction(|| {
+                let found = library.expect(ROOT, word(matches, "path"))?;
+                if found.directory && !matches.get_flag("recursive") && !library.children(found.id)?.is_empty() {
+                    return refuse("The directory is not empty. Add --recursive to remove it with everything in it.");
+                }
+                let removed = library.path(found.id)?;
+                library.remove(&found)?;
+                Ok(removed)
+            })?;
             json!({"removed": removed})
         }
         "put" => {
@@ -357,8 +368,10 @@ fn library_command(name: &str, matches: &ArgMatches) -> Result<Option<Value>> {
             json!({"stored": library.path(placed.id)?})
         }
         "export" => {
-            let found = library.expect(ROOT, word(matches, "path"))?;
-            library.export(&found, one(matches, "destination"))?;
+            library.snapshot(|| {
+                let found = library.expect(ROOT, word(matches, "path"))?;
+                library.export(&found, one(matches, "destination"))
+            })?;
             json!({"exported": files::text(one(matches, "destination"))})
         }
         other => return refuse(format!("Unknown library command: {other}")),

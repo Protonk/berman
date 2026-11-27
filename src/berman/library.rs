@@ -599,6 +599,7 @@ impl Library {
                     "DELETE FROM streams WHERE episode IN (SELECT id FROM episodes WHERE node = ?1)",
                     [found.id],
                 )?;
+                self.conn.execute("UPDATE episodes SET omitted = NULL WHERE omitted = ?1", [found.id])?;
                 self.conn.execute("DELETE FROM episodes WHERE node = ?1", [found.id])?;
                 self.conn.execute("DELETE FROM nodes WHERE id = ?1", [found.id])?;
             }
@@ -667,13 +668,13 @@ impl Library {
 
     /// Store a regular file's bytes, refusing one that changes during the read or exceeds a limit.
     pub fn store_file(&self, path: &Path, limit: Option<u64>) -> Result<Stored> {
-        files::regular(path)?;
-        let before = std::fs::metadata(path).at(path)?;
+        let file = files::open_regular(path)?;
+        let before = file.metadata().at(path)?;
         if limit.is_some_and(|limit| before.len() > limit) {
             return refuse(format!("File exceeds {} bytes: {}", limit.unwrap_or_default(), path.display()));
         }
         let mut writer = self.writer()?;
-        let mut source = std::fs::File::open(path).at(path)?.take(before.len() + 1);
+        let mut source = file.take(before.len() + 1);
         std::io::copy(&mut source, &mut writer).at(path)?;
         let stored = writer.finish()?;
         let after = std::fs::metadata(path).at(path)?;
@@ -1016,7 +1017,7 @@ impl Library {
     /// Turn the pieces kept for a stream into a file of the episode. Returns whether the stream was cut at the limit.
     ///
     /// A relay that is still carrying output is given a short time to finish.
-    pub fn settle_stream(&self, episode: &str, node: i64, name: &str) -> Result<bool> {
+    pub fn settle_stream(&self, episode: &str, node: i64, name: &str, relay: &Value) -> Result<bool> {
         let ended = || -> Result<Option<Vec<u8>>> {
             let sql = "SELECT data FROM streams WHERE episode = ?1 AND name = ?2 AND seq = 0";
             Ok(self.conn.query_row(sql, params![episode, name], |row| row.get(0)).optional()?)
@@ -1026,10 +1027,19 @@ impl Library {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         self.transaction(|| {
-            let cut = ended()?.is_some_and(|mark| !mark.is_empty());
+            let marker = ended()?;
             if self.exists(node, name)? {
-                return Ok(cut);
+                return Ok(marker.is_some_and(|mark| !mark.is_empty()));
             }
+            if marker.is_none()
+                && let (Some(pid), Some(started)) = (relay["pid"].as_i64(), relay["started"].as_str())
+                && crate::process::started(pid).as_deref() == Some(started)
+            {
+                return refuse(format!(
+                    "The relay is still writing {name}. Repeat the request when its writers have finished."
+                ));
+            }
+            let cut = marker.is_none_or(|mark| !mark.is_empty());
             let mut writer = self.writer()?;
             {
                 let sql = "SELECT data FROM streams WHERE episode = ?1 AND name = ?2 AND seq > 0 ORDER BY seq";
@@ -1041,7 +1051,9 @@ impl Library {
             }
             let stored = writer.finish()?;
             self.place(node, name, &stored, false)?;
-            self.conn.execute("DELETE FROM streams WHERE episode = ?1 AND name = ?2", params![episode, name])?;
+            self.conn
+                .execute("DELETE FROM streams WHERE episode = ?1 AND name = ?2 AND seq > 0", params![episode, name])?;
+            self.end_stream(episode, name, cut)?;
             Ok(cut)
         })
     }

@@ -462,10 +462,28 @@ fn closing_after_a_lost_launcher_keeps_the_output_the_actor_wrote() {
     });
     let found = limitations(&receipt.unwrap()["coverage"]);
     assert!(found.contains(&"sittings/000001.json: process exit unobserved.".to_string()));
-    // With that sitting's end unobserved, the transcript is read at closing, and the coverage says what that means.
-    assert!(found.iter().any(|item| item.starts_with("The parent transcript was read at closing")), "{found:?}");
+    // A lost launcher leaves the last attributable observation as the transcript boundary.
+    assert!(found.iter().any(|item| item.contains("last attributable callback")), "{found:?}");
     let output = world.read(&format!("{episode}/sittings/000001.stdout"));
     assert!(output.contains("done 1: Survey the modules."), "{output}");
     assert!(world.exists(&format!("{episode}/sittings/000001.stderr")));
     world.cli(&["verify", episode]);
+}
+
+#[test]
+fn close_recovers_delayed_output_after_the_actor_has_exited() {
+    let mut world = World::new();
+    let episode = "episodes/delayed-output";
+    let gate = world.base.join("release-stderr");
+    world.env.insert("FIXTURE_DROP_LEASE".into(), "1".into());
+    world.env.insert("FIXTURE_DELAY_STDERR".into(), support::text(&gate));
+    world.open(episode, "claude", &[]);
+    world.refuses(&world.sending(episode, None, "Begin."), "relay is still writing");
+    assert!(!world.exists(&format!("{episode}/sittings/000001.stderr")));
+    std::fs::write(gate, b"finish").unwrap();
+    world.cli(&["close", episode, "--reason", "Done."]);
+    assert!(world.read(&format!("{episode}/sittings/000001.stderr")).contains("delayed-report"));
+    let sitting = world.json(&format!("{episode}/sittings/000001.json"));
+    assert_eq!(sitting["exit"], 0);
+    assert!(sitting["response"].is_string());
 }

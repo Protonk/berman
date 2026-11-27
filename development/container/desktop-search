@@ -1,0 +1,47 @@
+#!/bin/sh
+# Run in the disposable builder login on a private D-Bus session.
+set -eu
+export LC_ALL=C.UTF-8
+scope=$(mktemp -d "$HOME/berman-index-XXXXXXXX")
+export BERMAN_LIBRARY="$scope/library"
+mkdir "$scope/project"
+git -C "$scope/project" init -q
+berman library init --key file >/dev/null
+returns=$(berman open episodes/check --project "$scope/project" --actor claude | perl -MJSON::PP -0777 -ne 'print decode_json($_)->{return}')
+dedicated=$(berman harness-home claude)
+printf '%s\n' cicadacorrespondence >"$returns/orchidreturn.txt"
+printf '%s\n' finchnativehistory >"$dedicated/larkhistory.txt"
+printf '%s\n' sandpiperordinarytext >"$scope/marigoldordinary.txt"
+schema=org.freedesktop.Tracker3.Miner.Files
+gsettings set "$schema" index-recursive-directories "['$scope']"
+gsettings set "$schema" index-single-directories '[]'
+gsettings set "$schema" initial-sleep 0
+
+# Wait for extraction of the positive control. Query the filename graph independently of full text.
+matches() {
+    tinysparql query --dbus-service org.freedesktop.Tracker3.Miner.Files \
+        --query "SELECT ?url { GRAPH tracker:FileSystem { ?f nfo:fileName '$1' ; nie:url ?url } }"
+}
+attempt=0
+until localsearch search --disable-color --documents sandpiperordinarytext | grep -Fq '/marigoldordinary.txt'; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 60 ] || { echo 'GNOME did not index the control text' >&2; exit 1; }
+    sleep 1
+done
+attempt=0
+until localsearch status | grep -Fq 'All data miners are idle'; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 60 ] || { echo 'GNOME did not finish indexing' >&2; exit 1; }
+    sleep 1
+done
+control=$(matches marigoldordinary.txt)
+echo "$control" | grep -Fq '/marigoldordinary.txt'
+for name in orchidreturn.txt larkhistory.txt; do
+    result=$(matches "$name")
+    if echo "$result" | grep -Fq "file:"; then echo "Indexed private name $name" >&2; exit 1; fi
+done
+for word in cicadacorrespondence finchnativehistory; do
+    result=$(localsearch search --disable-color --documents "$word")
+    if echo "$result" | grep -Fq 'file:'; then echo "Indexed private text $word" >&2; exit 1; fi
+done
+echo 'GNOME LocalSearch found the filename and text controls. The return and harness history produced zero hits.'

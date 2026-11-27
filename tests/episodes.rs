@@ -224,6 +224,25 @@ fn what_is_said_in_the_session_after_the_last_sitting_is_not_collected() {
 }
 
 #[test]
+fn a_resumed_sitting_does_not_import_intervening_native_work() {
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[]);
+    world.send(EPISODE, None, "Begin.");
+    let id = state["id"].as_str().unwrap();
+    let native = world.base.join(".claude/projects/example").join(format!("{id}.jsonl"));
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().append(true).open(native).unwrap();
+    writeln!(file, "{}", json!({"sessionId":id, "message":{"role":"assistant","content":"outside correspondence"}}))
+        .unwrap();
+    let sitting = world.send(EPISODE, Some("continue"), "Continue.");
+    assert!(sitting["response"].is_string());
+    assert!(sitting["transcript"]["limitation"].is_string());
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Done."]);
+    assert!(receipt["coverage"].to_string().contains("unattributed work"));
+    assert!(!world.read(&format!("{EPISODE}/telemetry/parent/transcript.jsonl")).contains("outside correspondence"));
+}
+
+#[test]
 fn unreadable_transcript_does_not_discard_the_actor_return() {
     let world = World::new();
     world.open(EPISODE, "claude", &[&world.job]);

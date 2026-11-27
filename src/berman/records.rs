@@ -100,14 +100,18 @@ pub fn member(name: &str) -> bool {
 }
 
 /// Put back the members an earlier publication left out, before publishing again.
-fn restore(library: &Library, node: i64, omitted: i64) -> Result<()> {
-    if let Ok(directory) = library.node(omitted) {
+pub fn restore_omitted(library: &Library, episode: &Episode, node: i64) -> Result<()> {
+    let Some(omitted) = episode.omitted else {
+        return Ok(());
+    };
+    library.transaction(|| {
+        let directory = library.node(omitted)?;
         for (name, file) in library.files(directory.id)? {
             library.relocate(file.id, node, &name)?;
         }
         library.remove(&directory)?;
-    }
-    Ok(())
+        library.set_omitted(&episode.id, None)
+    })
 }
 
 /// A new directory beside the episode's for members that the record's limits leave out.
@@ -142,16 +146,9 @@ pub fn publish(
     let id = episode.id.as_str();
     // An earlier attempt that did not end in a verified record may have left members out and committed part
     // of the return. Nothing was retired on its account, so everything is put back and collected again.
-    library.transaction(|| {
-        if let Some(omitted) = episode.omitted {
-            restore(library, node, omitted)?;
-            library.set_omitted(id, None)?;
-        }
-        match library.find(node, "return")? {
-            Some(partial) => library.remove(&partial),
-            None => Ok(()),
-        }
-    })?;
+    if let Some(partial) = library.find(node, "return")? {
+        library.remove(&partial)?;
+    }
     let (mut retained, mut count) = (0u64, 0usize);
     let mut inventory = Vec::new();
     match returns.filter(|directory| files::exists(directory)) {
@@ -307,82 +304,127 @@ pub fn aside(directory: &Path) -> PathBuf {
     directory.with_file_name(format!("{name}.retiring"))
 }
 
-fn real_directory(path: &Path) -> bool {
-    path.symlink_metadata().is_ok_and(|metadata| metadata.is_dir())
-}
-
-/// The digest of a regular file that stayed the same while it was read.
-fn settled_digest(path: &Path) -> Option<String> {
-    let before = path.symlink_metadata().ok().filter(|metadata| metadata.is_file())?;
-    let digest = files::digest_reader(fs::File::open(path).ok()?).ok()?;
-    let after = path.symlink_metadata().ok()?;
-    (files::identity(&before) == files::identity(&after)).then_some(digest)
-}
-
-/// Return a file that cleanup set aside to its name, or to a name beside it if something newer has taken that.
-fn put_back(held: &Path, path: &Path) {
-    let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    let places =
-        std::iter::once(path.to_path_buf()).chain((1..100).map(|n| path.with_file_name(format!("{name}.earlier-{n}"))));
-    for place in places {
-        if fs::hard_link(held, &place).is_ok() {
-            let _ = fs::remove_file(held);
-            return;
-        }
-    }
-}
-
-/// Remove the return files the record holds, where each still has the bytes that were collected.
-///
-/// Each file is first moved aside under a name nothing else uses, and judged there by its
-/// bytes, so a version saved under the same name meanwhile is never the one removed. A file
-/// goes only while the library still holds it under `return/` with the collected digest.
-/// Anything else is put back: a file that changed, arrived later, was never collected, or
-/// whose copy the producer has since removed from the record. Directories left empty are
-/// removed. Nothing is done through a symbolic link.
+/// Retire only the verified bytes. Directory descriptors keep each operation inside the
+/// directory it inspected, including restoration after an interrupted cleanup.
 pub fn retire(library: &Library, node: i64, directory: &Path, inventory: &Value) -> Result<()> {
-    if !real_directory(directory) {
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags, linkat, mkdirat, openat, renameat, statat, unlinkat};
+    use rustix::io::Errno;
+    let Some(parent) = directory.parent() else {
+        return refuse("Missing return directory parent");
+    };
+    let container = match files::directory_at_path(parent) {
+        Ok(fd) => fd,
+        Err(_) => return Ok(()),
+    };
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let Ok(root) = openat(&container, directory.file_name().unwrap_or_default(), flags, Mode::empty()) else {
         return Ok(());
-    }
+    };
     let staging = aside(directory);
-    files::create_private_directory(&staging)?;
+    let stage_name = staging.file_name().unwrap_or_default();
+    match mkdirat(&container, stage_name, Mode::RWXU) {
+        Ok(()) | Err(Errno::EXIST) => (),
+        Err(error) => return Err(std::io::Error::from(error)).at(&staging),
+    }
+    let Ok(stage) = openat(&container, stage_name, flags, Mode::empty()) else {
+        return Ok(());
+    };
     for (index, item) in inventory.as_array().into_iter().flatten().enumerate() {
         let (Some(name), Some(digest)) = (item["path"].as_str(), item["sha256"].as_str()) else {
             continue;
         };
+        let parts = parts(name)?;
+        let Some((leaf, parents)) = parts.split_last() else {
+            continue;
+        };
+        let Ok(parent) = rustix::io::dup(&root)
+            .and_then(|fd| parents.iter().try_fold(fd, |fd, name| openat(fd, *name, flags, Mode::empty())))
+        else {
+            continue;
+        };
         let held = library.find(node, &format!("return/{name}"))?.and_then(|copy| copy.sha256);
-        let (path, waiting) = (directory.join(name), staging.join(index.to_string()));
-        if !files::exists(&waiting) {
-            // Every directory on the way must still be a real directory inside the return.
-            let inside = path.ancestors().skip(1).take_while(|at| *at != directory).all(real_directory);
-            let regular = path.symlink_metadata().is_ok_and(|metadata| metadata.is_file());
-            if held.as_deref() != Some(digest) || !inside || !regular || fs::rename(&path, &waiting).is_err() {
+        let waiting = index.to_string();
+        if matches!(statat(&stage, &waiting, AtFlags::SYMLINK_NOFOLLOW), Err(Errno::NOENT)) {
+            let regular = statat(&parent, *leaf, AtFlags::SYMLINK_NOFOLLOW)
+                .is_ok_and(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile);
+            if held.as_deref() != Some(digest) || !regular || renameat(&parent, *leaf, &stage, &waiting).is_err() {
                 continue;
             }
         }
-        if held.as_deref() == Some(digest) && settled_digest(&waiting).as_deref() == Some(digest) {
-            let _ = fs::remove_file(&waiting);
-        } else {
-            put_back(&waiting, &path);
-        }
-    }
-    let _ = fs::remove_dir(&staging);
-    let mut directories = vec![directory.to_path_buf()];
-    let mut next = 0;
-    while next < directories.len() {
-        let listing = fs::read_dir(&directories[next]).map(|entries| entries.flatten().collect::<Vec<_>>());
-        for entry in listing.unwrap_or_default() {
-            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                directories.push(entry.path());
+        let bytes = openat(
+            &stage,
+            &waiting,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .ok()
+        .map(fs::File::from)
+        .and_then(|mut file| {
+            let before = file.metadata().ok().filter(|metadata| metadata.is_file())?;
+            let digest = files::digest_reader(&mut file).ok()?;
+            (files::identity(&before) == files::identity(&file.metadata().ok()?)).then_some(digest)
+        });
+        let retired = bytes.as_deref() == Some(digest)
+            && library.transaction(|| {
+                let copy = library.find(node, &format!("return/{name}"))?.and_then(|file| file.sha256);
+                Ok(copy.as_deref() == Some(digest) && unlinkat(&stage, &waiting, AtFlags::empty()).is_ok())
+            })?;
+        if !retired {
+            for number in 0.. {
+                let dest = if number == 0 { leaf.to_string() } else { format!("{leaf}.earlier-{number}") };
+                match linkat(&stage, &waiting, &parent, dest, AtFlags::empty()) {
+                    Ok(()) => {
+                        let _ = unlinkat(&stage, &waiting, AtFlags::empty());
+                        break;
+                    }
+                    Err(Errno::EXIST) => continue,
+                    Err(_) => break,
+                }
             }
         }
-        next += 1;
     }
-    // Deepest first. A directory that still holds something refuses and stays.
-    for emptied in directories.iter().skip(1).rev() {
-        let _ = fs::remove_dir(emptied);
-    }
+    prune_empty(&root);
     Ok(())
+}
+
+/// Open each child without following links and remove only directories that are still empty.
+fn prune_empty(parent: &rustix::fd::OwnedFd) {
+    use rustix::fs::{AtFlags, Dir, Mode, OFlags, openat, unlinkat};
+    let Ok(entries) = Dir::read_from(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if matches!(name.to_bytes(), b"." | b"..") {
+            continue;
+        }
+        let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::RDONLY | OFlags::CLOEXEC;
+        if let Ok(child) = openat(parent, name, flags, Mode::empty()) {
+            prune_empty(&child);
+            let _ = unlinkat(parent, name, AtFlags::REMOVEDIR);
+        }
+    }
+}
+
+/// Remove the empty working directories through their physical parent. Only ENOENT counts as missing.
+pub fn finish_retirement(directory: &Path) -> Result<bool> {
+    use rustix::fs::{AtFlags, unlinkat};
+    use rustix::io::Errno;
+    let Some(parent) = directory.parent() else {
+        return Ok(false);
+    };
+    let container = match files::directory_at_path(parent) {
+        Ok(fd) => fd,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(_) => return Ok(false),
+    };
+    for path in [aside(directory), directory.to_path_buf()] {
+        match unlinkat(&container, path.file_name().unwrap_or_default(), AtFlags::REMOVEDIR) {
+            Ok(()) | Err(Errno::NOENT) => (),
+            Err(_) => return Ok(false),
+        }
+    }
+    Ok(true)
 }
 
 /// A record a producer selected: in the library, or a directory on disk.
@@ -447,6 +489,7 @@ pub fn review(library: &Library, sources: &[Source], question: &str, output: &st
                 }
             }
         }
+        library.outside_episodes(output)?;
         let directory = library.make_directory(ROOT, output)?;
         let mut selected: Vec<Value> = Vec::new();
         for source in sources {
@@ -491,6 +534,10 @@ pub fn review(library: &Library, sources: &[Source], question: &str, output: &st
 /// The sources a review directory lists: for each, the episode, its path inside the review and its manifest digest.
 fn listed_sources(directory: &Path) -> Option<Vec<(String, String, String)>> {
     let listed = files::read(&directory.join("sources.json")).ok()?;
+    listed_sources_value(&listed)
+}
+
+fn listed_sources_value(listed: &Value) -> Option<Vec<(String, String, String)>> {
     let entries = listed.as_array().filter(|entries| !entries.is_empty())?;
     entries
         .iter()
@@ -536,8 +583,8 @@ pub fn import(library: &Library, directory: &Path, destination: &str) -> Result<
                 };
                 return refuse(format!("Episode {identity} is already known to the library {place}"));
             }
-            library.outside_episodes(destination)?;
             library.transaction(|| {
+                library.outside_episodes(destination)?;
                 let copy = library.put(directory, destination, false)?;
                 verify(&Shelf::new(library, copy.id), verified["sha256"].as_str())?;
                 library.add_episode(identity, copy.id, "imported", None, verified["sha256"].as_str())?;
@@ -577,6 +624,19 @@ pub fn import(library: &Library, directory: &Path, destination: &str) -> Result<
             }
             library.transaction(|| {
                 let copy = library.put(directory, destination, false)?;
+                library.outside_episodes(destination)?;
+                if listed_sources_value(&library.read_json(copy.id, "sources.json")?).as_ref() != Some(&sources) {
+                    return refuse("The review’s source list changed during import");
+                }
+                let source_dir = library.expect(copy.id, "sources")?;
+                if library.children(source_dir.id)?.len() != sources.len() {
+                    return refuse("The review must list each source directory exactly once");
+                }
+                for name in ["question.md", "answer.md"] {
+                    if library.read(copy.id, name)?.iter().all(u8::is_ascii_whitespace) {
+                        return refuse(format!("The review has no {name}"));
+                    }
+                }
                 let mut listed = Vec::new();
                 for (episode, path, digest) in &sources {
                     verify(&Shelf::new(library, library.expect(copy.id, path)?.id), Some(digest))?;

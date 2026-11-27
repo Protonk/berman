@@ -1,6 +1,6 @@
 FROM docker.io/library/debian:trixie-slim
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gcc git libc6-dev make perl \
+    && apt-get install -y --no-install-recommends ca-certificates curl gcc git libc6-dev make perl tracker-miner-fs tracker-extract dbus-daemon dconf-gsettings-backend libglib2.0-bin \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/sh builder
 # The suite checks that some directories cannot be listed, which holds only for an unprivileged login.
@@ -15,4 +15,4 @@ COPY --chown=builder . .
 RUN cargo install --locked --path . --root "$HOME/.local" \
     && cargo test --locked --no-run && cargo build --locked --example scripted-actor
 ENV CARGO_NET_OFFLINE=true
-CMD ["sh", "-c", "berman verify && cargo test --locked"]
+CMD ["sh", "-c", "berman verify && cargo test --locked && GSETTINGS_BACKEND=keyfile dbus-run-session -- development/container/desktop-search"]

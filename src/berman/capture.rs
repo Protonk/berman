@@ -53,12 +53,6 @@ pub fn sittings(library: &Library, node: i64) -> Result<Vec<Value>> {
     records.map(|entry| library.read_json(entry.id, "")).collect()
 }
 
-/// What the latest sitting delivered first, if it delivered the opening. Sittings run one at a time.
-fn opening_message(library: &Library, node: i64, state: &Value) -> Result<Option<String>> {
-    let recorded = sittings(library, node)?;
-    Ok(recorded.last().filter(|sitting| delivers_opening(sitting)).map(|s| first_message(state, s["prompt"].as_str())))
-}
-
 /// Closeout fallback for absent or relocated callback paths, bounded by native parent identity.
 fn find_parent(home: &Path, harness: Harness, session: &str) -> Result<PathBuf> {
     let mut found = None;
@@ -75,6 +69,42 @@ fn find_parent(home: &Path, harness: Harness, session: &str) -> Result<PathBuf> 
         found = Some(path);
     }
     found.ok_or_else(|| Error::Missing("No native transcript found for the bound parent".into()))
+}
+
+/// Before resuming, compare the native file with the last sitting's end observation.
+pub fn resume_continuity(library: &Library, node: i64, state: &Value, session: &str, last: &Value) -> Result<bool> {
+    if last["transcript_limitation"].is_string() || last["exit"].is_null() {
+        return Ok(false);
+    }
+    let harness = Harness::named(state["actor"].as_str().unwrap_or_default())?;
+    let home = Path::new(state["home"].as_str().unwrap_or_default());
+    let capture = format!("{PARENT}/capture.json");
+    if !library.exists(node, &capture)? {
+        return Ok(harness.candidates(home, session).is_empty());
+    }
+    let previous = library.read_json(node, &capture)?;
+    if last["transcript"]["read_at"].as_str().is_none() || last["transcript"]["read_at"] != previous["captured_at_utc"]
+    {
+        return Ok(false);
+    }
+    let mut path = PathBuf::from(previous["source_transcript"].as_str().unwrap_or_default());
+    if !path.exists() {
+        path = find_parent(home, harness, session)?;
+    }
+    let mut file = files::open_regular(&path)?;
+    let before = file.metadata().at(&path)?;
+    if Some(before.len()) != previous["source_size_at_read"].as_u64() {
+        return Ok(false);
+    }
+    let raw_len = previous["saved_bytes"].as_u64().unwrap_or(0);
+    let raw = files::digest_reader((&mut file).take(raw_len)).at(&path)?;
+    let tail_matches = match previous["partial_tail_sha256"].as_str() {
+        Some(expected) => files::digest_reader(&mut file).at(&path)? == expected,
+        None => raw_len == before.len(),
+    };
+    Ok(Some(raw.as_str()) == previous["sha256"].as_str()
+        && tail_matches
+        && files::identity(&before) == files::identity(&std::fs::metadata(&path).at(&path)?))
 }
 
 /// The complete lines of a transcript and its reading copy, stored as they were read, and any incomplete last line.
@@ -117,8 +147,7 @@ fn read_source(
     session: &str,
     previous: Option<u64>,
 ) -> Result<Observed> {
-    files::regular(path)?;
-    let mut file = std::fs::File::open(path).at(path)?;
+    let mut file = files::open_regular(path)?;
     let before = file.metadata().at(path)?;
     if before.len() > files::FILE_LIMIT {
         return refuse(format!("File exceeds {} bytes: {}", files::FILE_LIMIT, path.display()));
@@ -462,15 +491,37 @@ pub fn record(library: &Library, episode: &str, harness: Harness, event: &Value)
     if state["actor"].as_str() != Some(harness.name()) || !library.exists(node, "sittings")? {
         return Ok(());
     }
+    let directory = library.expect(node, "sittings")?;
+    let Some(entry) = library.children(directory.id)?.into_iter().rev().find(|entry| entry.name.ends_with(".json"))
+    else {
+        return Ok(());
+    };
+    let last = library.read_json(entry.id, "")?;
+    if let Ok(number) = std::env::var("BERMAN_SITTING")
+        && (number.parse::<u64>().ok() != last["number"].as_u64() || !last["exit"].is_null())
+    {
+        return Ok(());
+    }
     match bound {
         Some(bound) if bound != session => return Ok(()),
         Some(_) => {}
-        None if !harness.binds(&state, event, opening_message(library, node, &state)?.as_deref()) => return Ok(()),
+        None if !harness.binds(
+            &state,
+            event,
+            delivers_opening(&last).then(|| first_message(&state, last["prompt"].as_str())).as_deref(),
+        ) =>
+        {
+            return Ok(());
+        }
         None => library.bind_session(episode, session)?,
     }
     let mut row = json!({"observed_at": files::now(), "event": event});
     let path = format!("telemetry/events/{}.json", files::uuid_hex());
     library.write_json(node, &path, &row)?;
+    if let Some(reason) = last["transcript_limitation"].as_str() {
+        row["observation"] = json!(reason);
+        return library.write_json(node, &path, &row).map(drop);
+    }
     match observe(library, node, &state, session, event) {
         Ok(result) => row["generation"] = json!(json::digest(&result)),
         // Claude Code calls its first hooks before it writes the transcript. Later absence is a gap.

@@ -23,7 +23,7 @@ cargo test --release --test scale -- --ignored --nocapture --test-threads 1
 
 ## Both systems from one revision
 
-Development happens in the checkout on the Mac. The Linux build and suite run in the Lima guest from a source archive of a commit. The guest holds no Berman clone and no repository credentials. Add `--container` for a second check, which installs that revision in a Debian 13 container as the README describes and runs the suite there without a network. [Lima setup on macOS](../development/lima/README.md)
+Development happens in the checkout on the Mac. The Linux build and suite run in the Lima guest from a source archive of a commit. The guest holds no Berman clone and no repository credentials. Add `--container` for a second check, which installs that revision in a Debian 13 container as the README describes and runs the suite there without a network. In a private D-Bus session it also checks filename and full-text discovery using GNOME LocalSearch with an indexed positive control. [Lima setup on macOS](../development/lima/README.md)
 
 ```sh
 development/lima/check --container COMMIT

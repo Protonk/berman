@@ -101,9 +101,19 @@ pub fn private(path: &Path) -> Result<()> {
 pub fn unlisted(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         private(parent)?;
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let marker = parent.join(".nomedia");
+            match fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&marker) {
+                Ok(_) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => files::regular(&marker)?,
+                Err(error) => return Err(error).at(&marker),
+            }
+        }
     }
     if !files::exists(path) {
-        fs::DirBuilder::new().mode(0o700).create(path).at(path)?;
+        fs::DirBuilder::new().recursive(true).mode(0o300).create(path).at(path)?;
     }
     files::safe_directory(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o300)).at(path)

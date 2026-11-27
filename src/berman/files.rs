@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -166,6 +166,40 @@ pub fn read_regular(path: &Path) -> Result<Vec<u8>> {
 /// What must stay the same about a file while it is read.
 pub fn identity(metadata: &fs::Metadata) -> (u64, u64, i64, i64) {
     (metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec())
+}
+
+/// Open every ancestor by descriptor so a rename cannot redirect the following operation through a link.
+pub fn directory_at_path(path: &Path) -> io::Result<File> {
+    use rustix::fs::{CWD, Mode, OFlags, openat};
+    #[cfg(target_os = "linux")]
+    let search = OFlags::PATH;
+    #[cfg(target_os = "macos")]
+    let search = OFlags::from_bits_retain(libc::O_SEARCH as _);
+    let flags = search | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut directory = openat(CWD, if path.is_absolute() { "/" } else { "." }, flags, Mode::empty())?;
+    for part in path.components() {
+        match part {
+            Component::Normal(name) => directory = openat(&directory, name, flags, Mode::empty())?,
+            Component::RootDir | Component::CurDir => (),
+            _ => return Err(io::Error::other("Expected a physical directory path")),
+        }
+    }
+    Ok(File::from(directory))
+}
+
+pub fn open_regular(path: &Path) -> Result<File> {
+    use rustix::fs::{Mode, OFlags, openat};
+    let parent = path.parent().ok_or_else(|| Error::Refused("Expected a file path".into()))?;
+    let directory = directory_at_path(parent).at(parent)?;
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let fd = openat(directory, path.file_name().unwrap_or_default(), flags, Mode::empty())
+        .map_err(io::Error::from)
+        .at(path)?;
+    let file = File::from(fd);
+    if !file.metadata().at(path)?.is_file() {
+        return refuse(format!("Expected a regular file: {}", path.display()));
+    }
+    Ok(file)
 }
 
 /// Read a regular file whole, refusing one that changes during the read.

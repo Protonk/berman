@@ -123,6 +123,8 @@ fn retained_material_for_another_project_gives_a_broad_search_nothing() {
         assert!(sitting["response"].as_str().unwrap().contains(PROMPT_PHRASE));
         // The actor leaves correspondence with a distinctive name and phrase.
         let directory = PathBuf::from(state["return"].as_str().unwrap());
+        #[cfg(target_os = "linux")]
+        assert_eq!(std::fs::read(directory.parent().unwrap().parent().unwrap().join(".nomedia")).unwrap(), b"");
         std::fs::create_dir(directory.join("notes")).unwrap();
         std::fs::write(directory.join(RETURN_NAME), format!("Where things stand: {RETURN_PHRASE}\n")).unwrap();
         std::fs::write(directory.join("notes/.hidden"), [b"\x00\xff binary ", RETURN_PHRASE.as_bytes()].concat())

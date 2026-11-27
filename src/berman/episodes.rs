@@ -17,7 +17,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::error::{At, Error, Result, refuse};
-use crate::harness::{Harness, Launch, Outcome};
+use crate::harness::{Harness, Launch};
 use crate::library::{Episode, Library, ROOT};
 use crate::tree::Shelf;
 use crate::{capture, files, installation, json, places, process, project, records};
@@ -117,7 +117,6 @@ pub fn open_episode(
     if crate::library::parts(destination)?.is_empty() {
         return refuse("Name a library destination for the episode, such as episodes/cutover");
     }
-    library.outside_episodes(destination)?;
     if let Some(existing) = library.find(ROOT, destination)? {
         let Some(Episode { node: Some(node), .. }) = library.episode_at(existing.id)? else {
             return refuse(format!("Destination already exists in the library: {destination}"));
@@ -156,6 +155,7 @@ pub fn open_episode(
             OpenOptions::new().write(true).create_new(true).mode(0o600).open(&lock).at(&lock)?;
         }
         library.transaction(|| {
+            library.outside_episodes(destination)?;
             let directory = library.make_directory(ROOT, destination)?;
             library.write_json(directory.id, "episode.json", &state)?;
             library.write(directory.id, "opening.md", opening.as_bytes())?;
@@ -217,16 +217,20 @@ fn refuse_while_running(sittings: &[Value]) -> Result<()> {
 
 /// What is still in a closed episode's return directory, which collection left for the producer.
 fn preserved(directory: Option<&Path>) -> Vec<String> {
-    let Some(directory) = directory.filter(|directory| files::exists(directory)) else {
+    let Some(directory) = directory else {
         return Vec::new();
     };
-    if files::safe_directory(directory).is_err() {
-        // Something other than the directory Berman made is at its path. It is left alone and named.
-        return vec![files::text(directory)];
+    let mut found = Vec::new();
+    for path in [directory.to_path_buf(), records::aside(directory)] {
+        match path.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            _ => match crate::tree::entries(&path) {
+                Ok(entries) => found.extend(entries.into_iter().map(|(path, _)| files::text(&path))),
+                Err(_) => found.push(files::text(&path)),
+            },
+        }
     }
-    let mut found = crate::tree::entries(directory).unwrap_or_default();
-    found.extend(crate::tree::entries(&records::aside(directory)).unwrap_or_default());
-    found.into_iter().map(|(path, _)| files::text(&path)).collect()
+    found
 }
 
 pub fn status(library: &Library, reference: &str) -> Result<Value> {
@@ -332,11 +336,14 @@ pub fn launch(
         if !same {
             return refuse("This request already started a sitting with different instructions");
         }
-        let lost = !attended && json::truthy(&sitting["pid"]) && sitting["exit"].is_null();
+        let lost = !attended && json::truthy(&sitting["pid"]);
         if lost && sitting.get("response").is_none() {
             // The launcher stopped before the exit, and no recorded process still writes this output.
+            let _capture = library.lease(id, "capture", true)?;
             let mut account = account(library, id, node, &state, harness, &sitting)?;
-            if let Some(limitations) = account["limitations"].as_array_mut() {
+            if sitting["exit"].is_null()
+                && let Some(limitations) = account["limitations"].as_array_mut()
+            {
                 limitations.insert(0, json!("The launcher did not observe the process exit."));
             }
             merge(&mut sitting, account);
@@ -386,7 +393,7 @@ pub fn launch(
     if let Some(message) = message.filter(|message| !message.is_empty()) {
         arguments.extend(["--".to_string(), message]);
     }
-    let number = recent.len() + 1;
+    let number = recent.iter().filter_map(|s| s["number"].as_u64()).max().unwrap_or(0) + 1;
     let mut sitting = json!({
         "number": number,
         "request": request,
@@ -397,6 +404,14 @@ pub fn launch(
         "executable": files::text(&executable),
         "exit": null,
     });
+    if !opening
+        && let (Some(session), Some(last)) = (session.as_deref(), recent.last())
+        && !capture::resume_continuity(library, node, &state, session, last).unwrap_or(false)
+    {
+        sitting["transcript_limitation"] = json!(
+            "The native transcript could not be matched to the end of the previous sitting. Further whole-transcript reads would include unattributed work."
+        );
+    }
     if !attended {
         sitting["stdout"] = json!(format!("sittings/{number:06}.stdout"));
         sitting["stderr"] = json!(format!("sittings/{number:06}.stderr"));
@@ -409,6 +424,7 @@ pub fn launch(
         .args(&arguments)
         .current_dir(&checkout)
         .env("BERMAN_EPISODE", id)
+        .env("BERMAN_SITTING", number.to_string())
         .env("BERMAN_LIBRARY", &library.places.data);
     command.env(harness.home_variable(), state["home"].as_str().unwrap_or_default());
     let mut relays = Vec::new();
@@ -423,8 +439,12 @@ pub fn launch(
                 "stdout" => command.stdout(pipe),
                 _ => command.stderr(pipe),
             };
+            sitting["relays"][name] = json!({"pid": relay.id(), "started": process::started(i64::from(relay.id()))});
             relays.push(relay);
         }
+    }
+    if !attended {
+        library.write_json(node, &path, &sitting)?;
     }
     keep_lease(&mut command, &lease);
     // SAFETY: the handler does nothing, so any thread may be interrupted by it.
@@ -445,19 +465,34 @@ pub fn launch(
     library.write_json(node, &path, &sitting)?;
     // The actor process receives terminal interrupts directly. The launcher waits for its exit.
     let ended = child.wait()?;
+    let code = ended.code().or_else(|| ended.signal().map(|signal| -signal));
+    sitting["exit"] = json!(code);
+    sitting["exited_at"] = json!(files::now());
+    // Publish the observed exit even if the relay still has a writer and accounting must be retried.
+    library.write_json(node, &path, &sitting)?;
+    let initially_bound = bound_session(library, id, &state)?.is_some();
+    if initially_bound {
+        sitting["transcript"] = match sitting["transcript_limitation"].as_str() {
+            Some(reason) => json!({"limitation": reason}),
+            None => transcript_at_end(library, id, node, &state)?,
+        };
+        library.write_json(node, &path, &sitting)?;
+    }
     // Each relay ends when the actor and its descendants have closed the output it carries.
     let patience = std::time::Instant::now() + Duration::from_secs(5);
     while relays.iter_mut().any(|relay| matches!(relay.try_wait(), Ok(None))) && std::time::Instant::now() < patience {
         std::thread::sleep(Duration::from_millis(20));
     }
-    let code = ended.code().or_else(|| ended.signal().map(|signal| -signal));
-    sitting["exit"] = json!(code);
-    sitting["exited_at"] = json!(files::now());
     if !attended {
-        let account = account(library, id, node, &state, harness, &sitting)?;
+        let account = {
+            let _capture = library.lease(id, "capture", true)?;
+            account(library, id, node, &state, harness, &sitting)?
+        };
         merge(&mut sitting, account);
+        if !initially_bound {
+            sitting["transcript"] = transcript_at_end(library, id, node, &state)?;
+        }
     }
-    sitting["transcript"] = transcript_at_end(library, id, node, &state)?;
     library.write_json(node, &path, &sitting)?;
     Ok(sitting)
 }
@@ -508,27 +543,19 @@ fn account(library: &Library, id: &str, node: i64, state: &Value, harness: Harne
     let mut cut = Vec::new();
     let mut output = |name: &str| -> Result<Vec<u8>> {
         let path = sitting[name].as_str().unwrap_or_default();
-        if library.settle_stream(id, node, path)? {
+        if library.settle_stream(id, node, path, &sitting["relays"][name])? {
             cut.push(format!(
                 "The native {name} was not kept in full: it passed the limit for one file or could not be stored."
             ));
         }
         library.read(node, path)
     };
-    let (stdout, stderr) = (output("stdout"), output("stderr"));
-    let outcome = match stdout {
-        Ok(bytes) => harness.outcome(&bytes),
-        Err(error) => Outcome {
-            session: None,
-            response: None,
-            denials: Value::Null,
-            limitations: vec![format!("Native output unread: {error}")],
-        },
-    };
+    let stdout = output("stdout")?;
+    let stderr = output("stderr")?;
+    let outcome = harness.outcome(&stdout);
     let mut limitations = outcome.limitations;
     limitations.extend(cut);
     if let Some(reported) = &outcome.session {
-        let _capture = library.lease(id, "capture", true)?;
         let bound = bound_session(library, id, state)?;
         if bound.is_none() && capture::identity(reported) {
             // No callback bound the first sitting. The process Berman launched named its own session.
@@ -544,7 +571,7 @@ fn account(library: &Library, id: &str, node: i64, state: &Value, harness: Harne
         } else {
             format!("The actor exited with status {code}.")
         };
-        let errors = stderr.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()).unwrap_or_default();
+        let errors = String::from_utf8_lossy(&stderr);
         if let Some(last) = errors.lines().rev().map(str::trim).find(|line| !line.is_empty()) {
             ending.push_str(&format!(" Its error output ends: {}", last.chars().take(300).collect::<String>()));
         }
@@ -594,6 +621,9 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
     let _capture = library.lease(id, "capture", true)?;
     let episode = library.episode(id)?.unwrap_or(episode);
     let state = load(library, node)?;
+    if episode.record.is_none() {
+        records::restore_omitted(library, &episode, node)?;
+    }
     let sittings = capture::sittings(library, node)?;
     refuse_while_running(&sittings)?;
     let ending = match same_reason(&episode)? {
@@ -611,24 +641,25 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
         // The record is the library's account of the ending, even if a file of that name was moved or changed.
         library.write_json(node, "ending.json", &ending)?;
         let mut limitations = Vec::new();
-        // Each sitting read the transcript as it ended. It is read here only if the last sitting's end went
-        // unobserved, and then anything said in that session since is in it.
-        let unobserved = sittings.last().filter(|sitting| sitting["exit"].is_null());
-        if let (Some(sitting), Some(session)) = (unobserved, bound_session(library, id, &state)?) {
-            let closeout = json!({"hook_event_name": "closeout"});
-            match capture::observe(library, node, &state, &session, &closeout) {
-                Ok(_) => limitations.push(format!(
-                    "The parent transcript was read at closing, because the end of sitting {} was not observed. \
-                     It can hold what was said in that session afterwards.",
+        for sitting in &sittings {
+            if sitting["exit"].is_null() {
+                limitations.push(format!(
+                    "The end of sitting {} was unobserved. Transcript coverage ends at the last attributable callback.",
                     sitting["number"]
-                )),
-                Err(error) => limitations.push(format!("Final parent transcript observation: {error}")),
+                ));
             }
-        }
-        // Every output a sitting names becomes a file, including one a relay carried after its launcher stopped.
-        for sitting in sittings.iter().filter(|sitting| sitting["attended"] == json!(false)) {
-            for name in ["stdout", "stderr"].iter().filter_map(|name| sitting[*name].as_str()) {
-                library.settle_stream(id, node, name)?;
+            if sitting["attended"] == json!(false) && sitting.get("response").is_none() && sitting["pid"].is_number() {
+                let mut recovered = sitting.clone();
+                merge(&mut recovered, account(library, id, node, &state, harness_of(&state)?, sitting)?);
+                library.write_json(node, &sitting_path(sitting), &recovered)?;
+            } else if sitting["attended"] == json!(false) {
+                for stream in ["stdout", "stderr"] {
+                    if let Some(name) = sitting[stream].as_str()
+                        && library.settle_stream(id, node, name, &sitting["relays"][stream])?
+                    {
+                        limitations.push(format!("{name}: the native output could not be confirmed complete."));
+                    }
+                }
             }
         }
         library.durable()?;
@@ -646,8 +677,7 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
             None => json!([]),
         };
         records::retire(library, node, directory, &inventory)?;
-        let gone = |path: &Path| fs::remove_dir(path).is_ok() || !files::exists(path);
-        if gone(&records::aside(directory)) && gone(directory) {
+        if records::finish_retirement(directory)? {
             library.forget_return(id)?;
             for kind in ["sitting", "capture"] {
                 let _ = fs::remove_file(library.places.lock(id, kind));
