@@ -1,6 +1,6 @@
 [package]
 name = "berman"
-version = "0.26.10"
+version = "0.26.11"
 edition = "2024"
 rust-version = "1.99"
 description = "A producer uses Berman for intermittent project management by correspondence, with additional actor jobs and verifiable episode records."
