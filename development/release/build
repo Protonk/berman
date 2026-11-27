@@ -23,7 +23,7 @@ guest() {
 }
 package() { # TARGET BINARY SOURCES VERIFY: one archive holding the program, the license and the README
     mkdir "$out/$name-$1"
-    cp "$2" "$out/$name-$1/berman"
+    install -m 0755 "$2" "$out/$name-$1/berman"
     cp "$3/LICENSE" "$3/README.md" "$out/$name-$1/"
     "$4" > "$out/verify-$1.json"
     tar -czf "$out/$name-$1.tar.gz" -C "$out" "$name-$1"
