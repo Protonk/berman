@@ -149,7 +149,8 @@ fn a_backup_of_the_database_and_key_restores_in_another_home() {
     }
     assert_eq!(restored.cli(&["verify", "episodes/kept"])["sha256"], receipt["sha256"]);
     assert_eq!(restored.cat("episodes/kept/return/decision.md"), world.cat("episodes/kept/return/decision.md"));
-    assert!(place["backup"].as_str().unwrap().contains("return directory is not in the library"));
+    let backup = place["backup"].as_str().unwrap();
+    assert!(backup.contains("return directory") && backup.contains(".retiring"));
     // The restored library is a working one: a new episode opens, sits and closes in it.
     restored.open("episodes/new", "claude", &[&restored.job]);
     assert_eq!(restored.cli(&["start", "episodes/new"])["exit"], 0);
