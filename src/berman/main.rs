@@ -252,19 +252,21 @@ fn optional<'a>(matches: &'a ArgMatches, name: &str) -> Option<&'a str> {
     matches.get_one::<String>(name).map(String::as_str)
 }
 
-/// A dedicated harness home under a parent the login can enter but not list. The same path every time.
+/// A dedicated harness home under a parent the login can enter but not list. The same path every time,
+/// whatever a later login's environment says about where working directories go.
 fn harness_home(library: &Library, actor: &str) -> Result<PathBuf> {
     let key = format!("home.{actor}");
-    let name = match library.setting(&key)? {
-        Some(name) => name,
+    let home = match library.setting(&key)? {
+        Some(path) => PathBuf::from(path),
         None => {
-            let name = files::uuid_hex();
-            library.set_setting(&key, &name)?;
-            name
+            let home = library.places.homes.join(files::uuid_hex());
+            library.set_setting(&key, &files::text(&home))?;
+            home
         }
     };
-    places::unlisted(&library.places.homes)?;
-    let home = library.places.homes.join(name);
+    if let Some(parent) = home.parent() {
+        places::unlisted(parent)?;
+    }
     files::create_private_directory(&home)?;
     Ok(home)
 }
@@ -282,7 +284,8 @@ fn whereabouts(library: &Library) -> Value {
         "return_directories": files::text(&places.returns),
         "backup": format!(
             "With no Berman command running, copy library.db, any library.db-wal beside it, and library.json from \
-             {} together, and keep a copy of the key from {key}. Restore all of them to the same places.",
+             {} together, and keep a copy of the key from {key}. Restore all of them to the same places. An open \
+             episode's return directory is not in the library: close open episodes first, or copy those too.",
             places.data.display()
         ),
     })

@@ -47,9 +47,12 @@ CREATE TABLE episodes(
     id TEXT PRIMARY KEY,
     node INTEGER UNIQUE REFERENCES nodes(id),
     origin TEXT NOT NULL,
-    return_name TEXT,
+    return_path TEXT,
     session TEXT,
-    cleanup TEXT
+    ending TEXT,
+    cleanup TEXT,
+    record TEXT,
+    omitted INTEGER
 ) WITHOUT ROWID;
 CREATE TABLE streams(
     episode TEXT NOT NULL,
@@ -215,6 +218,17 @@ impl Library {
                 Err(error)
             }
         }
+    }
+
+    /// Read with one view of the library, which changes made meanwhile by other commands do not disturb.
+    pub fn snapshot<T>(&self, read: impl FnOnce() -> Result<T>) -> Result<T> {
+        if !self.conn.is_autocommit() {
+            return read();
+        }
+        self.conn.execute_batch("BEGIN")?;
+        let result = read();
+        let _ = self.conn.execute_batch("COMMIT");
+        result
     }
 
     /// Fold the write-ahead log into the database file, and return the size of that file.
@@ -387,16 +401,33 @@ impl Library {
         self.write(base, path, &json::bytes(value))
     }
 
-    /// Stream a content's bytes to a writer.
+    /// Stream a content's bytes to a writer, and confirm that all of them were there to send.
     pub fn stream(&self, content: i64, out: &mut dyn Write) -> Result<()> {
-        let mut statement = self.conn.prepare_cached(
-            "SELECT k.data FROM content_chunks cc JOIN chunks k ON k.id = cc.chunk WHERE cc.content = ?1 ORDER BY cc.seq",
-        )?;
-        let mut rows = statement.query([content])?;
-        while let Some(row) = rows.next()? {
-            out.write_all(row.get_ref(0)?.as_blob().map_err(rusqlite::Error::from)?)?;
-        }
-        Ok(())
+        self.snapshot(|| {
+            let expected: Option<i64> = self
+                .conn
+                .query_row("SELECT size FROM contents WHERE id = ?1", [content], |row| row.get(0))
+                .optional()?;
+            let mut sent = 0i64;
+            {
+                let mut statement = self.conn.prepare_cached(
+                    "SELECT k.data FROM content_chunks cc JOIN chunks k ON k.id = cc.chunk
+                     WHERE cc.content = ?1 ORDER BY cc.seq",
+                )?;
+                let mut rows = statement.query([content])?;
+                while let Some(row) = rows.next()? {
+                    let data = row.get_ref(0)?.as_blob().map_err(rusqlite::Error::from)?;
+                    out.write_all(data)?;
+                    sent += data.len() as i64;
+                }
+            }
+            if expected != Some(sent) {
+                return refuse(
+                    "A file changed in the library while it was being read. Nothing can be said of its bytes",
+                );
+            }
+            Ok(())
+        })
     }
 
     /// The SHA-256 and length of the bytes actually stored for a content.
@@ -498,12 +529,36 @@ impl Library {
             if self.below(from.id, parent)? {
                 return refuse("A directory cannot be moved into itself");
             }
+            if let Some(outer) = self.enclosing_episode(parent)? {
+                for moved in self.subtree(from.id)? {
+                    if self.episode_at(moved.id)?.is_some() {
+                        return refuse(format!(
+                            "The destination is inside episode {}. One episode's directory cannot hold another episode",
+                            outer.id
+                        ));
+                    }
+                }
+            }
             self.conn.execute(
                 "UPDATE nodes SET parent = ?1, name = ?2, modified = ?3 WHERE id = ?4",
                 params![parent, name, files::now(), from.id],
             )?;
             self.node(from.id)
         })
+    }
+
+    /// Move a file to a path below another directory, creating the directories on the way.
+    pub fn relocate(&self, file: i64, base: i64, path: &str) -> Result<()> {
+        let names = parts(path)?;
+        let Some((last, parents)) = names.split_last() else {
+            return refuse("Name the file's new place");
+        };
+        let parent = self.directories(base, parents)?;
+        if self.child(parent.id, last)?.is_some() {
+            return refuse(format!("Destination already exists in the library: {path}"));
+        }
+        self.conn.execute("UPDATE nodes SET parent = ?1, name = ?2 WHERE id = ?3", params![parent.id, last, file])?;
+        Ok(())
     }
 
     /// Every node at or below one, parents before children.
@@ -530,7 +585,7 @@ impl Library {
             let open: Option<String> = self
                 .conn
                 .query_row(
-                    "SELECT id FROM episodes WHERE return_name IS NOT NULL AND node IN (SELECT value FROM json_each(?1))",
+                    "SELECT id FROM episodes WHERE return_path IS NOT NULL AND node IN (SELECT value FROM json_each(?1))",
                     [json::line(&json!(nodes.iter().map(|n| n.id).collect::<Vec<i64>>()))],
                     |row| row.get(0),
                 )
@@ -633,6 +688,11 @@ impl Library {
     /// Names are created before any bytes are written, so a filesystem that cannot hold two of
     /// the library's distinct names side by side is reported and nothing is left behind.
     pub fn export(&self, source: &Node, destination: &Path) -> Result<()> {
+        // One view of the library for the whole export: a file replaced meanwhile is exported as it was.
+        self.snapshot(|| self.export_now(source, destination))
+    }
+
+    fn export_now(&self, source: &Node, destination: &Path) -> Result<()> {
         let create = |path: &Path| std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path);
         if !source.directory {
             if files::exists(destination) {
@@ -784,19 +844,35 @@ pub fn fill(stream: &mut dyn Read, buffer: &mut [u8]) -> std::io::Result<usize> 
 }
 
 /// What the library knows about an episode beyond the files in its directory.
+///
+/// Whether an episode is closed, whether its record has been verified and where its return
+/// directory is are kept here, so that renaming or removing a file in the episode's directory
+/// cannot change them.
 #[derive(Clone, Debug)]
 pub struct Episode {
     pub id: String,
-    /// The episode's directory, wherever the producer has moved it. None once it has been removed.
+    /// The episode's directory, wherever the producer has moved it.
     pub node: Option<i64>,
     /// `opened` here, or `imported` from a record made elsewhere.
     pub origin: String,
-    /// The opaque name of the return directory while one exists.
-    pub return_name: Option<String>,
+    /// The absolute path of the return directory while one exists, as the opening gave it to the actor.
+    pub return_path: Option<String>,
     /// The native session bound to the episode.
     pub session: Option<String>,
+    /// The producer's ending as JSON, once recorded. From then no sitting starts and no callback is taken in.
+    pub ending: Option<String>,
     /// The collected return files still to be retired, as JSON.
     pub cleanup: Option<String>,
+    /// The manifest digest of the record, once the committed record has been read back and verified.
+    pub record: Option<String>,
+    /// The directory that holds members left out of the record to keep it within its limits.
+    pub omitted: Option<i64>,
+}
+
+impl Episode {
+    pub fn closed(&self) -> bool {
+        self.ending.is_some() || self.origin != "opened"
+    }
 }
 
 fn episode(row: &rusqlite::Row) -> rusqlite::Result<Episode> {
@@ -804,13 +880,16 @@ fn episode(row: &rusqlite::Row) -> rusqlite::Result<Episode> {
         id: row.get(0)?,
         node: row.get(1)?,
         origin: row.get(2)?,
-        return_name: row.get(3)?,
+        return_path: row.get(3)?,
         session: row.get(4)?,
-        cleanup: row.get(5)?,
+        ending: row.get(5)?,
+        cleanup: row.get(6)?,
+        record: row.get(7)?,
+        omitted: row.get(8)?,
     })
 }
 
-const EPISODE: &str = "SELECT id, node, origin, return_name, session, cleanup FROM episodes";
+const EPISODE: &str = "SELECT id, node, origin, return_path, session, ending, cleanup, record, omitted FROM episodes";
 
 impl Library {
     pub fn episode(&self, id: &str) -> Result<Option<Episode>> {
@@ -821,18 +900,60 @@ impl Library {
         Ok(self.conn.query_row(&format!("{EPISODE} WHERE node = ?1"), [node], episode).optional()?)
     }
 
-    pub fn episodes(&self) -> Result<Vec<Episode>> {
-        let mut statement = self.conn.prepare(&format!("{EPISODE} ORDER BY id"))?;
-        let rows = statement.query_map([], episode)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<Episode>>>()?)
+    /// The episode whose directory is a node or contains it.
+    pub fn enclosing_episode(&self, node: i64) -> Result<Option<Episode>> {
+        let mut current = Some(node);
+        while let Some(at) = current {
+            if let Some(found) = self.episode_at(at)? {
+                return Ok(Some(found));
+            }
+            current = self.node(at)?.parent;
+        }
+        Ok(None)
     }
 
-    pub fn add_episode(&self, id: &str, node: i64, origin: &str, return_name: Option<&str>) -> Result<()> {
+    /// Refuse a destination inside an episode's directory: its files would become part of that episode's record.
+    pub fn outside_episodes(&self, destination: &str) -> Result<()> {
+        let names = parts(destination)?;
+        for depth in 1..names.len() {
+            let above = names[..depth].join("/");
+            let Some(at) = self.find(ROOT, &above)? else {
+                break;
+            };
+            if let Some(found) = self.episode_at(at.id)? {
+                return refuse(format!(
+                    "{above} is the directory of episode {}. One episode's directory cannot hold another episode",
+                    found.id
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn add_episode(
+        &self,
+        id: &str,
+        node: i64,
+        origin: &str,
+        returns: Option<&str>,
+        record: Option<&str>,
+    ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO episodes(id, node, origin, return_name) VALUES(?1, ?2, ?3, ?4)",
-            params![id, node, origin, return_name],
+            "INSERT INTO episodes(id, node, origin, return_path, record) VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![id, node, origin, returns, record],
         )?;
         Ok(())
+    }
+
+    /// Hold one of an open episode's locks until the returned file is dropped. A lock file that a restored
+    /// backup lacks is made again.
+    pub fn lease(&self, episode: &str, kind: &str, blocking: bool) -> Result<std::fs::File> {
+        let path = self.places.lock(episode, kind);
+        if !files::exists(&path) {
+            places::private(&self.places.data.join("locks"))?;
+            std::fs::OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(&path).at(&path)?;
+        }
+        files::lock(&path, blocking)
     }
 
     pub fn bind_session(&self, id: &str, session: &str) -> Result<()> {
@@ -841,15 +962,33 @@ impl Library {
         Ok(())
     }
 
-    /// Record which collected return files remain to be retired, or that none do.
-    pub fn set_cleanup(&self, id: &str, inventory: Option<&Value>) -> Result<()> {
-        let text = inventory.map(json::line);
-        self.conn.execute("UPDATE episodes SET cleanup = ?2 WHERE id = ?1", params![id, text])?;
+    fn set(&self, id: &str, column: &str, value: Option<&str>) -> Result<()> {
+        self.conn.execute(&format!("UPDATE episodes SET {column} = ?2 WHERE id = ?1"), params![id, value])?;
+        Ok(())
+    }
+
+    /// Record the producer's ending. The episode is closed from here, whatever its files are called.
+    pub fn set_ending(&self, id: &str, ending: &Value) -> Result<()> {
+        self.set(id, "ending", Some(&json::line(ending)))
+    }
+
+    /// Record which collected return files remain to be retired.
+    pub fn set_cleanup(&self, id: &str, inventory: &Value) -> Result<()> {
+        self.set(id, "cleanup", Some(&json::line(inventory)))
+    }
+
+    /// Record that the committed record was read back and verified, by its manifest digest.
+    pub fn set_record(&self, id: &str, digest: Option<&str>) -> Result<()> {
+        self.set(id, "record", digest)
+    }
+
+    pub fn set_omitted(&self, id: &str, node: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE episodes SET omitted = ?2 WHERE id = ?1", params![id, node])?;
         Ok(())
     }
 
     pub fn forget_return(&self, id: &str) -> Result<()> {
-        self.conn.execute("UPDATE episodes SET return_name = NULL, cleanup = NULL WHERE id = ?1", [id])?;
+        self.conn.execute("UPDATE episodes SET return_path = NULL, cleanup = NULL WHERE id = ?1", [id])?;
         Ok(())
     }
 

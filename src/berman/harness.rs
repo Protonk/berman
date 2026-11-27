@@ -40,6 +40,8 @@ pub struct Reading {
     pub assistant: Vec<String>,
     pub malformed: Vec<u64>,
     pub identities: Vec<String>,
+    /// Lines too long to render, by number. Their bytes are in the raw transcript.
+    pub unrendered: Vec<u64>,
 }
 
 impl Harness {
@@ -202,13 +204,29 @@ pub fn blank(line: &[u8]) -> bool {
 
 /// One block of a reading copy: where it came from, then the content.
 pub fn block(out: &mut Vec<u8>, number: usize, pointer: &str, heading: [String; 2], content: &Value) {
-    let body = match content {
-        Value::String(text) => text.clone(),
-        other => crate::json::pretty(other),
-    };
     let source = format!("SOURCE: transcript.jsonl#L{number} {pointer}");
-    for part in ["=".repeat(72), source, heading[0].clone(), heading[1].clone(), body, String::new()] {
+    for part in ["=".repeat(72), source, heading[0].clone(), heading[1].clone()] {
         out.extend_from_slice(part.as_bytes());
         out.push(b'\n');
     }
+    // Text goes in as it is, without a second copy of what can be megabytes.
+    match content {
+        Value::String(text) => out.extend_from_slice(text.as_bytes()),
+        other => out.extend_from_slice(crate::json::pretty(other).as_bytes()),
+    }
+    out.extend_from_slice(b"\n\n");
+}
+
+/// A line longer than this stays in the raw transcript and is named in the reading copy without being rendered,
+/// so the memory a capture needs does not grow with the longest line.
+pub const LONG_LINE: usize = 8 * 1024 * 1024;
+
+/// Note in a reading copy that a line was too long to render.
+pub fn unrendered(reading: &mut Reading, number: usize, bytes: u64) {
+    reading.unrendered.push(number as u64);
+    let note = format!(
+        "{}\nSOURCE: transcript.jsonl#L{number}\nNOT RENDERED: this line is {bytes} bytes long. Read it in transcript.jsonl.\n\n",
+        "=".repeat(72)
+    );
+    reading.text.extend_from_slice(note.as_bytes());
 }

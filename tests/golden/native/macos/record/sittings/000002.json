@@ -4,10 +4,14 @@
   "prompt": "Continue.",
   "opening": false,
   "attended": true,
-  "started_at": "2026-11-26T15:12:35.831718Z",
-  "executable": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmp7sZUtE/bin/codex",
+  "started_at": "2026-11-27T00:33:09.692833Z",
+  "executable": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmpIW1FG8/bin/codex",
   "exit": 0,
-  "pid": 81250,
-  "pid_started": "1795705955.832215",
-  "exited_at": "2026-11-26T15:12:35.868039Z"
+  "pid": 34111,
+  "pid_started": "1795739589.693950",
+  "exited_at": "2026-11-27T00:33:09.799440Z",
+  "transcript": {
+    "read_at": "2026-11-27T00:33:09.801454Z",
+    "saved_bytes": 1216
+  }
 }

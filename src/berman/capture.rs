@@ -9,7 +9,7 @@
 //! incomplete final line under `telemetry/tails/`.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
@@ -74,22 +74,42 @@ fn find_parent(home: &Path, harness: Harness, session: &str) -> Result<PathBuf> 
         }
         found = Some(path);
     }
-    found.ok_or_else(|| Error::Refused("No native transcript found for the bound parent".into()))
+    found.ok_or_else(|| Error::Missing("No native transcript found for the bound parent".into()))
 }
 
 /// The complete lines of a transcript and its reading copy, stored as they were read, and any incomplete last line.
 struct Observed {
     raw: Stored,
     reader: Stored,
-    tail: Vec<u8>,
+    tail: Option<Stored>,
     reading: Reading,
     source_size: u64,
     /// The digest of the first bytes, as many as the previous generation kept.
     prefix: Option<String>,
 }
 
+/// Where a file's last complete line ends, found from the end of the file.
+fn complete_length(file: &mut std::fs::File, size: u64) -> std::io::Result<u64> {
+    let mut buffer = vec![0u8; 1 << 16];
+    let mut end = size;
+    while end > 0 {
+        let start = end.saturating_sub(buffer.len() as u64);
+        let piece = &mut buffer[..(end - start) as usize];
+        file.seek(SeekFrom::Start(start))?;
+        file.read_exact(piece)?;
+        if let Some(at) = piece.iter().rposition(|byte| *byte == b'\n') {
+            return Ok(start + at as u64 + 1);
+        }
+        end = start;
+    }
+    Ok(0)
+}
+
 /// Read a transcript once, in bounded pieces: store its complete lines, derive the reading copy, and note
 /// the digest at the length the previous generation had.
+///
+/// Memory is bounded by the longest line that is rendered. A longer line goes into the raw
+/// transcript as it is read and is named in the reading copy.
 fn read_source(
     library: &Library,
     harness: Harness,
@@ -98,43 +118,72 @@ fn read_source(
     previous: Option<u64>,
 ) -> Result<Observed> {
     files::regular(path)?;
-    let before = std::fs::metadata(path).at(path)?;
+    let mut file = std::fs::File::open(path).at(path)?;
+    let before = file.metadata().at(path)?;
     if before.len() > files::FILE_LIMIT {
         return refuse(format!("File exceeds {} bytes: {}", files::FILE_LIMIT, path.display()));
     }
-    let mut source = std::fs::File::open(path).at(path)?.take(before.len() + 1);
+    let changed = || Error::Refused(format!("Source changed during observation: {}", path.display()));
+    let complete = complete_length(&mut file, before.len()).map_err(|_| changed())?;
+    if complete == 0 {
+        return refuse("No complete transcript record");
+    }
+    file.seek(SeekFrom::Start(0)).at(path)?;
     let mut raw = library.writer()?;
     let mut reader = library.writer()?;
     let mut reading = Reading { text: harness.heading(), ..Reading::default() };
-    let (mut pending, mut buffer) = (Vec::new(), vec![0u8; 1 << 16]);
-    let (mut total, mut number, mut prefix) = (0u64, 0usize, None);
-    loop {
-        let count = source.read(&mut buffer).at(path)?;
-        if count == 0 {
-            break;
-        }
-        total += count as u64;
-        // Look for a line end in the bytes just read alone, so one very long line is not searched again and again.
-        let ended = buffer[..count].iter().rposition(|byte| *byte == b'\n').map(|at| pending.len() + at);
-        pending.extend_from_slice(&buffer[..count]);
-        let Some(last) = ended else {
-            continue;
-        };
-        let complete: Vec<u8> = pending.drain(..=last).collect();
+    let (mut line, mut buffer) = (Vec::new(), vec![0u8; 1 << 16]);
+    // The bytes of a line too long to render that have gone by so far.
+    let mut passed: Option<u64> = None;
+    let (mut remaining, mut number, mut prefix) = (complete, 0usize, None);
+    while remaining > 0 {
+        let want = remaining.min(buffer.len() as u64) as usize;
+        file.read_exact(&mut buffer[..want]).map_err(|_| changed())?;
+        remaining -= want as u64;
+        let piece = &buffer[..want];
         // Take the digest exactly where the previous generation ended, if these bytes reach that far.
-        let split = previous.filter(|size| (raw.size()..raw.size() + complete.len() as u64).contains(size));
+        let split = previous.filter(|size| (raw.size()..raw.size() + piece.len() as u64).contains(size));
         let cut = split.map_or(0, |size| (size - raw.size()) as usize);
-        raw.write_all(&complete[..cut])?;
+        raw.write_all(&piece[..cut])?;
         if split.is_some() {
             prefix = Some(raw.digest_so_far());
         }
-        raw.write_all(&complete[cut..])?;
-        for line in harness::lines(&complete) {
-            number += 1;
-            if number == 1 {
-                harness.first_line(line, session)?;
+        raw.write_all(&piece[cut..])?;
+        let mut rest = piece;
+        while !rest.is_empty() {
+            let end = rest.iter().position(|byte| *byte == b'\n');
+            let segment = &rest[..end.map_or(rest.len(), |at| at + 1)];
+            rest = &rest[segment.len()..];
+            match &mut passed {
+                Some(bytes) => *bytes += segment.len() as u64,
+                None if line.len() + segment.len() > harness::LONG_LINE => {
+                    passed = Some((line.len() + segment.len()) as u64);
+                    line = Vec::new();
+                }
+                None => line.extend_from_slice(segment),
             }
-            harness.line(number, line, &mut reading);
+            if end.is_none() {
+                continue;
+            }
+            match passed.take() {
+                Some(bytes) => {
+                    number += 1;
+                    if number == 1 {
+                        harness.first_line(&[], session)?;
+                    }
+                    harness::unrendered(&mut reading, number, bytes);
+                }
+                None => {
+                    for one in harness::lines(&line) {
+                        number += 1;
+                        if number == 1 {
+                            harness.first_line(one, session)?;
+                        }
+                        harness.line(number, one, &mut reading);
+                    }
+                    line.clear();
+                }
+            }
             reader.write_all(&reading.text)?;
             reading.text.clear();
         }
@@ -142,15 +191,23 @@ fn read_source(
     if previous == Some(raw.size()) {
         prefix = Some(raw.digest_so_far());
     }
-    let after = std::fs::metadata(path).at(path)?;
-    if files::identity(&before) != files::identity(&after) || total != after.len() {
-        return refuse(format!("Source changed during observation: {}", path.display()));
+    // An incomplete last line keeps its own bytes, streamed like the rest.
+    let mut tail = None;
+    if before.len() > complete {
+        let mut writer = library.writer()?;
+        let copied = std::io::copy(&mut (&mut file).take(before.len() - complete), &mut writer).at(path)?;
+        if copied != before.len() - complete {
+            return Err(changed());
+        }
+        tail = Some(writer.finish()?);
     }
-    if raw.size() == 0 {
-        return refuse("No complete transcript record");
+    let grew = file.read(&mut buffer[..1]).at(path)? != 0;
+    let after = std::fs::metadata(path).at(path)?;
+    if grew || files::identity(&before) != files::identity(&after) {
+        return Err(changed());
     }
     harness.whole(&reading, path, session)?;
-    Ok(Observed { raw: raw.finish()?, reader: reader.finish()?, tail: pending, reading, source_size: total, prefix })
+    Ok(Observed { raw: raw.finish()?, reader: reader.finish()?, tail, reading, source_size: before.len(), prefix })
 }
 
 /// Keep bytes under a name derived from their digest, or confirm an earlier copy.
@@ -191,7 +248,8 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
         let known = old.as_ref().and_then(|metadata| json::text(metadata, "source_transcript"));
         let mut path = PathBuf::from(named.or(known).unwrap_or_default());
         let name = json::text(event, "hook_event_name").unwrap_or_default();
-        if name == "closeout" && (path.as_os_str().is_empty() || !path.exists()) {
+        // Berman's own readings, at the end of a sitting and at closing, find the transcript by its session.
+        if matches!(name, "closeout" | "sitting") && (path.as_os_str().is_empty() || !path.exists()) {
             path = find_parent(&home, harness, session)?;
         }
         let climbs = path.components().any(|part| part == std::path::Component::ParentDir);
@@ -234,7 +292,7 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
             Some(digest) => json!(seen.reading.assistant.iter().any(|said| said == digest)),
             None => Value::Null,
         };
-        let tail_digest = if seen.tail.is_empty() { Value::Null } else { json!(files::digest(&seen.tail)) };
+        let tail_digest = seen.tail.as_ref().map_or(Value::Null, |tail| json!(tail.sha256));
         let tail_file = tail_digest.as_str().map_or(Value::Null, |digest| json!(format!("partial-tail-{digest}.bin")));
         let record = json!({
             "schema": "berman.session-capture/2",
@@ -253,8 +311,9 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
             "previous_snapshot_is_prefix": extends,
             "partial_tail_file": tail_file,
             "partial_tail_sha256": tail_digest,
-            "omitted_partial_tail_bytes": seen.tail.len(),
+            "omitted_partial_tail_bytes": seen.tail.as_ref().map_or(0, |tail| tail.size),
             "unparsed_jsonl_lines": seen.reading.malformed,
+            "unrendered_long_lines": seen.reading.unrendered,
             "expected_last_assistant_sha256": expected,
             "last_assistant_message_present": present,
             "source_identity": "Native session identity verified against the bound parent.",
@@ -267,8 +326,8 @@ pub fn observe(library: &Library, node: i64, state: &Value, session: &str, event
         library.place(node, &format!("{PARENT}/conversation.txt"), &seen.reader, true)?;
         library.write(node, &listing, &history)?;
         library.write_json(node, &capture, &record)?;
-        if let Some(name) = tail_file.as_str() {
-            library.write(node, &format!("{PARENT}/{name}"), &seen.tail)?;
+        if let (Some(name), Some(tail)) = (tail_file.as_str(), &seen.tail) {
+            library.place(node, &format!("{PARENT}/{name}"), tail, true)?;
         }
         Ok(record)
     })
@@ -390,17 +449,17 @@ pub fn record(library: &Library, episode: &str, harness: Harness, event: &Value)
     if !harness.events().iter().any(|(known, _)| *known == name) {
         return Ok(());
     }
-    let Some(Episode { node: Some(node), .. }) = library.episode(episode)? else {
+    // Whether the episode is closed is the library's own knowledge. A file's name cannot reopen it.
+    let known = |library: &Library| Ok::<_, Error>(library.episode(episode)?.filter(|found| !found.closed()));
+    let Some(Episode { node: Some(node), .. }) = known(library)? else {
         return Ok(());
     };
-    if library.exists(node, "ending.json")? {
+    let _lease = library.lease(episode, "capture", true)?;
+    let Some(Episode { session: bound, .. }) = known(library)? else {
         return Ok(());
-    }
-    let _lease = files::lock(&library.places.lock(episode, "capture"), true)?;
-    let bound = library.episode(episode)?.and_then(|episode| episode.session);
+    };
     let state = library.read_json(node, "episode.json")?;
-    let closed = library.exists(node, "ending.json")?;
-    if state["actor"].as_str() != Some(harness.name()) || closed || !library.exists(node, "sittings")? {
+    if state["actor"].as_str() != Some(harness.name()) || !library.exists(node, "sittings")? {
         return Ok(());
     }
     match bound {

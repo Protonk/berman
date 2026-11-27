@@ -343,7 +343,8 @@ fn codex_output_binds_a_session_no_callback_bound() {
     world.env.insert("FIXTURE_WITHOUT_HOOKS".into(), "1".into());
     world.open(episode, "codex", &[]);
     let first = world.send(episode, None, "Look around.");
-    assert!(!world.exists(&format!("{episode}/telemetry")));
+    assert!(!world.exists(&format!("{episode}/telemetry/events")));
+    assert!(first["transcript"]["read_at"].is_string());
     assert_eq!(world.cli(&["status", episode])["session"], first["native_session"]);
     assert_eq!(world.send(episode, Some("more"), "And the docs?")["response"], "done 2: And the docs?");
     let receipt = world.cli(&["close", episode, "--reason", "The callbacks were never reviewed."]);
@@ -461,6 +462,8 @@ fn closing_after_a_lost_launcher_keeps_the_output_the_actor_wrote() {
     });
     let found = limitations(&receipt.unwrap()["coverage"]);
     assert!(found.contains(&"sittings/000001.json: process exit unobserved.".to_string()));
+    // With that sitting's end unobserved, the transcript is read at closing, and the coverage says what that means.
+    assert!(found.iter().any(|item| item.starts_with("The parent transcript was read at closing")), "{found:?}");
     let output = world.read(&format!("{episode}/sittings/000001.stdout"));
     assert!(output.contains("done 1: Survey the modules."), "{output}");
     assert!(world.exists(&format!("{episode}/sittings/000001.stderr")));

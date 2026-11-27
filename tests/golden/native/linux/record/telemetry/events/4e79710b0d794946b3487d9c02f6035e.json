@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-27T00:33:19.687290Z",
+  "event": {
+    "hook_event_name": "Stop",
+    "session_id": "12345678-1234-1234-1234-123456789012",
+    "cwd": "/home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/normal checkout",
+    "prompt": "Continue.",
+    "transcript_path": "/home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/.codex/sessions/12345678-1234-1234-1234-123456789012.jsonl"
+  },
+  "generation": "acd553e55ff9959638ae79294a624e87affb5b181e2dae2fc9579b76364c8603"
+}

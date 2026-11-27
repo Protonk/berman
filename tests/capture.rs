@@ -108,18 +108,36 @@ fn a_growing_transcript_adds_history_and_shares_its_bytes() {
 }
 
 #[test]
-fn one_very_long_line_is_captured_whole_and_promptly() {
+fn a_line_too_long_to_render_is_kept_raw_and_named() {
     let session = Session::new();
     // A single tool result can be tens of megabytes on one line.
     let long = session.line(&"0123456789abcdef".repeat(2 * 1024 * 1024));
+    assert!(long.len() > berman::harness::LONG_LINE);
     let content = format!("{}{long}{}", session.line("before"), session.line("after"));
     let started = Instant::now();
     let captured = session.capture(&content).unwrap();
     assert!(started.elapsed() < Duration::from_secs(20), "a 32 MiB line took {:?}", started.elapsed());
     assert_eq!(captured["sha256"], files::digest(content.as_bytes()));
+    assert_eq!(captured["unrendered_long_lines"], json!([2]));
     assert_eq!(session.read(&format!("{PARENT}/transcript.jsonl")), content.as_bytes());
-    let reader = session.read(&format!("{PARENT}/conversation.txt"));
-    assert!(reader.len() > long.len() - 200 && reader.ends_with(b"after\n\n"));
+    // The reading copy renders the lines around it and says where the long one is.
+    let reader = String::from_utf8(session.read(&format!("{PARENT}/conversation.txt"))).unwrap();
+    assert!(reader.len() < 4096 && reader.contains("before") && reader.ends_with("after\n\n"));
+    assert!(
+        reader.contains(&format!("SOURCE: transcript.jsonl#L2\nNOT RENDERED: this line is {} bytes long.", long.len()))
+    );
+    // A line within the bound is rendered whole, and an incomplete long line keeps its own bytes.
+    let medium = session.line(&"x".repeat(3 * 1024 * 1024));
+    let tail = "y".repeat(9 * 1024 * 1024);
+    let next = session.capture(&format!("{content}{medium}{tail}")).unwrap();
+    assert_eq!(
+        (next["previous_snapshot_is_prefix"].clone(), next["unrendered_long_lines"].clone()),
+        (json!(true), json!([2]))
+    );
+    assert_eq!(next["omitted_partial_tail_bytes"], tail.len());
+    assert_eq!(session.read(&format!("{PARENT}/{}", next["partial_tail_file"].as_str().unwrap())), tail.as_bytes());
+    assert!(session.read(&format!("{PARENT}/conversation.txt")).len() > medium.len());
+    assert!(check(&session.library, session.node, true).unwrap().is_some());
 }
 
 #[test]
@@ -275,9 +293,13 @@ fn the_last_committed_generation_survives_a_killed_writer() {
     assert_eq!(world.json(&format!("{episode}/{PARENT}/capture.json")), committed);
     let kept = world.cat(&format!("{episode}/{PARENT}/transcript.jsonl"));
     assert_eq!(files::digest(&kept), committed["sha256"].as_str().unwrap());
-    // The next capture reads the source again.
-    let receipt = world.cli(&["close", episode, "--reason", "The writer was killed."]);
-    assert!(!receipt["coverage"].to_string().contains("Could not verify"));
+    // The next callback reads the source again.
+    assert!(world.callback("claude", Some(id), &event.to_string()).status.success());
     assert_eq!(world.cat(&format!("{episode}/{PARENT}/transcript.jsonl")), content.as_bytes());
+    let receipt = world.cli(&["close", episode, "--reason", "The writer was killed."]);
+    // The event the killed callback had recorded has no transcript of its own, and the coverage says so.
+    let noted = receipt["coverage"]["limitations"].as_array().unwrap();
+    assert_eq!(noted.len(), 1, "{noted:?}");
+    assert!(noted[0].as_str().unwrap().ends_with("the callback ended before the transcript it saw was captured."));
     world.cli(&["verify", episode]);
 }

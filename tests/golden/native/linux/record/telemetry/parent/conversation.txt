@@ -8,15 +8,15 @@ Reasoning, developer context, transport metadata and duplicate message events st
 SOURCE: transcript.jsonl#L2 /payload/content/0/text
 TIME: not recorded | ROLE: user | KIND: message
 NAME:  | CALL ID: 
-Berman episode 53dc5e91-5f4e-446a-8abc-cd6202b8ea25
+Berman episode ffb8cfb8-bbb1-41c8-9c52-6e14eb04c2be
 
-This session is part of a Berman episode its producer opened in /tmp/.tmpENVppD/normal checkout. Berman keeps a record of the session for the producer.
+This session is part of a Berman episode its producer opened in /home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/normal checkout. Berman keeps a record of the session for the producer.
 
 Alongside any other work in the session, carry out this additional job:
 
 Record a decision when one arises.
 
-Return directory: /tmp/.tmpENVppD/.local/state/berman/returns/5da744233bb44f748b3b2f2ed9b533cc
+Return directory: /home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/.local/state/berman/returns/2ade00c28abb4dcd97eeecd42e5377f5
 Keep ordinary project changes in the checkout.
 
 Message from the producer:

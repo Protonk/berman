@@ -172,6 +172,22 @@ fn callbacks_as_a_transcript_grows_and_is_rewritten() {
 
 #[test]
 #[ignore = "a measurement, not a check"]
+fn a_callback_on_one_very_long_line() {
+    let episode = "episodes/long-line";
+    let setup = setup(episode);
+    println!("\nCallbacks on a transcript with single lines of 6 MiB (rendered) and 32 MiB (kept raw)");
+    for megabytes in [6usize, 32] {
+        let said = "0123456789abcdef".repeat(megabytes * 65536);
+        let line = format!("{}\n", json!({"sessionId": setup.id, "message": {"role": "user", "content": said}}));
+        std::fs::OpenOptions::new().append(true).open(&setup.transcript).unwrap().write_all(line.as_bytes()).unwrap();
+        row(&format!("after one {megabytes} MiB line"), &callback(&setup));
+    }
+    let capture = setup.world.json(&format!("{episode}/telemetry/parent/capture.json"));
+    println!("unrendered lines: {}", capture["unrendered_long_lines"]);
+}
+
+#[test]
+#[ignore = "a measurement, not a check"]
 fn a_record_near_the_shared_limit() {
     let episode = "episodes/large-return";
     let setup = setup(episode);

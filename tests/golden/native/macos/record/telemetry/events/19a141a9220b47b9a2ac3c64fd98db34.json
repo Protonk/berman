@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-27T00:33:09.580660Z",
+  "event": {
+    "hook_event_name": "UserPromptSubmit",
+    "session_id": "12345678-1234-1234-1234-123456789012",
+    "cwd": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmpIW1FG8/normal checkout",
+    "prompt": "Berman episode 00f86161-86d7-4baf-bd2e-83e6346e0255\n\nThis session is part of a Berman episode its producer opened in /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmpIW1FG8/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmpIW1FG8/Library/Application Support/Berman/working.noindex/returns/1925abe62f6e4202b3eb318f79270fbf\nKeep ordinary project changes in the checkout.\n\nMessage from the producer:\n\nWhat is in this checkout?",
+    "transcript_path": "/private/var/folders/bk/t91rwh4x29d94lvll_3qdtc00000gn/T/.tmpIW1FG8/.codex/sessions/12345678-1234-1234-1234-123456789012.jsonl"
+  },
+  "generation": "31021e2346a908d5b93462de13d28bff577716cc010d876071c2d9233d8c03a5"
+}

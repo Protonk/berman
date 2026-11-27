@@ -189,17 +189,38 @@ fn a_mistyped_reference_changes_nothing() {
 }
 
 #[test]
-fn closing_finds_a_claude_transcript_when_no_callback_arrived() {
+fn a_sitting_reads_the_transcript_at_its_end_when_no_callback_arrived() {
     let mut world = World::new();
     world.env.insert("FIXTURE_WITHOUT_HOOKS".into(), "1".into());
     world.open(EPISODE, "claude", &[&world.job]);
-    world.cli(&["start", EPISODE]);
-    assert!(!world.exists(&format!("{EPISODE}/telemetry")));
+    let sitting = world.cli(&["start", EPISODE]);
+    assert!(sitting["transcript"]["read_at"].is_string());
+    assert!(!world.exists(&format!("{EPISODE}/telemetry/events")));
+    assert!(world.read(&format!("{EPISODE}/telemetry/parent/conversation.txt")).contains("done"));
     let receipt = world.cli(&["close", EPISODE, "--reason", "The callbacks never ran."]);
     world.assert_documented(EPISODE);
-    assert!(world.read(&format!("{EPISODE}/telemetry/parent/conversation.txt")).contains("done"));
     let limitations = receipt["coverage"]["limitations"].as_array().unwrap();
-    assert!(limitations.contains(&json!("No session callbacks were observed.")));
+    assert_eq!(limitations, &[json!("No session callbacks were observed.")]);
+}
+
+#[test]
+fn what_is_said_in_the_session_after_the_last_sitting_is_not_collected() {
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    // The producer resumes the same native session directly, outside Berman, before closing.
+    let id = state["id"].as_str().unwrap();
+    let transcript = world.base.join(".claude/projects/example").join(format!("{id}.jsonl"));
+    let later =
+        json!({"sessionId": id, "message": {"role": "assistant", "content": "an ordinary exchange afterwards"}});
+    let mut said = std::fs::read_to_string(&transcript).unwrap();
+    said.push_str(&format!("{later}\n"));
+    std::fs::write(&transcript, said).unwrap();
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(receipt["coverage"]["limitations"], json!([]));
+    for name in ["transcript.jsonl", "conversation.txt"] {
+        assert!(!world.read(&format!("{EPISODE}/telemetry/parent/{name}")).contains("an ordinary exchange afterwards"));
+    }
 }
 
 #[test]
@@ -396,7 +417,7 @@ fn cleanup_resumes_from_the_committed_inventory() {
 }
 
 #[test]
-fn a_return_over_the_limit_leaves_sittings_and_telemetry_whole() {
+fn members_over_the_record_s_limits_are_left_out_of_it_and_kept() {
     let world = World::new();
     let state = world.open(EPISODE, "claude", &[&world.job]);
     world.cli(&["start", EPISODE]);
@@ -405,16 +426,161 @@ fn a_return_over_the_limit_leaves_sittings_and_telemetry_whole() {
         std::fs::write(returns.join(format!("note-{number:04}.md")), format!("{number}")).unwrap();
     }
     let events = world.ls(&format!("{EPISODE}/telemetry/events"));
+    let transcript = world.cat(&format!("{EPISODE}/telemetry/parent/transcript.jsonl"));
     let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
-    // What closing could not bring in stays on disk and is named. Nothing already in the episode is given up for it.
+    // The return comes first and fills the 4,096 files. What it could not bring in stays on disk.
     assert_eq!(world.ls(&format!("{EPISODE}/return")).len(), 4096);
     assert_eq!(receipt["preserved"].as_array().unwrap().len(), 5);
-    let limitations = receipt["coverage"]["limitations"].as_array().unwrap();
-    assert_eq!(limitations.iter().filter(|item| item.as_str().unwrap().starts_with("Omitted return/")).count(), 5);
-    assert_eq!(world.ls(&format!("{EPISODE}/telemetry/events")), events);
-    assert_eq!(world.ls(&format!("{EPISODE}/sittings")), ["000001.json"]);
-    assert!(world.read(&format!("{EPISODE}/telemetry/parent/conversation.txt")).contains("done"));
+    let limitations: Vec<&str> =
+        receipt["coverage"]["limitations"].as_array().unwrap().iter().map(|item| item.as_str().unwrap()).collect();
+    assert_eq!(limitations.iter().filter(|item| item.starts_with("Omitted return/")).count(), 5);
+    // The sitting and the telemetry are left out of the record, named, and kept beside the episode.
+    assert!(!world.exists(&format!("{EPISODE}/sittings")) || world.ls(&format!("{EPISODE}/sittings")).is_empty());
+    assert!(limitations.iter().any(|item| item.starts_with("Omitted sittings/000001.json: ")
+        && item.ends_with("episodes/decisions.omitted/sittings/000001.json")));
+    assert!(limitations.contains(&"The parent transcript is not whole in the record."));
+    assert_eq!(world.ls("episodes/decisions.omitted/telemetry/events"), events);
+    assert_eq!(world.cat("episodes/decisions.omitted/telemetry/parent/transcript.jsonl"), transcript);
+    assert_eq!(world.ls("episodes/decisions.omitted/sittings"), ["000001.json"]);
+    let listed = world.json(&format!("{EPISODE}/manifest.json"));
+    assert_eq!(listed["members"].as_object().unwrap().len(), 4096 + 5);
     world.cli(&["verify", EPISODE]);
+}
+
+#[test]
+fn a_close_that_never_verified_leaves_the_return_alone_however_often_it_is_repeated() {
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    world.cli(&["library", "mv", &format!("{EPISODE}/opening.md"), "elsewhere.md"]);
+    for _ in 0..3 {
+        world.refuses(&["close", EPISODE, "--reason", "Collected."], "missing opening.md");
+        assert!(std::fs::read_to_string(returns.join("decision.md")).unwrap().contains("two callers"));
+    }
+    assert_eq!(world.cli(&["status", EPISODE])["preserved"], json!([text(&returns.join("decision.md"))]));
+    // With the record whole again the same close verifies, and only then is the return retired.
+    world.cli(&["library", "mv", "elsewhere.md", &format!("{EPISODE}/opening.md")]);
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!((&receipt["return"], &receipt["preserved"]), (&Value::Null, &json!([])));
+    assert!(world.read(&format!("{EPISODE}/return/decision.md")).contains("two callers"));
+    assert!(!returns.exists());
+}
+
+#[test]
+fn renaming_the_ending_does_not_reopen_an_episode() {
+    use std::os::unix::fs::PermissionsExt;
+    let world = World::new();
+    let state = world.open(EPISODE, "codex", &[&world.job]);
+    let id = state["id"].as_str().unwrap();
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    std::fs::set_permissions(&returns, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(receipt["preserved"].as_array().unwrap().len(), 1);
+    std::fs::set_permissions(&returns, std::fs::Permissions::from_mode(0o700)).unwrap();
+    world.cli(&["library", "mv", &format!("{EPISODE}/ending.json"), "ending-moved.json"]);
+    let launches = world.launches().len();
+    world.refuses(&["start", EPISODE, "--request", "again"], "closed");
+    world.refuses(&["resume", EPISODE, "--request", "more"], "closed");
+    assert_eq!(world.launches().len(), launches);
+    let events = world.ls(&format!("{EPISODE}/telemetry/events"));
+    let row = json!({"hook_event_name": "Stop", "session_id": "12345678-1234-1234-1234-123456789012"});
+    assert!(world.callback("codex", Some(id), &row.to_string()).status.success());
+    assert_eq!(world.ls(&format!("{EPISODE}/telemetry/events")), events);
+    assert_eq!(world.cli(&["status", EPISODE])["ending"]["reason"], "Collected.");
+}
+
+#[test]
+fn one_episode_s_directory_cannot_hold_another() {
+    let world = World::new();
+    world.open("episodes/parent", "claude", &[]);
+    let inside = world.opening("episodes/parent/child", "claude", &[]);
+    world.refuses(&inside.iter().map(String::as_str).collect::<Vec<_>>(), "cannot hold another episode");
+    let record = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/python-0.26/claude/record");
+    world.refuses(&["import", &text(&record), "episodes/parent/imported"], "cannot hold another episode");
+    assert_eq!(world.ls("episodes/parent"), ["episode.json", "opening.md"]);
+    world.open("episodes/other", "claude", &[]);
+    world.refuses(&["library", "mv", "episodes/other", "episodes/parent/other"], "cannot hold another episode");
+    world.cli(&["library", "mkdir", "episodes/group"]);
+    world.cli(&["library", "mv", "episodes/other", "episodes/group/other"]);
+    world.refuses(&["library", "mv", "episodes/group", "episodes/parent/group"], "cannot hold another episode");
+    // A file the producer puts into an open episode's directory is not the record's, and closing says so.
+    let note = world.base.join("note.md");
+    std::fs::write(&note, "mine").unwrap();
+    world.cli(&["library", "put", &text(&note), "episodes/parent/note.md"]);
+    world.refuses(&["close", "episodes/parent", "--reason", "Done."], "unlisted note.md");
+    world.cli(&["library", "mv", "episodes/parent/note.md", "note.md"]);
+    let receipt = world.cli(&["close", "episodes/parent", "--reason", "Done."]);
+    assert!(!world.json("episodes/parent/manifest.json")["members"].to_string().contains("note.md"));
+    // Closing the other episode afterwards changes nothing in this record.
+    world.cli(&["close", "episodes/group/other", "--reason", "Done."]);
+    assert_eq!(world.cli(&["verify", "episodes/parent"])["sha256"], receipt["sha256"]);
+}
+
+#[test]
+fn cleanup_does_nothing_through_a_link() {
+    use std::os::unix::fs::PermissionsExt;
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    std::fs::create_dir(returns.join("notes")).unwrap();
+    std::fs::write(returns.join("notes/first.md"), "first").unwrap();
+    for directory in [returns.join("notes"), returns.clone()] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o500)).unwrap();
+    }
+    world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    for directory in [returns.clone(), returns.join("notes")] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    // The collected directory is replaced by a link to one elsewhere that holds a file with the same bytes.
+    let outside = world.base.join("outside");
+    std::fs::create_dir_all(outside.join("empty")).unwrap();
+    std::fs::write(outside.join("first.md"), "first").unwrap();
+    std::fs::remove_dir_all(returns.join("notes")).unwrap();
+    std::os::unix::fs::symlink(&outside, returns.join("notes")).unwrap();
+    let again = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(std::fs::read_to_string(outside.join("first.md")).unwrap(), "first");
+    assert_eq!(again["preserved"], json!([text(&returns.join("notes"))]));
+    // Then the whole return directory is replaced by a link. Nothing behind it is touched.
+    let moved = world.base.join("moved-return");
+    std::fs::rename(&returns, &moved).unwrap();
+    std::os::unix::fs::symlink(&outside, &returns).unwrap();
+    let last = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert!(outside.join("empty").is_dir() && outside.join("first.md").is_file());
+    assert_eq!(last["preserved"], json!([text(&returns)]));
+}
+
+#[test]
+fn a_version_saved_under_a_collected_name_is_put_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    world.cli(&["start", EPISODE]);
+    let returns = Path::new(state["return"].as_str().unwrap()).to_path_buf();
+    std::fs::set_permissions(&returns, std::fs::Permissions::from_mode(0o500)).unwrap();
+    world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    std::fs::set_permissions(&returns, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // An interrupted cleanup had set the collected file aside, and an editor has since saved a newer version
+    // under its name. The collected one goes, the newer one stays where it is.
+    let aside = returns.with_file_name(format!("{}.retiring", returns.file_name().unwrap().to_string_lossy()));
+    std::fs::create_dir(&aside).unwrap();
+    std::fs::rename(returns.join("decision.md"), aside.join("0")).unwrap();
+    std::fs::write(returns.join("decision.md"), "a newer version the producer has not received").unwrap();
+    let again = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(again["preserved"], json!([text(&returns.join("decision.md"))]));
+    assert!(std::fs::read_to_string(returns.join("decision.md")).unwrap().starts_with("a newer version"));
+    assert!(!aside.exists());
+    // A version that was set aside but is not the one collected is returned beside the newer file.
+    std::fs::create_dir(&aside).unwrap();
+    std::fs::write(aside.join("0"), "another version, never collected").unwrap();
+    let last = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(last["preserved"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        std::fs::read_to_string(returns.join("decision.md.earlier-1")).unwrap(),
+        "another version, never collected"
+    );
 }
 
 #[test]
@@ -470,4 +636,21 @@ fn a_command_that_inherits_a_sitting_s_environment_finds_the_same_places() {
     assert!(world.exists(&format!("{EPISODE}/return/decision.md")));
     world.env.insert("BERMAN_LIBRARY".into(), "relative/place".into());
     world.refuses(&["library", "where"], "must be an absolute path");
+}
+
+#[test]
+fn a_later_login_s_environment_does_not_move_the_return_or_a_dedicated_home() {
+    let mut world = World::new();
+    let state = world.open(EPISODE, "claude", &[&world.job]);
+    let home = |world: &World| String::from_utf8(world.run(&["harness-home", "codex"]).stdout).unwrap();
+    let dedicated = home(&world);
+    world.cli(&["start", EPISODE]);
+    // A different state directory, as another login session might supply.
+    world.env.insert("XDG_STATE_HOME".into(), text(&world.base.join("another-state")));
+    assert_eq!(world.cli(&["status", EPISODE])["return"], state["return"]);
+    assert_eq!(home(&world), dedicated);
+    let receipt = world.cli(&["close", EPISODE, "--reason", "Collected."]);
+    assert_eq!(receipt["coverage"]["limitations"], json!([]));
+    assert!(world.read(&format!("{EPISODE}/return/decision.md")).contains("two callers"));
+    assert!(!Path::new(state["return"].as_str().unwrap()).exists());
 }

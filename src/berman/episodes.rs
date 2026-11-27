@@ -82,8 +82,9 @@ pub fn resolve(library: &Library, reference: &str) -> Result<(Episode, i64)> {
     }
 }
 
-fn return_directory(library: &Library, episode: &Episode) -> Option<PathBuf> {
-    episode.return_name.as_ref().map(|name| library.places.returns.join(name))
+/// The return directory at the path the opening gave the actor, whatever this command's environment says.
+fn return_directory(episode: &Episode) -> Option<PathBuf> {
+    episode.return_path.as_ref().map(PathBuf::from)
 }
 
 pub fn open_episode(
@@ -116,6 +117,7 @@ pub fn open_episode(
     if crate::library::parts(destination)?.is_empty() {
         return refuse("Name a library destination for the episode, such as episodes/cutover");
     }
+    library.outside_episodes(destination)?;
     if let Some(existing) = library.find(ROOT, destination)? {
         let Some(Episode { node: Some(node), .. }) = library.episode_at(existing.id)? else {
             return refuse(format!("Destination already exists in the library: {destination}"));
@@ -131,8 +133,7 @@ pub fn open_episode(
         return Ok(state);
     }
     let identity = files::uuid();
-    let return_name = files::uuid_hex();
-    let returns = places.returns.join(&return_name);
+    let returns = places.returns.join(files::uuid_hex());
     let opening = opening_text(&identity, &project_path, &jobs, &returns);
     let state = json!({
         "schema": SCHEMAS[1],
@@ -149,6 +150,7 @@ pub fn open_episode(
     places::unlisted(&places.returns)?;
     files::create_private_directory(&returns)?;
     let opened = (|| {
+        places::private(&places.data.join("locks"))?;
         for kind in ["sitting", "capture"] {
             let lock = places.lock(&identity, kind);
             OpenOptions::new().write(true).create_new(true).mode(0o600).open(&lock).at(&lock)?;
@@ -157,7 +159,7 @@ pub fn open_episode(
             let directory = library.make_directory(ROOT, destination)?;
             library.write_json(directory.id, "episode.json", &state)?;
             library.write(directory.id, "opening.md", opening.as_bytes())?;
-            library.add_episode(&identity, directory.id, "opened", Some(&return_name))
+            library.add_episode(&identity, directory.id, "opened", Some(&files::text(&returns)), None)
         })
     })();
     if let Err(error) = opened {
@@ -213,12 +215,17 @@ fn refuse_while_running(sittings: &[Value]) -> Result<()> {
     Ok(())
 }
 
-/// Files still in a closed episode's return directory, which collection left for the producer.
+/// What is still in a closed episode's return directory, which collection left for the producer.
 fn preserved(directory: Option<&Path>) -> Vec<String> {
-    let Some(directory) = directory.filter(|directory| directory.is_dir()) else {
+    let Some(directory) = directory.filter(|directory| files::exists(directory)) else {
         return Vec::new();
     };
-    let found = crate::tree::entries(directory).unwrap_or_default();
+    if files::safe_directory(directory).is_err() {
+        // Something other than the directory Berman made is at its path. It is left alone and named.
+        return vec![files::text(directory)];
+    }
+    let mut found = crate::tree::entries(directory).unwrap_or_default();
+    found.extend(crate::tree::entries(&records::aside(directory)).unwrap_or_default());
     found.into_iter().map(|(path, _)| files::text(&path)).collect()
 }
 
@@ -226,8 +233,11 @@ pub fn status(library: &Library, reference: &str) -> Result<Value> {
     let (episode, node) = resolve(library, reference)?;
     let state = load(library, node)?;
     let path = library.path(node)?;
-    let closed = library.exists(node, "ending.json")?;
-    let returns = return_directory(library, &episode);
+    // The ending is the library's own record of it, whatever has become of ending.json.
+    let ending: Option<Value> = episode.ending.as_deref().map(serde_json::from_str).transpose()?;
+    let imported = if episode.origin == "opened" { None } else { library.read_json(node, "ending.json").ok() };
+    let closed = episode.closed();
+    let returns = return_directory(&episode);
     let mut status = json!({
         "episode": state["id"],
         "actor": state["actor"],
@@ -236,7 +246,7 @@ pub fn status(library: &Library, reference: &str) -> Result<Value> {
         "opening": format!("{path}/opening.md"),
         "return": returns.as_deref().map(files::text),
         "session": episode.session,
-        "ending": if closed { library.read_json(node, "ending.json")? } else { Value::Null },
+        "ending": ending.or(imported),
         "sittings": capture::sittings(library, node)?,
         "record": if library.exists(node, records::MANIFEST)? { json!(path) } else { Value::Null },
     });
@@ -298,16 +308,15 @@ pub fn launch(
 ) -> Result<Value> {
     let (episode, node) = resolve(library, reference)?;
     let id = episode.id.as_str();
-    let closed = || -> Result<()> {
-        match library.exists(node, "ending.json")? {
-            true => refuse("The producer has closed this episode"),
-            false => Ok(()),
-        }
+    // Whether the episode is closed is the library's own knowledge. Renaming ending.json cannot reopen it.
+    let closed = |episode: Option<Episode>| match episode {
+        Some(episode) if !episode.closed() => Ok(()),
+        _ => refuse("The producer has closed this episode"),
     };
-    closed()?;
-    let lease = files::lock(&library.places.lock(id, "sitting"), false)?;
+    closed(Some(episode.clone()))?;
+    let lease = library.lease(id, "sitting", false)?;
     let state = load(library, node)?;
-    closed()?;
+    closed(library.episode(id)?)?;
     let actor = state["actor"].as_str().unwrap_or_default();
     let harness = harness_of(&state)?;
     let recent = capture::sittings(library, node)?;
@@ -358,7 +367,7 @@ pub fn launch(
         return refuse(format!("Install {actor} in this login before launching"));
     };
     let session = bound_session(library, id, &state)?;
-    let Some(returns) = return_directory(library, &episode) else {
+    let Some(returns) = return_directory(&episode) else {
         return refuse("This episode has no return directory");
     };
     files::safe_directory(&returns)?;
@@ -448,8 +457,26 @@ pub fn launch(
         let account = account(library, id, node, &state, harness, &sitting)?;
         merge(&mut sitting, account);
     }
+    sitting["transcript"] = transcript_at_end(library, id, node, &state)?;
     library.write_json(node, &path, &sitting)?;
     Ok(sitting)
+}
+
+/// Read the session's transcript as the sitting ends, so that closing need not read it later.
+///
+/// Whatever is said in the same native session after this, outside a sitting, is then not
+/// collected. The value says when the transcript was read, is null when the session has none,
+/// or gives the reason it could not be read.
+fn transcript_at_end(library: &Library, id: &str, node: i64, state: &Value) -> Result<Value> {
+    let _capture = library.lease(id, "capture", true)?;
+    let Some(session) = bound_session(library, id, state)? else {
+        return Ok(Value::Null);
+    };
+    Ok(match capture::observe(library, node, state, &session, &json!({"hook_event_name": "sitting"})) {
+        Ok(read) => json!({"read_at": read["captured_at_utc"], "saved_bytes": read["saved_bytes"]}),
+        Err(Error::Missing(_)) => Value::Null,
+        Err(error) => json!({"limitation": error.to_string()}),
+    })
 }
 
 /// Keep the lease in the child as well, in case the launcher is interrupted.
@@ -501,7 +528,7 @@ fn account(library: &Library, id: &str, node: i64, state: &Value, harness: Harne
     let mut limitations = outcome.limitations;
     limitations.extend(cut);
     if let Some(reported) = &outcome.session {
-        let _capture = files::lock(&library.places.lock(id, "capture"), true)?;
+        let _capture = library.lease(id, "capture", true)?;
         let bound = bound_session(library, id, state)?;
         if bound.is_none() && capture::identity(reported) {
             // No callback bound the first sitting. The process Berman launched named its own session.
@@ -533,60 +560,84 @@ fn account(library: &Library, id: &str, node: i64, state: &Value, harness: Harne
 
 /// Record the producer's ending, collect the correspondence into the record, and retire what was collected.
 ///
-/// Repeating a close with the original reason converges on the same ending and record, and takes
-/// cleanup up again from the committed inventory.
+/// Nothing leaves the return directory until the committed record has been read back and
+/// verified, and the library remembers that it was. Until then a repeated close collects and
+/// publishes again. After it, a repeated close takes cleanup up from the committed inventory.
 pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> {
     if reason.trim().is_empty() {
         return refuse("The producer must supply an ending reason");
     }
     let (episode, node) = resolve(library, reference)?;
-    let id = episode.id.as_str();
+    let identity = episode.id.clone();
+    let id = identity.as_str();
     if episode.origin != "opened" {
         return refuse("This episode was closed where its record was made");
     }
-    if episode.return_name.is_none() {
-        // Collection and cleanup are complete. Only the ending can still disagree.
-        if library.read_json(node, "ending.json")?["reason"].as_str() != Some(reason) {
-            return refuse("A different ending is already recorded");
+    let same_reason = |episode: &Episode| -> Result<Option<Value>> {
+        let ending: Option<Value> = episode.ending.as_deref().map(serde_json::from_str).transpose()?;
+        match &ending {
+            Some(recorded) if recorded["reason"].as_str() != Some(reason) => {
+                refuse("A different ending is already recorded")
+            }
+            _ => Ok(ending),
         }
-        let mut receipt = records::verify(&Shelf::new(library, node), None)?;
+    };
+    if episode.return_path.is_none() {
+        // Collection and cleanup are complete. Only the ending can still disagree.
+        same_reason(&episode)?;
+        let mut receipt = library.snapshot(|| records::verify(&Shelf::new(library, node), None))?;
         receipt["return"] = Value::Null;
         receipt["preserved"] = json!([]);
         return Ok(receipt);
     }
-    let _sitting = files::lock(&library.places.lock(id, "sitting"), false)?;
-    let _capture = files::lock(&library.places.lock(id, "capture"), true)?;
+    let _sitting = library.lease(id, "sitting", false)?;
+    let _capture = library.lease(id, "capture", true)?;
+    let episode = library.episode(id)?.unwrap_or(episode);
     let state = load(library, node)?;
-    refuse_while_running(&capture::sittings(library, node)?)?;
-    if library.exists(node, "ending.json")? {
-        if library.read_json(node, "ending.json")?["reason"].as_str() != Some(reason) {
-            return refuse("A different ending is already recorded");
+    let sittings = capture::sittings(library, node)?;
+    refuse_while_running(&sittings)?;
+    let ending = match same_reason(&episode)? {
+        Some(ending) => ending,
+        None => {
+            // From here no sitting starts and callbacks are no longer taken in.
+            let ending = json!({"reason": reason, "at": files::now()});
+            library.set_ending(id, &ending)?;
+            ending
         }
-    } else {
-        // From here callbacks are no longer taken in.
-        library.write_json(node, "ending.json", &json!({"reason": reason, "at": files::now()}))?;
-    }
-    let returns = return_directory(library, &episode);
-    // The cleanup inventory is committed with the record, so its presence says the record was published before.
-    let published = episode.cleanup.is_some();
+    };
+    let returns = return_directory(&episode);
     let mut receipt = None;
-    if !published {
+    if episode.record.is_none() {
+        // The record is the library's account of the ending, even if a file of that name was moved or changed.
+        library.write_json(node, "ending.json", &ending)?;
         let mut limitations = Vec::new();
-        if let (Some(session), true) = (bound_session(library, id, &state)?, library.exists(node, "sittings")?) {
+        // Each sitting read the transcript as it ended. It is read here only if the last sitting's end went
+        // unobserved, and then anything said in that session since is in it.
+        let unobserved = sittings.last().filter(|sitting| sitting["exit"].is_null());
+        if let (Some(sitting), Some(session)) = (unobserved, bound_session(library, id, &state)?) {
             let closeout = json!({"hook_event_name": "closeout"});
-            if let Err(error) = capture::observe(library, node, &state, &session, &closeout) {
-                limitations.push(format!("Final parent transcript observation: {error}"));
+            match capture::observe(library, node, &state, &session, &closeout) {
+                Ok(_) => limitations.push(format!(
+                    "The parent transcript was read at closing, because the end of sitting {} was not observed. \
+                     It can hold what was said in that session afterwards.",
+                    sitting["number"]
+                )),
+                Err(error) => limitations.push(format!("Final parent transcript observation: {error}")),
             }
         }
-        // Output a relay carried for a sitting whose launcher stopped is still waiting to become a file.
-        for name in library.waiting_streams(id)? {
-            library.settle_stream(id, node, &name)?;
+        // Every output a sitting names becomes a file, including one a relay carried after its launcher stopped.
+        for sitting in sittings.iter().filter(|sitting| sitting["attended"] == json!(false)) {
+            for name in ["stdout", "stderr"].iter().filter_map(|name| sitting[*name].as_str()) {
+                library.settle_stream(id, node, name)?;
+            }
         }
         library.durable()?;
-        records::publish(library, id, node, &state, limitations, returns.as_deref())?;
+        records::publish(library, &episode, node, &state, limitations, returns.as_deref())?;
         library.clear_streams(id)?;
         // Read the committed record back before anything outside the library is retired.
-        receipt = Some(records::verify(&Shelf::new(library, node), None)?);
+        let verified = library.snapshot(|| records::verify(&Shelf::new(library, node), None))?;
+        library.set_record(id, verified["sha256"].as_str())?;
+        receipt = Some(verified);
     }
     let cleanup = library.episode(id)?.and_then(|episode| episode.cleanup);
     if let Some(directory) = &returns {
@@ -595,19 +646,21 @@ pub fn close(library: &Library, reference: &str, reason: &str) -> Result<Value> 
             None => json!([]),
         };
         records::retire(library, node, directory, &inventory)?;
-        if fs::remove_dir(directory).is_ok() || !files::exists(directory) {
+        let gone = |path: &Path| fs::remove_dir(path).is_ok() || !files::exists(path);
+        if gone(&records::aside(directory)) && gone(directory) {
             library.forget_return(id)?;
             for kind in ["sitting", "capture"] {
                 let _ = fs::remove_file(library.places.lock(id, kind));
             }
         }
     }
-    // A record the producer has since changed no longer verifies. Cleanup above does not depend on that.
+    // A record the producer has changed since it was verified no longer verifies. Cleanup above does not
+    // depend on that: it removes a file only while the record still holds its copy.
     let mut receipt = match receipt {
         Some(receipt) => receipt,
-        None => records::verify(&Shelf::new(library, node), None)?,
+        None => library.snapshot(|| records::verify(&Shelf::new(library, node), None))?,
     };
-    let left = library.episode(id)?.and_then(|episode| return_directory(library, &episode));
+    let left = library.episode(id)?.and_then(|episode| return_directory(&episode));
     receipt["return"] = json!(left.as_deref().map(files::text));
     receipt["preserved"] = json!(preserved(left.as_deref()));
     Ok(receipt)

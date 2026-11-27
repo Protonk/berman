@@ -104,7 +104,10 @@ pub fn candidates(home: &Path, session: &str) -> Vec<PathBuf> {
 /// Whether the transcript read belongs to the session: named for it, and naming no other.
 pub fn belongs(reading: &Reading, path: &Path, session: &str) -> Result<()> {
     let named = path.file_name().is_some_and(|name| name.to_string_lossy() == format!("{session}.jsonl"));
-    if !named || reading.identities != [session] {
+    // A line too long to render does not show its session. Every line that was read must name this one.
+    let named_by_lines = reading.identities.iter().all(|identity| identity == session)
+        && (!reading.identities.is_empty() || !reading.unrendered.is_empty());
+    if !named || !named_by_lines {
         return refuse("Claude transcript identity differs from the assigned parent");
     }
     Ok(())

@@ -7,7 +7,7 @@ berman library ls episodes/notes
 berman library cat episodes/notes/return/HANDOVER.md
 ```
 
-A record contains only these members.
+A record contains only these members. Anything else in the episode’s directory is not part of its record, and verification names it as unlisted.
 
 | Within a record | What it can tell you |
 | --- | --- |
@@ -15,8 +15,8 @@ A record contains only these members.
 | `return/` | The regular files the actor left in the return directory. |
 | `episode.json`, `final-project.json` | The opening, actor, project path, and the Git revision and worktree status Berman observed at the opening and at closing, where available. |
 | `sittings/` | Which sittings were requested and with what message, whether each delivered the opening or was attended, which executable started, and which exits the launcher observed. An unattended sitting also keeps its native output and the response, denials and limitations Berman read in it. |
-| `telemetry/events/` | Callbacks attributed to the bound native session. An event that arrives before the transcript exists says so and is not counted as a gap. |
-| `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. |
+| `telemetry/events/` | Callbacks attributed to the bound native session. An event that arrives before the transcript exists says so and is not counted as a gap. An event whose callback the actor’s CLI stopped at its deadline has no transcript of its own, and the coverage names it. |
+| `telemetry/parent/` | The available parent JSONL, a readable conversation with raw-line references, and the capture history. A line longer than 8 MiB is kept in the JSONL and named in the conversation without being rendered. |
 | `telemetry/displaced/`, `telemetry/tails/` | Earlier transcript versions that a later capture did not extend, and incomplete final lines, when observed. |
 | `coverage.json` | Scope, missing observations, and entries that could not be collected. |
 | `manifest.json` | The episode identity and SHA-256 digests of all retained members. |
@@ -35,7 +35,7 @@ berman library export episodes/notes "$HOME/notes-record"
 berman verify "$HOME/notes-record" --sha256 DIGEST
 ```
 
-A record has the same members and manifest in the library and in an exported directory, on Linux and on macOS, so a copy made on one system verifies on another without the original project. An internal check can pass on an incomplete capture. The return is bounded to regular files, with up to 256 MiB per file and a limit of 4,096 files and 1 GiB across the return. Collection records omissions. Sittings and telemetry are already in the episode when it closes and are kept whole. A transcript is captured up to 256 MiB. If the captured transcript does not agree with its own description at closing, the coverage says so and its members are kept as found.
+A record has the same members and manifest in the library and in an exported directory, on Linux and on macOS, so a copy made on one system verifies on another without the original project. An internal check can pass on an incomplete capture. The return is bounded to regular files, with up to 256 MiB per file and a shared limit of 4,096 files and 1 GiB across the return, sittings and telemetry, counted in that order. Collection records omissions. A return file over a limit stays in the return directory. A sitting or telemetry member over a limit is left out of the record and moved to a directory beside the episode’s, named in the coverage, such as `episodes/notes.omitted`. If the captured transcript does not agree with its own description at closing, the coverage says so and its members are kept as found.
 
 ## Ask a question across episodes
 

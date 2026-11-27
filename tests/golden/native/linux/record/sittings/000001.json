@@ -4,16 +4,20 @@
   "prompt": "What is in this checkout?",
   "opening": true,
   "attended": false,
-  "started_at": "2026-11-26T15:12:37.484735Z",
-  "executable": "/tmp/.tmpENVppD/bin/codex",
+  "started_at": "2026-11-27T00:33:19.599261Z",
+  "executable": "/home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/bin/codex",
   "exit": 0,
   "stdout": "sittings/000001.stdout",
   "stderr": "sittings/000001.stderr",
-  "pid": 43129,
-  "pid_started": "19362187",
-  "exited_at": "2026-11-26T15:12:37.515207Z",
+  "pid": 49054,
+  "pid_started": "2657287",
+  "exited_at": "2026-11-27T00:33:19.654607Z",
   "native_session": "12345678-1234-1234-1234-123456789012",
   "response": "done 1: What is in this checkout?",
   "denials": null,
-  "limitations": []
+  "limitations": [],
+  "transcript": {
+    "read_at": "2026-11-27T00:33:19.657834Z",
+    "saved_bytes": 936
+  }
 }

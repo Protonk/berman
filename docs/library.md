@@ -30,7 +30,7 @@ The key is 32 random bytes, generated once by `berman library init`. By default 
 
 A missing key is reported as missing. Berman does not create a second key or replace a library that already exists.
 
-To back up, copy `library.db`, any `library.db-wal` beside it, and `library.json` together while no Berman command is running, and keep a copy of the key from where `berman library where` says it is. Restore them to the same places. A backup without its key cannot be read.
+To back up, copy `library.db`, any `library.db-wal` beside it, and `library.json` together while no Berman command is running, and keep a copy of the key from where `berman library where` says it is. Restore them to the same places. A backup without its key cannot be read. The return directory of an open episode is not in the library. Close open episodes before a backup, or copy their return directories as well: an episode restored without its return directory closes with the coverage saying the return was missing.
 
 ## What a search of the disk finds
 
@@ -46,15 +46,15 @@ Suppose an instruction meant for one project reaches an actor working in another
 
 The installed program, the hook command and Berman’s own directory can be found. They name no project. Lock files beside the library are named by episode ID.
 
-On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, which Spotlight does not index. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. Whether a Linux desktop index would list them has not been checked: none was enabled where Berman was tested. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
+On macOS the return directories and dedicated homes are under `working.noindex` in the library’s directory, which Spotlight does not index. On Linux they are under `$XDG_STATE_HOME/berman`, normally `~/.local/state/berman`. Each return directory and dedicated home keeps the path it was given when it was made, whatever a later login’s environment says. Whether a Linux desktop index would list them has not been checked: none was enabled where Berman was tested. To remove those directories by hand, first make their `returns` and `homes` parents listable with `chmod u+r`.
 
 ## Arranging and removing
 
 A whole record can be moved or copied, and any member can be removed by name. The manifest continues to describe the bytes collected at closing, so verification of a changed record names each member that is missing, changed or unlisted. A copy shares stored bytes with its source, and bytes stay for as long as any file refers to them. A review’s verified copy of a record therefore survives changes to the record and its removal.
 
-An episode’s directory cannot be removed while its return directory exists. Close the episode first, and deal with any files closing lists as preserved. Removing a closed episode’s directory removes the episode from the library, so its exported record can be imported again later.
+One episode’s directory cannot hold another episode: `berman open` and `berman library mv` refuse it, because the inner episode’s files would count against the outer record. An episode’s directory cannot be removed while its return directory exists. Close the episode first, and deal with any files closing lists as preserved. Removing a closed episode’s directory removes the episode from the library, so its exported record can be imported again later.
 
-Stored names keep their spelling. Before an export writes anything, it creates every name at the destination. If that filesystem cannot hold two of the library’s names side by side, for example names that differ only in case, the export reports them and leaves nothing behind. An export writes into a directory named `DESTINATION.berman-partial-…` beside the destination and renames it when complete. One that is killed part-way leaves that directory, which is plaintext and safe to delete.
+Stored names keep their spelling. An export reads one state of the library from start to finish, so a file replaced by another command meanwhile is exported as it was. Before an export writes anything, it creates every name at the destination. If that filesystem cannot hold two of the library’s names side by side, for example names that differ only in case, the export reports them and leaves nothing behind. An export writes into a directory named `DESTINATION.berman-partial-…` beside the destination and renames it when complete. One that is killed part-way leaves that directory, which is plaintext and safe to delete.
 
 ## Records from earlier releases
 

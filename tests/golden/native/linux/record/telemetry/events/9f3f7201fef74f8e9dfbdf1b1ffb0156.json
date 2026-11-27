@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-27T00:33:19.619024Z",
+  "event": {
+    "hook_event_name": "Stop",
+    "session_id": "12345678-1234-1234-1234-123456789012",
+    "cwd": "/home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/normal checkout",
+    "prompt": "Berman episode ffb8cfb8-bbb1-41c8-9c52-6e14eb04c2be\n\nThis session is part of a Berman episode its producer opened in /home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/normal checkout. Berman keeps a record of the session for the producer.\n\nAlongside any other work in the session, carry out this additional job:\n\nRecord a decision when one arises.\n\nReturn directory: /home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/.local/state/berman/returns/2ade00c28abb4dcd97eeecd42e5377f5\nKeep ordinary project changes in the checkout.\n\nMessage from the producer:\n\nWhat is in this checkout?",
+    "transcript_path": "/home/berman-dev/.cache/berman-golden.ah4a0l/tmp/.tmplqWQn6/.codex/sessions/12345678-1234-1234-1234-123456789012.jsonl"
+  },
+  "generation": "fb84e98db18d1f111994b2ff9993e7342741ed66acaf2a4dff63c96ee3febdf4"
+}

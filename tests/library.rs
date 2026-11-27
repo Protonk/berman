@@ -149,6 +149,45 @@ fn a_backup_of_the_database_and_key_restores_in_another_home() {
     }
     assert_eq!(restored.cli(&["verify", "episodes/kept"])["sha256"], receipt["sha256"]);
     assert_eq!(restored.cat("episodes/kept/return/decision.md"), world.cat("episodes/kept/return/decision.md"));
+    assert!(place["backup"].as_str().unwrap().contains("return directory is not in the library"));
+    // The restored library is a working one: a new episode opens, sits and closes in it.
+    restored.open("episodes/new", "claude", &[&restored.job]);
+    assert_eq!(restored.cli(&["start", "episodes/new"])["exit"], 0);
+    assert_eq!(restored.cli(&["close", "episodes/new", "--reason", "Done."])["coverage"]["limitations"], json!([]));
+}
+
+#[test]
+fn an_export_holds_one_state_of_each_file_while_the_library_changes() {
+    let world = World::new();
+    let (old, new) = (world.base.join("old.bin"), world.base.join("new.bin"));
+    std::fs::write(&old, vec![b'a'; 3 * 1024 * 1024]).unwrap();
+    std::fs::write(&new, vec![b'b'; 2 * 1024 * 1024]).unwrap();
+    for name in ["first.bin", "second.bin", "third.bin"] {
+        world.cli(&["library", "put", &text(&old), &format!("reviews/busy/{name}")]);
+    }
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            // Another command keeps replacing the members while the exports run.
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                for (name, from) in
+                    [("second.bin", &new), ("third.bin", &new), ("second.bin", &old), ("third.bin", &old)]
+                {
+                    world.cli(&["library", "put", "--replace", &text(from), &format!("reviews/busy/{name}")]);
+                }
+            }
+        });
+        for round in 0..12 {
+            let out = world.base.join(format!("exported-{round}"));
+            world.cli(&["library", "export", "reviews/busy", &text(&out)]);
+            for name in ["first.bin", "second.bin", "third.bin"] {
+                let bytes = std::fs::read(out.join(name)).unwrap();
+                let whole = bytes == vec![b'a'; 3 * 1024 * 1024] || bytes == vec![b'b'; 2 * 1024 * 1024];
+                assert!(whole, "{name} was exported with {} bytes in round {round}", bytes.len());
+            }
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
 }
 
 #[test]
@@ -413,12 +452,35 @@ fn a_review_is_imported_only_with_every_source_listed_and_verified() {
     let record = golden().join("claude/record");
     let entry = json!([{"episode": listed[0]["episode"], "path": text(&record), "sha256": listed[0]["sha256"]}]);
     std::fs::write(outside.join("sources.json"), format!("{entry:#}")).unwrap();
-    world.refuses(&["import", &text(&outside), "reviews/outside"], "No such file");
+    world.refuses(&["import", &text(&outside), "reviews/outside"], "Expected a record or review directory");
     // An entry with no digest to verify against.
     let undigested = copy("undigested");
     let entry = json!([{"episode": listed[0]["episode"], "path": listed[0]["path"]}, listed[1]]);
     std::fs::write(undigested.join("sources.json"), format!("{entry:#}")).unwrap();
     world.refuses(&["import", &text(&undigested), "reviews/undigested"], "Expected a record or review directory");
+    // Each record listed under the other's episode: the paths and digests hold, the attribution does not.
+    let swapped = copy("swapped");
+    let entry = json!([
+        {"episode": listed[1]["episode"], "path": listed[1]["path"], "sha256": listed[0]["sha256"]},
+        {"episode": listed[0]["episode"], "path": listed[0]["path"], "sha256": listed[1]["sha256"]},
+    ]);
+    std::fs::write(swapped.join("sources.json"), format!("{entry:#}")).unwrap();
+    world.refuses(&["import", &text(&swapped), "reviews/swapped"], "differs");
+    let renamed = copy("renamed");
+    let (first, second) = (listed[0]["episode"].as_str().unwrap(), listed[1]["episode"].as_str().unwrap());
+    std::fs::rename(renamed.join("sources").join(first), renamed.join("sources/held")).unwrap();
+    std::fs::rename(renamed.join("sources").join(second), renamed.join("sources").join(first)).unwrap();
+    std::fs::rename(renamed.join("sources/held"), renamed.join("sources").join(second)).unwrap();
+    let entry = json!([
+        {"episode": first, "path": listed[0]["path"], "sha256": listed[1]["sha256"]},
+        {"episode": second, "path": listed[1]["path"], "sha256": listed[0]["sha256"]},
+    ]);
+    std::fs::write(renamed.join("sources.json"), format!("{entry:#}")).unwrap();
+    world.refuses(&["import", &text(&renamed), "reviews/renamed"], "holds the record of another episode");
+    // A review without its question.
+    let unasked = copy("unasked");
+    std::fs::remove_file(unasked.join("question.md")).unwrap();
+    world.refuses(&["import", &text(&unasked), "reviews/unasked"], "The review has no question.md");
     assert!(world.ls("").is_empty());
 }
 
